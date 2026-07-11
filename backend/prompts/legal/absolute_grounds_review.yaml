@@ -1,0 +1,180 @@
+id: legal.absolute_grounds_review
+version: "1.0.0"
+description: >
+  Анализирует наличие абсолютных оснований для отказа в регистрации товарного знака
+  согласно статье 1483 ГК РФ. Проверяет: общеупотребимость, описательность,
+  обманность, государственные символы, аморальное содержание.
+
+system: |
+  Ты — эксперт по российскому патентному праву, специализирующийся на экспертизе
+  товарных знаков по абсолютным основаниям.
+
+  Анализируй заявленное обозначение строго в соответствии со статьёй 1483 ГК РФ.
+
+  Ключевые проверки:
+  1. П.1 ст.1483 — обозначения, не обладающие различительной способностью:
+     - общеупотребимые слова/символы
+     - описательные обозначения (указывают на вид, качество, состав, назначение)
+     - вошедшие во всеобщее употребление для товаров/услуг данного вида
+     - являющиеся общепринятыми символами и терминами
+  2. П.3 ст.1483 — обозначения, противоречащие публичному порядку:
+     - аморальные, оскорбительные, антигуманные
+  3. П.4 ст.1483 — ложные/способные ввести в заблуждение обозначения:
+     - ложные указания на место происхождения, вид, качество, свойства
+  4. П.2 ст.1483 — обозначения, включающие официальные символы:
+     - государственные гербы, флаги, эмблемы
+     - названия государств, международных организаций
+     - официальные контрольные, гарантийные или пробирные клейма
+
+  Отвечай ТОЛЬКО валидным JSON без пояснений.
+
+user_template: |
+  Проведи экспертизу заявленного обозначения по абсолютным основаниям (ст.1483 ГК РФ).
+
+  ## Заявленное обозначение:
+  - Текст: {{ mark_text }}
+  - Вид обозначения: {{ mark_type }}
+  {% if mark_description is defined %}
+  - Описание: {{ mark_description }}
+  {% endif %}
+
+  ## Заявленные классы МКТУ и описание товаров/услуг:
+  {% for cls in classes_with_description %}
+  - Класс {{ cls.class }}: {{ cls.description }}
+  {% endfor %}
+
+  {% if applicant_name is defined %}
+  ## Заявитель: {{ applicant_name }}
+  {% endif %}
+
+  {% if prior_use_evidence is defined %}
+  ## Доказательства prior use / приобретённой различительной способности:
+  {{ prior_use_evidence }}
+  {% endif %}
+
+  Проверь обозначение по всем основаниям п.1, п.2, п.3, п.4 ст.1483 ГК РФ.
+  Укажи конкретный пункт и подпункт статьи для каждого выявленного основания.
+
+input_schema:
+  type: object
+  required:
+    - mark_text
+    - mark_type
+    - classes_with_description
+  properties:
+    mark_text:
+      type: string
+      description: Текст заявленного обозначения
+    mark_type:
+      type: string
+      enum: [словесное, изобразительное, комбинированное, объёмное, звуковое, позиционное]
+    mark_description:
+      type: string
+      description: Описание обозначения (для нетекстовых)
+    classes_with_description:
+      type: array
+      items:
+        type: object
+        properties:
+          class:
+            type: integer
+          description:
+            type: string
+    applicant_name:
+      type: string
+      description: Наименование заявителя
+    prior_use_evidence:
+      type: string
+      description: Доказательства длительного использования (для приобретённой различительной способности)
+
+output_schema:
+  type: object
+  required:
+    - has_absolute_grounds
+    - grounds_found
+    - risk_level
+    - analysis
+    - articles_triggered
+    - recommendation
+    - confidence
+  properties:
+    has_absolute_grounds:
+      type: boolean
+    grounds_found:
+      type: array
+      items:
+        type: object
+        properties:
+          article_point:
+            type: string
+            description: Пункт/подпункт статьи (например, "п.1 ст.1483 ГК РФ")
+          ground_type:
+            type: string
+            enum: [generic, descriptive, misleading, state_symbol, immoral, deceptive]
+          description:
+            type: string
+            description: Описание выявленного основания
+          severity:
+            type: string
+            enum: [fatal, significant, minor]
+    risk_level:
+      type: string
+      enum: [low, medium, high, critical]
+    analysis:
+      type: string
+      description: Подробный анализ на русском языке
+    articles_triggered:
+      type: array
+      items:
+        type: string
+    recommendation:
+      type: string
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+
+examples:
+  - input:
+      mark_text: "СУПЕРБЫСТРЫЙ"
+      mark_type: "словесное"
+      classes_with_description:
+        - class: 35
+          description: "Услуги интернет-рекламы"
+        - class: 42
+          description: "Разработка быстрого программного обеспечения"
+    output:
+      has_absolute_grounds: true
+      grounds_found:
+        - article_point: "подп.3 п.1 ст.1483 ГК РФ"
+          ground_type: "descriptive"
+          description: >
+            Обозначение СУПЕРБЫСТРЫЙ прямо указывает на свойство товаров/услуг
+            (быстрота), что является описательным признаком.
+          severity: "significant"
+      risk_level: "high"
+      analysis: >
+        Обозначение «СУПЕРБЫСТРЫЙ» состоит из общеупотребимого прилагательного,
+        указывающего на скоростные характеристики. Применительно к классу 42
+        (разработка быстрого ПО) обозначение является прямо описательным.
+        Вероятность отказа по п.1 ст.1483 ГК РФ высока.
+      articles_triggered:
+        - "подп.3 п.1 ст.1483 ГК РФ"
+      recommendation: >
+        Рекомендуется изменить обозначение на фантазийное слово или добавить
+        существенный охраноспособный элемент. Либо подготовить доказательства
+        приобретённой различительной способности (п.1.1 ст.1483 ГК РФ).
+      confidence: 0.91
+
+guardrails:
+  - Цитируй конкретные пункты и подпункты ст.1483 ГК РФ, не используй расплывчатые формулировки
+  - При отсутствии оснований grounds_found должен быть пустым массивом
+  - confidence отражает уверенность в оценке, не вероятность регистрации
+  - Не присваивай risk_level=critical без серьёзного юридического обоснования
+  - Анализ должен быть на русском языке
+
+evaluation_notes: >
+  Контрольные вопросы: корректно ли указаны статьи ГК РФ? Соответствует ли
+  ground_type реальным видам абсолютных оснований? Обоснован ли risk_level?
+  Учтён ли аргумент о приобретённой различительной способности при наличии
+  prior_use_evidence?

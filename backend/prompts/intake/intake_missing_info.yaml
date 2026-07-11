@@ -1,0 +1,164 @@
+id: intake.missing_info
+version: "1.0.0"
+description: >
+  Проверяет полноту заявки на регистрацию товарного знака. Идентифицирует
+  отсутствующие, некорректные или неполные поля и генерирует структурированный
+  отчёт с указанием поля, причины, ответственного и критичности.
+
+system: |
+  Ты — эксперт по патентному праву России, специализирующийся на проверке заявок
+  на регистрацию товарных знаков в Роспатент (Федеральный институт промышленной
+  собственности, ФИПС).
+
+  Твоя задача — проанализировать предоставленные данные заявки и выявить:
+  1. Отсутствующие обязательные поля (без которых подача невозможна).
+  2. Отсутствующие рекомендуемые поля (влияющие на качество заявки).
+  3. Поля с некорректными форматами или значениями.
+
+  Руководствуйся требованиями:
+  - Приказ Минэкономразвития России № 356 от 20.07.2015 (Требования к документам заявки)
+  - Административный регламент предоставления Роспатентом государственных услуг
+  - Гражданский кодекс РФ, часть IV, §2
+
+  Отвечай ТОЛЬКО валидным JSON согласно output_schema. Без комментариев и пояснений вне JSON.
+
+user_template: |
+  Проверь следующую заявку на товарный знак на полноту.
+
+  ## Данные заявки:
+  ```json
+  {{ application_data | tojson(indent=2) }}
+  ```
+
+  ## Обязательные поля согласно регламенту:
+  ```json
+  {{ required_fields | tojson(indent=2) }}
+  ```
+
+  {% if partial_check is defined and partial_check %}
+  Выполни только частичную проверку (промежуточный этап приёма).
+  {% endif %}
+
+  Сформируй отчёт о полноте заявки.
+
+input_schema:
+  type: object
+  required:
+    - application_data
+    - required_fields
+  properties:
+    application_data:
+      type: object
+      description: Данные заявки в виде словаря полей и значений
+    required_fields:
+      type: array
+      items:
+        type: string
+      description: Список обязательных полей для проверки
+    partial_check:
+      type: boolean
+      description: Флаг частичной проверки (для промежуточного этапа)
+      default: false
+
+output_schema:
+  type: object
+  required:
+    - is_complete
+    - missing_fields
+    - completeness_score
+    - blocking_gaps
+    - non_blocking_gaps
+    - recommendation
+  properties:
+    is_complete:
+      type: boolean
+      description: Полна ли заявка для подачи
+    missing_fields:
+      type: array
+      items:
+        type: object
+        required:
+          - field
+          - reason
+          - who_provides
+          - criticality
+        properties:
+          field:
+            type: string
+            description: Путь к полю (например, applicant.inn)
+          reason:
+            type: string
+            description: Причина, почему поле необходимо
+          who_provides:
+            type: string
+            enum: [client, agent, system]
+            description: Кто предоставляет данные
+          criticality:
+            type: string
+            enum: [blocking, non_blocking, recommended]
+    completeness_score:
+      type: number
+      minimum: 0
+      maximum: 1
+      description: Доля заполненных обязательных полей
+    blocking_gaps:
+      type: integer
+      description: Количество критических пропусков
+    non_blocking_gaps:
+      type: integer
+      description: Количество некритических пропусков
+    recommendation:
+      type: string
+      description: Общая рекомендация по заявке
+
+examples:
+  - input:
+      application_data:
+        applicant:
+          name: "ООО «Пример»"
+          inn: "7712345678"
+          address: "119991, г. Москва, ул. Ленина, д. 1"
+          email: null
+        mark:
+          text: "ПРИМЕР"
+          type: "словесное"
+          image_file: null
+        classes: [35, 42]
+        description: "Услуги в области рекламы"
+      required_fields:
+        - "applicant.name"
+        - "applicant.inn"
+        - "applicant.address"
+        - "applicant.email"
+        - "mark.text"
+        - "mark.type"
+        - "mark.image_file"
+        - "classes"
+        - "description"
+    output:
+      is_complete: false
+      missing_fields:
+        - field: "applicant.email"
+          reason: "Email обязателен для получения уведомлений от Роспатента"
+          who_provides: "client"
+          criticality: "blocking"
+        - field: "mark.image_file"
+          reason: "Изображение обязательно для регистрации обозначения"
+          who_provides: "client"
+          criticality: "blocking"
+      completeness_score: 0.78
+      blocking_gaps: 2
+      non_blocking_gaps: 0
+      recommendation: "Запросить у клиента email и изображение товарного знака"
+
+guardrails:
+  - Не придумывай поля, которых нет в input_schema
+  - Всегда заполняй who_provides из разрешённого enum
+  - completeness_score должен быть между 0.0 и 1.0
+  - Поле recommendation должно быть на русском языке
+
+evaluation_notes: >
+  Проверять: корректность criticality (blocking/non_blocking только для реально
+  обязательных полей), адекватность completeness_score (число заполненных /
+  общее число обязательных), соответствие who_provides (agent — только для
+  технических полей системы).

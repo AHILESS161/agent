@@ -1,0 +1,891 @@
+"""SQLAlchemy 2.0 ORM models for the Trademark Registration System."""
+
+from __future__ import annotations
+
+import enum
+from datetime import datetime
+from typing import Any, Optional
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.infrastructure.database.session import Base
+
+
+# ---------------------------------------------------------------------------
+# Enumerations
+# ---------------------------------------------------------------------------
+
+class UserRole(str, enum.Enum):
+    admin = "admin"
+    lawyer = "lawyer"
+    manager = "manager"
+    client = "client"
+
+
+class ClientType(str, enum.Enum):
+    company = "company"
+    individual = "individual"
+    sole_proprietor = "sole_proprietor"
+
+
+class ApplicationStatus(str, enum.Enum):
+    # 18 states
+    draft = "draft"
+    info_requested = "info_requested"
+    info_received = "info_received"
+    classification_pending = "classification_pending"
+    classification_review = "classification_review"
+    classification_approved = "classification_approved"
+    legal_review_pending = "legal_review_pending"
+    legal_review_in_progress = "legal_review_in_progress"
+    legal_review_done = "legal_review_done"
+    conflict_search_pending = "conflict_search_pending"
+    conflict_search_in_progress = "conflict_search_in_progress"
+    conflict_search_done = "conflict_search_done"
+    memo_generation = "memo_generation"
+    memo_approved = "memo_approved"
+    document_generation = "document_generation"
+    document_approved = "document_approved"
+    submitted = "submitted"
+    closed = "closed"
+
+
+class MarkType(str, enum.Enum):
+    word = "word"
+    figurative = "figurative"
+    combined = "combined"
+    three_d = "3d"
+    sound = "sound"
+    color = "color"
+    other = "other"
+
+
+class ReviewType(str, enum.Enum):
+    absolute = "absolute"
+    relative = "relative"
+    combined = "combined"
+
+
+class RiskLevel(str, enum.Enum):
+    low = "low"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class ReviewerDecision(str, enum.Enum):
+    approve = "approve"
+    reject = "reject"
+    modify = "modify"
+
+
+class ConflictDecision(str, enum.Enum):
+    conflict = "conflict"
+    no_conflict = "no_conflict"
+    needs_review = "needs_review"
+
+
+class FindingType(str, enum.Enum):
+    absolute = "absolute"
+    relative = "relative"
+
+
+class FindingSeverity(str, enum.Enum):
+    info = "info"
+    warning = "warning"
+    blocking = "blocking"
+
+
+class ItemSource(str, enum.Enum):
+    ai = "ai"
+    manual = "manual"
+    imported = "imported"
+
+
+class NiceCategory(str, enum.Enum):
+    primary = "primary"
+    secondary = "secondary"
+    borderline = "borderline"
+
+
+class SearchJobStatus(str, enum.Enum):
+    queued = "queued"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
+class GenerationStatus(str, enum.Enum):
+    pending = "pending"
+    generating = "generating"
+    generated = "generated"
+    failed = "failed"
+
+
+class TemplateType(str, enum.Enum):
+    application = "application"
+    missing_info_letter = "missing_info_letter"
+    legal_memo = "legal_memo"
+    power_of_attorney = "power_of_attorney"
+
+
+class RecommendedAction(str, enum.Enum):
+    proceed = "proceed"
+    modify = "modify"
+    withdraw = "withdraw"
+    further_review = "further_review"
+
+
+class NotificationType(str, enum.Enum):
+    info = "info"
+    warning = "warning"
+    action_required = "action_required"
+    status_change = "status_change"
+
+
+class JobStatus(str, enum.Enum):
+    queued = "queued"
+    running = "running"
+    waiting_human_review = "waiting_human_review"
+    completed = "completed"
+    failed = "failed"
+    retrying = "retrying"
+    cancelled = "cancelled"
+
+
+class KnowledgeSourceType(str, enum.Enum):
+    law = "law"
+    regulation = "regulation"
+    methodology = "methodology"
+    template = "template"
+    practice = "practice"
+
+
+class AgentRunStatus(str, enum.Enum):
+    started = "started"
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+
+
+# ---------------------------------------------------------------------------
+# Models
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, name="userrole"), nullable=False, default=UserRole.client
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
+    audit_logs: Mapped[list["AuditLog"]] = relationship(
+        back_populates="user", foreign_keys="AuditLog.user_id"
+    )
+
+
+class Client(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    type: Mapped[ClientType] = mapped_column(
+        Enum(ClientType, name="clienttype"), nullable=False
+    )
+    full_name_or_company_name: Mapped[str] = mapped_column(String(512), nullable=False)
+    short_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    contact_person: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    email: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    inn: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    ogrn_or_ogrnip: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Relationships
+    created_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by_user_id])
+    representatives: Mapped[list["ClientRepresentative"]] = relationship(
+        back_populates="client", cascade="all, delete-orphan"
+    )
+    applications: Mapped[list["TrademarkApplicationDraft"]] = relationship(
+        back_populates="client"
+    )
+
+
+class ClientRepresentative(Base):
+    __tablename__ = "client_representatives"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    client_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    role: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    poa_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    personal_data_consent_reference: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+
+    # Relationships
+    client: Mapped["Client"] = relationship(back_populates="representatives")
+
+
+class TrademarkApplicationDraft(Base):
+    __tablename__ = "trademark_application_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    client_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    assigned_lawyer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    assigned_manager_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[ApplicationStatus] = mapped_column(
+        Enum(ApplicationStatus, name="applicationstatus"),
+        nullable=False,
+        default=ApplicationStatus.draft,
+    )
+    mark_type: Mapped[Optional[MarkType]] = mapped_column(
+        Enum(MarkType, name="marktype"), nullable=True
+    )
+    mark_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    mark_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    mark_image_file_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    colors_claimed: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    transliteration: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    translation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description_of_mark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    business_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    goods_services_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    territory: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    priority_claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    client: Mapped["Client"] = relationship(back_populates="applications")
+    assigned_lawyer: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[assigned_lawyer_id]
+    )
+    assigned_manager: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[assigned_manager_id]
+    )
+    goods_services_items: Mapped[list["GoodsServicesItem"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    nice_class_suggestions: Mapped[list["NiceClassSuggestion"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    legal_reviews: Mapped[list["LegalReview"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    conflict_search_jobs: Mapped[list["ConflictSearchJob"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    conflict_search_results: Mapped[list["ConflictSearchResult"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    recommendation_memos: Mapped[list["RecommendationMemo"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    document_packages: Mapped[list["DocumentPackage"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    submissions: Mapped[list["Submission"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    agent_runs: Mapped[list["AgentRun"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+    notifications: Mapped[list["Notification"]] = relationship(
+        back_populates="application"
+    )
+    audit_logs: Mapped[list["AuditLog"]] = relationship(
+        back_populates="application", foreign_keys="AuditLog.application_id"
+    )
+
+
+class GoodsServicesItem(Base):
+    __tablename__ = "goods_services_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    proposed_class: Mapped[int] = mapped_column(Integer, nullable=False)
+    approved_class: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    source: Mapped[ItemSource] = mapped_column(
+        Enum(ItemSource, name="itemsource"), nullable=False, default=ItemSource.manual
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="goods_services_items"
+    )
+
+
+class NiceClassSuggestion(Base):
+    __tablename__ = "nice_class_suggestions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    class_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    class_description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    rationale: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    category: Mapped[Optional[NiceCategory]] = mapped_column(
+        Enum(NiceCategory, name="nicecategory"), nullable=True
+    )
+    risks_if_omitted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risks_if_included: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approved: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    approved_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="nice_class_suggestions"
+    )
+    approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by])
+
+
+class LegalReview(Base):
+    __tablename__ = "legal_reviews"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    review_type: Mapped[ReviewType] = mapped_column(
+        Enum(ReviewType, name="reviewtype"), nullable=False
+    )
+    absolute_grounds_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    relative_grounds_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risk_level: Mapped[Optional[RiskLevel]] = mapped_column(
+        Enum(RiskLevel, name="risklevel"), nullable=True
+    )
+    confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    evidence_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    citations_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    reviewer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_decision: Mapped[Optional[ReviewerDecision]] = mapped_column(
+        Enum(ReviewerDecision, name="reviewerdecision"), nullable=True
+    )
+    override_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="legal_reviews"
+    )
+    reviewer: Mapped[Optional["User"]] = relationship("User", foreign_keys=[reviewer_id])
+    findings: Mapped[list["LegalFinding"]] = relationship(
+        back_populates="legal_review", cascade="all, delete-orphan"
+    )
+
+
+class LegalFinding(Base):
+    __tablename__ = "legal_findings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    legal_review_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("legal_reviews.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    finding_type: Mapped[FindingType] = mapped_column(
+        Enum(FindingType, name="findingtype"), nullable=False
+    )
+    ground_article: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[FindingSeverity] = mapped_column(
+        Enum(FindingSeverity, name="findingseverity"), nullable=False
+    )
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    evidence: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_reference: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    recommendation: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    legal_review: Mapped["LegalReview"] = relationship(back_populates="findings")
+
+
+class ConflictSearchJob(Base):
+    __tablename__ = "conflict_search_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[SearchJobStatus] = mapped_column(
+        Enum(SearchJobStatus, name="searchjobstatus"),
+        nullable=False,
+        default=SearchJobStatus.queued,
+    )
+    search_strategy_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    total_results: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="conflict_search_jobs"
+    )
+    results: Mapped[list["ConflictSearchResult"]] = relationship(
+        back_populates="search_job", cascade="all, delete-orphan"
+    )
+
+
+class ConflictSearchResult(Base):
+    __tablename__ = "conflict_search_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    search_job_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("conflict_search_jobs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    source_record_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    matched_mark: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    classes: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    filing_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    registration_date: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    similarity_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    phonetic_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    translit_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    semantic_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    visual_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    conflict_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reviewer_decision: Mapped[Optional[ConflictDecision]] = mapped_column(
+        Enum(ConflictDecision, name="conflictdecision"), nullable=True
+    )
+
+    # Relationships
+    search_job: Mapped["ConflictSearchJob"] = relationship(back_populates="results")
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="conflict_search_results"
+    )
+
+
+class RecommendationMemo(Base):
+    __tablename__ = "recommendation_memos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    risk_assessment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    recommended_action: Mapped[Optional[RecommendedAction]] = mapped_column(
+        Enum(RecommendedAction, name="recommendedaction"), nullable=True
+    )
+    recommended_classes_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    key_conflicts_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    key_risks_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    evidence_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    approved_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="recommendation_memos"
+    )
+    approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by])
+
+
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    template_type: Mapped[TemplateType] = mapped_column(
+        Enum(TemplateType, name="templatetype"), nullable=False
+    )
+    file_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    version: Mapped[str] = mapped_column(String(50), nullable=False, default="1.0")
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    field_mapping_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    packages: Mapped[list["DocumentPackage"]] = relationship(back_populates="template")
+
+
+class DocumentPackage(Base):
+    __tablename__ = "document_packages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    template_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("document_templates.id", ondelete="RESTRICT"), nullable=False
+    )
+    generation_status: Mapped[GenerationStatus] = mapped_column(
+        Enum(GenerationStatus, name="generationstatus"),
+        nullable=False,
+        default=GenerationStatus.pending,
+    )
+    completeness_check_result_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    approved_by: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="document_packages"
+    )
+    template: Mapped["DocumentTemplate"] = relationship(back_populates="packages")
+    approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by])
+
+
+class Submission(Base):
+    __tablename__ = "submissions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    provider: Mapped[str] = mapped_column(String(100), nullable=False)
+    external_submission_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    current_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    last_polled_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="submissions"
+    )
+    status_events: Mapped[list["SubmissionStatusEvent"]] = relationship(
+        back_populates="submission", cascade="all, delete-orphan"
+    )
+
+
+class SubmissionStatusEvent(Base):
+    __tablename__ = "submission_status_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    submission_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("submissions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    previous_status: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    new_status: Mapped[str] = mapped_column(String(100), nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    raw_payload_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    notification_sent: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # Relationships
+    submission: Mapped["Submission"] = relationship(back_populates="status_events")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    application_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    type: Mapped[NotificationType] = mapped_column(
+        Enum(NotificationType, name="notificationtype"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="notifications")
+    application: Mapped[Optional["TrademarkApplicationDraft"]] = relationship(
+        back_populates="notifications"
+    )
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    application_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    action: Mapped[str] = mapped_column(String(255), nullable=False)
+    entity_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    entity_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    old_value_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    new_value_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship(
+        back_populates="audit_logs", foreign_keys=[user_id]
+    )
+    application: Mapped[Optional["TrademarkApplicationDraft"]] = relationship(
+        back_populates="audit_logs", foreign_keys=[application_id]
+    )
+
+
+class PromptDefinition(Base):
+    __tablename__ = "prompt_definitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    prompt_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    user_template: Mapped[str] = mapped_column(Text, nullable=False)
+    input_schema_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    output_schema_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    examples_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    guardrails_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class AgentRun(Base):
+    __tablename__ = "agent_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    agent_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[AgentRunStatus] = mapped_column(
+        Enum(AgentRunStatus, name="agentrunstatus"),
+        nullable=False,
+        default=AgentRunStatus.started,
+    )
+    input_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    output_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    prompt_version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    model_used: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tokens_input: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    tokens_output: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Relationships
+    application: Mapped[Optional["TrademarkApplicationDraft"]] = relationship(
+        back_populates="agent_runs"
+    )
+
+
+class KnowledgeSource(Base):
+    __tablename__ = "knowledge_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[KnowledgeSourceType] = mapped_column(
+        Enum(KnowledgeSourceType, name="knowledgesourcetype"), nullable=False
+    )
+    file_path: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    url: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    metadata_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    chunks: Mapped[list["KnowledgeChunk"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan"
+    )
+
+
+class KnowledgeChunk(Base):
+    __tablename__ = "knowledge_chunks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    source_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("knowledge_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    metadata_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    embedding_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    source: Mapped["KnowledgeSource"] = relationship(back_populates="chunks")
+
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    job_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[JobStatus] = mapped_column(
+        Enum(JobStatus, name="jobstatus"),
+        nullable=False,
+        default=JobStatus.queued,
+    )
+    payload_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    result_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    started_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    completed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

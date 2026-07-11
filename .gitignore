@@ -1,0 +1,67 @@
+﻿# --- Python / backend ---
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.venv/
+venv/
+env/
+backend/venv/
+backend/.venv/
+# --- Secrets / local env ---
+.env
+.env.local
+.env.*.local
+backend/.env
+!.env.example
+# --- Data / runtime artifacts ---
+backend/trademark.db
+backend/*.sqlite
+backend/*.sqlite3
+# --- Node / frontend ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.npm/
+.pnpm-store/
+frontend/node_modules/
+frontend/.npm/
+frontend/dist/
+frontend/build/
+frontend/.next/
+frontend/.vite/
+frontend/.cache/
+frontend/.turbo/
+frontend/coverage/
+frontend/.nyc_output/
+# --- Frontend screenshots in docs only; raw ones in frontend ignored ---
+frontend/screenshot-*.png
+# --- IDE / OS ---
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+# --- Agent / local scratch ---
+.devassist/
+.claude/
+.aider*
+.continue/
+.scratch/
+tmp/
+*.bak
+*.tmp
+*.log

@@ -1,0 +1,266 @@
+id: recommendations.lawyer_recommendation
+version: "1.0.0"
+description: >
+  Генерирует комплексное экспертное заключение (меморандум) для проверки юристом.
+  Объединяет результаты всех предшествующих проверок в структурированный документ
+  с оценкой рисков и рекомендациями.
+
+system: |
+  Ты — старший патентный поверенный с опытом работы в Роспатенте. Твоя задача —
+  составить профессиональное экспертное заключение для внутреннего использования
+  юридическим отделом патентного бюро.
+
+  Заключение должно:
+  1. Объективно оценить все риски регистрации
+  2. Структурировать информацию от простого к сложному
+  3. Давать конкретные, выполнимые рекомендации
+  4. Цитировать нормы права при обнаружении оснований для отказа
+  5. Учитывать коммерческие интересы клиента
+
+  Стиль: профессиональный юридический, без излишнего канцелярита,
+  чёткие формулировки, ссылки на нормы закона.
+
+  Структура документа:
+  1. Резюме (Executive Summary) — 3-5 предложений
+  2. Описание объекта охраны
+  3. Абсолютные основания — результаты проверки
+  4. Относительные основания — найденные конфликты
+  5. Оценка рисков
+  6. Рекомендуемые действия (приоритизированные)
+  7. Заключение
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Подготовь экспертное заключение для юриста.
+
+  ## Заявка:
+  - ID заявки: {{ application_id }}
+  - Обозначение: {{ mark_text }}
+  - Вид: {{ mark_type }}
+  - Классы: {{ classes | join(', ') }}
+  - Заявитель: {{ applicant_name }}
+  - Дата создания: {{ created_at }}
+
+  ## Результаты проверки полноты:
+  ```json
+  {{ intake_result | tojson(indent=2) }}
+  ```
+
+  ## Результаты проверки абсолютных оснований:
+  ```json
+  {{ absolute_grounds_result | tojson(indent=2) }}
+  ```
+
+  ## Результаты проверки относительных оснований:
+  ```json
+  {{ relative_grounds_result | tojson(indent=2) }}
+  ```
+
+  ## Классификационный анализ:
+  ```json
+  {{ classification_result | tojson(indent=2) }}
+  ```
+
+  {% if additional_context is defined %}
+  ## Дополнительный контекст: {{ additional_context }}
+  {% endif %}
+
+  Составь структурированное экспертное заключение для юриста.
+
+input_schema:
+  type: object
+  required:
+    - application_id
+    - mark_text
+    - mark_type
+    - classes
+    - applicant_name
+    - created_at
+    - intake_result
+    - absolute_grounds_result
+    - relative_grounds_result
+    - classification_result
+  properties:
+    application_id:
+      type: string
+    mark_text:
+      type: string
+    mark_type:
+      type: string
+    classes:
+      type: array
+      items:
+        type: integer
+    applicant_name:
+      type: string
+    created_at:
+      type: string
+    intake_result:
+      type: object
+    absolute_grounds_result:
+      type: object
+    relative_grounds_result:
+      type: object
+    classification_result:
+      type: object
+    additional_context:
+      type: string
+
+output_schema:
+  type: object
+  required:
+    - memo_type
+    - summary
+    - key_findings
+    - risk_assessment
+    - recommended_actions
+    - proceed_to_filing
+    - confidence
+  properties:
+    memo_type:
+      type: string
+      enum: [lawyer_review, urgent_review, informational]
+    summary:
+      type: string
+      description: Краткое резюме для юриста (3-5 предложений)
+    mark_description:
+      type: object
+      properties:
+        text:
+          type: string
+        type:
+          type: string
+        classes:
+          type: array
+        охраноспособность_оценка:
+          type: string
+    key_findings:
+      type: array
+      items:
+        type: string
+      description: Список ключевых выводов
+    risk_assessment:
+      type: object
+      required:
+        - absolute_grounds_risk
+        - relative_grounds_risk
+        - overall_risk
+      properties:
+        absolute_grounds_risk:
+          type: string
+          enum: [low, medium, high, critical]
+        relative_grounds_risk:
+          type: string
+          enum: [low, medium, high, critical]
+        completeness_risk:
+          type: string
+          enum: [low, medium, high, critical]
+        overall_risk:
+          type: string
+          enum: [low, medium, high, critical]
+        risk_narrative:
+          type: string
+    recommended_actions:
+      type: array
+      items:
+        type: object
+        required:
+          - priority
+          - action
+          - responsible
+        properties:
+          priority:
+            type: integer
+          action:
+            type: string
+          responsible:
+            type: string
+            enum: [lawyer, agent, client, system]
+          deadline_days:
+            type: integer
+          legal_basis:
+            type: string
+    proceed_to_filing:
+      type: boolean
+    filing_readiness_notes:
+      type: string
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+
+examples:
+  - input:
+      application_id: "APP-2024-001"
+      mark_text: "ТЕХНОСФЕРА"
+      mark_type: "словесное"
+      classes: [35, 42]
+      applicant_name: 'ООО "Техносфера Плюс"'
+      created_at: "2024-03-15"
+      intake_result:
+        is_complete: true
+        completeness_score: 1.0
+        blocking_gaps: 0
+      absolute_grounds_result:
+        has_absolute_grounds: false
+        risk_level: "low"
+        confidence: 0.88
+      relative_grounds_result:
+        has_relative_grounds: true
+        overall_risk: "medium"
+        conflicts_found:
+          - conflict_mark: "ТЕХНОДОМ"
+            similarity_score: 0.61
+            risk: "medium"
+      classification_result:
+        primary_classes: [{class: 35}, {class: 42}]
+        confidence: 0.92
+    output:
+      memo_type: "lawyer_review"
+      summary: >
+        Заявка на регистрацию словесного товарного знака «ТЕХНОСФЕРА» для классов
+        35 и 42 МКТУ прошла автоматическую проверку. Абсолютных оснований для отказа
+        не выявлено. Обнаружено одно обозначение среднего уровня риска — «ТЕХНОДОМ»
+        (класс 35). Рекомендуется юридическая оценка вероятности смешения перед подачей.
+      key_findings:
+        - "Заявка полна — все обязательные поля заполнены"
+        - "Абсолютных оснований для отказа (ст.1483 п.1-4 ГК РФ) не выявлено"
+        - "Обнаружен 1 конфликт среднего уровня риска: ТЕХНОДОМ (класс 35)"
+        - "Классификация МКТУ корректна — классы 35 и 42 обоснованы"
+      risk_assessment:
+        absolute_grounds_risk: "low"
+        relative_grounds_risk: "medium"
+        completeness_risk: "low"
+        overall_risk: "medium"
+        risk_narrative: >
+          Основной риск — вероятность смешения с «ТЕХНОДОМ» по классу 35.
+          Сходство носит фонетический характер (общий корень «техно»).
+          Требуется анализ однородности товаров/услуг.
+      recommended_actions:
+        - priority: 1
+          action: "Провести детальный анализ сходства с ТЕХНОДОМ и оценить однородность услуг по кл.35"
+          responsible: "lawyer"
+          deadline_days: 3
+          legal_basis: "п.6 ст.1483 ГК РФ"
+        - priority: 2
+          action: "Уточнить перечень услуг по кл.42 для минимизации пересечений"
+          responsible: "agent"
+          deadline_days: 5
+      proceed_to_filing: false
+      filing_readiness_notes: >
+        Заявка готова технически, но требует юридического подтверждения
+        по относительным основаниям перед подачей в Роспатент.
+      confidence: 0.87
+
+guardrails:
+  - summary должен содержать информацию о всех трёх типах проверки
+  - overall_risk = max(absolute_grounds_risk, relative_grounds_risk, completeness_risk)
+  - proceed_to_filing = true только при overall_risk = "low"
+  - Все recommended_actions должны быть конкретными и выполнимыми
+  - Если absolute_grounds_risk = critical или high, обязательно указывать legal_basis
+
+evaluation_notes: >
+  Проверить: охватывает ли summary все ключевые аспекты? Логична ли приоритизация
+  действий? Соответствуют ли responsible values реальным ролям? Консистентен ли
+  proceed_to_filing с overall_risk?

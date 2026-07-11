@@ -1,0 +1,198 @@
+id: classes.nice_class_suggestion
+version: "1.0.0"
+description: >
+  Предлагает классы МКТУ (Международная классификация товаров и услуг, Ниццкое
+  соглашение) на основе описания бизнеса, товаров и услуг. Разделяет на основные,
+  дополнительные и пограничные классы с обоснованием.
+
+system: |
+  Ты — эксперт по классификации МКТУ (Международная классификация товаров и услуг
+  по Ниццкому соглашению). Используется 12-я редакция МКТУ.
+
+  Структура классификации:
+  - Классы 1–34: товары
+  - Классы 35–45: услуги
+
+  Наиболее часто используемые классы:
+  - Кл.9:  Программное обеспечение, электроника, мобильные приложения
+  - Кл.35: Реклама, управление бизнесом, розничная торговля
+  - Кл.36: Финансовые, страховые услуги
+  - Кл.38: Телекоммуникации, интернет-провайдеры
+  - Кл.39: Транспорт, логистика, доставка
+  - Кл.40: Обработка материалов, производство
+  - Кл.41: Образование, развлечения
+  - Кл.42: IT-услуги, разработка ПО, SaaS, научные исследования
+  - Кл.43: Общественное питание, гостиничные услуги
+  - Кл.44: Медицинские, ветеринарные, косметологические услуги
+  - Кл.45: Юридические услуги, личная и социальная помощь
+
+  Правила:
+  1. Предлагай ТОЛЬКО реально нужные классы, не «на всякий случай»
+  2. Различай основной бизнес (primary) и смежные направления (secondary)
+  3. Пограничные классы (borderline) — когда товар/услуга формально могут
+     попасть в несколько классов; указывай условие выбора
+  4. Описание товаров/услуг в рамках класса должно соответствовать заголовку класса МКТУ
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Предложи классы МКТУ для следующего бизнеса.
+
+  ## Описание бизнеса:
+  {{ business_description }}
+
+  ## Основные товары/услуги:
+  {% for item in goods_services %}
+  - {{ item }}
+  {% endfor %}
+
+  {% if existing_classes is defined and existing_classes %}
+  ## Уже выбранные классы (для проверки/дополнения):
+  {{ existing_classes | join(', ') }}
+  {% endif %}
+
+  {% if target_market is defined %}
+  ## Целевой рынок: {{ target_market }}
+  {% endif %}
+
+  {% if budget_constraint is defined and budget_constraint %}
+  Примечание: клиент просит минимальный набор классов (ограниченный бюджет).
+  {% endif %}
+
+  Предложи классы МКТУ с обоснованием. Для каждого класса укажи конкретный
+  перечень товаров/услуг в формате МКТУ.
+
+input_schema:
+  type: object
+  required:
+    - business_description
+    - goods_services
+  properties:
+    business_description:
+      type: string
+      description: Описание бизнеса, чем занимается компания
+    goods_services:
+      type: array
+      items:
+        type: string
+      description: Перечень конкретных товаров и услуг
+    existing_classes:
+      type: array
+      items:
+        type: integer
+      description: Уже выбранные заявителем классы
+    target_market:
+      type: string
+      description: Географический или отраслевой целевой рынок
+    budget_constraint:
+      type: boolean
+      default: false
+      description: Ограничение бюджета — предлагать минимальный набор классов
+
+output_schema:
+  type: object
+  required:
+    - primary_classes
+    - secondary_classes
+    - borderline_classes
+    - recommended_class_description
+    - confidence
+  properties:
+    primary_classes:
+      type: array
+      items:
+        type: object
+        required:
+          - class
+          - rationale
+        properties:
+          class:
+            type: integer
+            minimum: 1
+            maximum: 45
+          rationale:
+            type: string
+    secondary_classes:
+      type: array
+      items:
+        type: object
+        properties:
+          class:
+            type: integer
+          rationale:
+            type: string
+    borderline_classes:
+      type: array
+      items:
+        type: object
+        properties:
+          class:
+            type: integer
+          rationale:
+            type: string
+          condition:
+            type: string
+            description: При каком условии нужен этот класс
+    recommended_class_description:
+      type: object
+      description: >
+        Словарь {class_number: "перечень товаров/услуг в формате МКТУ"}
+    total_classes:
+      type: integer
+    estimated_filing_cost_rub:
+      type: integer
+      description: Ориентировочная стоимость (пошлина Роспатента) в рублях
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+
+examples:
+  - input:
+      business_description: >
+        Сервис доставки готовой еды из ресторанов. Собственное мобильное
+        приложение, агрегатор ресторанов, курьерская служба.
+      goods_services:
+        - "Мобильное приложение для заказа еды"
+        - "Доставка готовых блюд из ресторанов"
+        - "Агрегатор ресторанного меню"
+        - "Программа лояльности для пользователей"
+    output:
+      primary_classes:
+        - class: 43
+          rationale: "Услуги по обеспечению пищевыми продуктами — основной класс для доставки еды"
+        - class: 9
+          rationale: "Мобильное приложение, программное обеспечение"
+        - class: 39
+          rationale: "Транспортировка, курьерская доставка"
+      secondary_classes:
+        - class: 35
+          rationale: "Агрегирование предложений ресторанов — рекламно-информационные услуги"
+        - class: 42
+          rationale: "Разработка и обслуживание IT-платформы, SaaS"
+      borderline_classes:
+        - class: 38
+          rationale: "Телекоммуникационные сервисы — если предоставляется платформа для общения"
+          condition: "Только если есть встроенный чат/мессенджер"
+      recommended_class_description:
+        39: "Доставка товаров; курьерские услуги; распределение пищевых продуктов"
+        43: "Услуги по обеспечению пищевыми продуктами и напитками; заказ пищевых продуктов и напитков"
+        9: "Мобильные приложения для заказа продуктов питания; программное обеспечение"
+        35: "Составление каталогов для третьих лиц; агрегирование информации о товарах и услугах"
+        42: "Предоставление платформы «программное обеспечение как услуга» (SaaS)"
+      total_classes: 5
+      estimated_filing_cost_rub: 45000
+      confidence: 0.93
+
+guardrails:
+  - Не предлагай класс без конкретного обоснования связи с бизнесом
+  - Номера классов строго от 1 до 45
+  - recommended_class_description: используй официальные заголовки классов МКТУ
+  - Если budget_constraint=true, включай только primary_classes
+  - Не путай кл.35 (реклама, торговля) и кл.42 (IT-услуги)
+
+evaluation_notes: >
+  Контрольные вопросы: соответствуют ли предложенные классы реальным заголовкам
+  МКТУ? Не избыточны ли secondary_classes? Обоснован ли каждый borderline_class?
+  Правильна ли ориентировочная стоимость (базовая пошлина ~21000 руб. + 6000 руб.
+  за каждый класс свыше 5-го + 11000 руб. за описание)?

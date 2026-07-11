@@ -1,0 +1,204 @@
+id: notifications.status_change_notification
+version: "1.0.0"
+description: >
+  Генерирует уведомление клиенту об изменении статуса заявки на регистрацию
+  товарного знака. Адаптирует содержание в зависимости от нового статуса
+  и требует ли он действий от клиента.
+
+system: |
+  Ты — менеджер патентного бюро. Составляй лаконичные, информативные уведомления
+  клиентам об изменении статуса заявки.
+
+  Возможные статусы заявки:
+  - draft:              Черновик — заявка создана, не подана
+  - intake_review:      На проверке полноты документов
+  - awaiting_client:    Ожидание данных от клиента
+  - legal_review:       Юридическая проверка (абсолютные/относительные основания)
+  - conflict_search:    Поиск конфликтующих обозначений
+  - ready_for_filing:   Готова к подаче
+  - filed:              Подана в Роспатент
+  - examination:        На рассмотрении в Роспатенте
+  - office_action:      Получен предварительный отказ (запрос Роспатента)
+  - response_pending:   Ожидает ответа на запрос Роспатента
+  - approved:           Одобрена к регистрации
+  - registered:         Зарегистрирована — свидетельство выдано
+  - refused:            Отказано в регистрации
+  - withdrawn:          Отозвана заявителем
+  - appealed:           Обжалована в Роспатенте/суде
+
+  Для каждого статуса:
+  - Объясняй простым языком, что происходит
+  - Указывай, нужны ли действия клиента
+  - Давай реалистичный прогноз по срокам следующего этапа
+  - При получении предварительного отказа — объясняй права клиента
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Составь уведомление об изменении статуса заявки.
+
+  ## Данные заявки:
+  - Номер: {{ application_ref }}
+  - Обозначение: {{ mark_text }}
+  - Классы: {{ classes | join(', ') }}
+
+  ## Изменение статуса:
+  - Предыдущий статус: {{ previous_status }}
+  - Новый статус: {{ new_status }}
+  - Дата изменения: {{ status_date }}
+
+  ## Данные клиента:
+  - Имя: {{ client_name }}
+  {% if client_contact_person is defined %}
+  - Контакт: {{ client_contact_person }}
+  {% endif %}
+
+  {% if status_details is defined %}
+  ## Детали статуса:
+  {{ status_details }}
+  {% endif %}
+
+  {% if office_action_text is defined %}
+  ## Текст запроса/решения Роспатента:
+  {{ office_action_text }}
+  {% endif %}
+
+  {% if response_deadline is defined %}
+  ## Срок ответа: {{ response_deadline }}
+  {% endif %}
+
+  Составь уведомление об изменении статуса.
+
+input_schema:
+  type: object
+  required:
+    - application_ref
+    - mark_text
+    - classes
+    - previous_status
+    - new_status
+    - status_date
+    - client_name
+  properties:
+    application_ref:
+      type: string
+    mark_text:
+      type: string
+    classes:
+      type: array
+      items:
+        type: integer
+    previous_status:
+      type: string
+    new_status:
+      type: string
+    status_date:
+      type: string
+    client_name:
+      type: string
+    client_contact_person:
+      type: string
+    status_details:
+      type: string
+    office_action_text:
+      type: string
+    response_deadline:
+      type: string
+
+output_schema:
+  type: object
+  required:
+    - subject
+    - body
+    - status_code
+    - status_label_ru
+    - requires_action
+    - language
+  properties:
+    subject:
+      type: string
+    body:
+      type: string
+    status_code:
+      type: string
+    status_label_ru:
+      type: string
+    requires_action:
+      type: boolean
+      description: Требует ли новый статус действий от клиента
+    action_description:
+      type: string
+      description: Описание требуемых действий (если requires_action=true)
+    action_deadline:
+      type: string
+      description: Срок для выполнения действий
+    next_expected_status:
+      type: string
+    estimated_days:
+      type: integer
+      description: Ориентировочное количество дней до следующего статуса
+    language:
+      type: string
+      enum: [ru, en]
+
+examples:
+  - input:
+      application_ref: "2024712345"
+      mark_text: "ТЕХНОСТАРТ"
+      classes: [9, 42]
+      previous_status: "filed"
+      new_status: "office_action"
+      status_date: "15.05.2024"
+      client_name: 'ООО "ТехноСтарт"'
+      office_action_text: >
+        Экспертиза заявленного обозначения выявила потенциальное сходство
+        с ТЗ № 789012 «ТЕХНОСТАТ» (кл.9, правообладатель ООО «ТехноСтат»).
+        Заявителю предлагается предоставить доводы в течение 3 месяцев.
+      response_deadline: "15.08.2024"
+    output:
+      subject: "Получен запрос экспертизы Роспатента по заявке 2024712345 «ТЕХНОСТАРТ»"
+      body: |
+        Уважаемый клиент,
+
+        Сообщаем Вам об изменении статуса Вашей заявки на регистрацию
+        товарного знака «ТЕХНОСТАРТ» (рег. № 2024712345, классы МКТУ: 9, 42).
+
+        Статус изменён с «Подана в Роспатент» на «Получен запрос экспертизы».
+        Дата изменения: 15.05.2024.
+
+        Роспатент направил официальный запрос в связи с выявленным потенциальным
+        сходством Вашего обозначения с ранее зарегистрированным товарным знаком
+        «ТЕХНОСТАТ». Это стандартная процедура экспертизы — не означает отказа
+        в регистрации.
+
+        ТРЕБУЕТСЯ ВАШЕ ДЕЙСТВИЕ:
+        Нашим специалистам необходимо подготовить официальный ответ на запрос
+        Роспатента с обоснованием различий обозначений. Мы свяжемся с Вами
+        в течение 3 рабочих дней для согласования позиции.
+
+        Срок ответа на запрос Роспатента: 15.08.2024 (3 месяца).
+
+        При возникновении вопросов обращайтесь к Вашему персональному менеджеру.
+
+        С уважением,
+        Патентное бюро
+      status_code: "office_action"
+      status_label_ru: "Получен запрос экспертизы Роспатента"
+      requires_action: true
+      action_description: "Подготовка ответа на запрос Роспатента — согласование с клиентом"
+      action_deadline: "15.08.2024"
+      next_expected_status: "response_pending"
+      estimated_days: 14
+      language: "ru"
+
+guardrails:
+  - body должен быть полным письмом на русском языке
+  - При requires_action=true обязательно указывай action_description и action_deadline
+  - Тон должен быть спокойным, даже при негативных статусах (refused, office_action)
+  - При статусе registered — поздравительный тон, краткое объяснение следующих шагов
+  - estimated_days должен быть реалистичным для каждого статуса
+
+evaluation_notes: >
+  Проверить: соответствует ли содержание письма new_status? Корректно ли
+  установлен requires_action? Реалистичен ли estimated_days для данного статуса?
+  Упомянут ли action_deadline при requires_action=true?

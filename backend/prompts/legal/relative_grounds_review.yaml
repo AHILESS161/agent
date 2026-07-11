@@ -1,0 +1,250 @@
+id: legal.relative_grounds_review
+version: "1.0.0"
+description: >
+  Анализирует относительные основания для отказа в регистрации товарного знака
+  (п.6, 7, 8, 9 ст.1483 ГК РФ). Проводит визуальный, фонетический и семантический
+  анализ сходства с противопоставленными обозначениями.
+
+system: |
+  Ты — эксперт-патентовед по экспертизе товарных знаков на относительные основания.
+  Применяй методологию Роспатента для оценки сходства до степени смешения.
+
+  Методология сравнительного анализа (Руководство по экспертизе заявок Роспатента):
+
+  1. ВИЗУАЛЬНОЕ (ГРАФИЧЕСКОЕ) СХОДСТВО:
+     - Общее зрительное впечатление
+     - Состав букв, порядок расположения
+     - Длина слова/обозначения
+     - Тип шрифта, наличие графических элементов
+
+  2. ФОНЕТИЧЕСКОЕ (ЗВУКОВОЕ) СХОДСТВО:
+     - Число слогов и их состав
+     - Место ударения
+     - Наличие общих звуков/групп звуков
+     - Метод ЗВУКОВОГО образа
+
+  3. СЕМАНТИЧЕСКОЕ (СМЫСЛОВОЕ) СХОДСТВО:
+     - Семантическая близость понятий
+     - Единый смысловой ряд
+     - Ассоциативные связи
+
+  4. ОДНОРОДНОСТЬ ТОВАРОВ/УСЛУГ:
+     - Принадлежность к одной группе
+     - Назначение, способ применения
+     - Круг потребителей и производителей
+     - Условия реализации
+
+  Обозначения признаются сходными до степени смешения если имеется хотя бы
+  одно сходство ПРИ НАЛИЧИИ однородности товаров/услуг.
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Проведи анализ относительных оснований для отказа.
+
+  ## Заявленное обозначение:
+  - Текст: {{ applicant_mark.text }}
+  - Вид: {{ applicant_mark.type }}
+  - Классы МКТУ: {{ applicant_mark.classes | join(', ') }}
+  - Описание товаров/услуг: {{ applicant_mark.goods_services_description }}
+
+  ## Противопоставленные обозначения:
+  {% for conflict in conflicting_marks %}
+  ### {{ loop.index }}. {{ conflict.mark_text }} ({{ conflict.record_id }})
+  - Правообладатель: {{ conflict.owner }}
+  - Классы МКТУ: {{ conflict.classes | join(', ') }}
+  - Статус: {{ conflict.status }}
+  - Дата регистрации: {{ conflict.registration_date }}
+  {% if conflict.goods_services is defined %}
+  - Товары/услуги: {{ conflict.goods_services }}
+  {% endif %}
+  {% endfor %}
+
+  {% if analysis_depth is defined %}
+  Глубина анализа: {{ analysis_depth }}
+  {% endif %}
+
+  Для каждого противопоставленного обозначения оцени сходство по трём критериям
+  и наличие однородности товаров/услуг. Сделай вывод о вероятности смешения.
+
+input_schema:
+  type: object
+  required:
+    - applicant_mark
+    - conflicting_marks
+  properties:
+    applicant_mark:
+      type: object
+      required:
+        - text
+        - type
+        - classes
+        - goods_services_description
+      properties:
+        text:
+          type: string
+        type:
+          type: string
+        classes:
+          type: array
+          items:
+            type: integer
+        goods_services_description:
+          type: string
+    conflicting_marks:
+      type: array
+      items:
+        type: object
+        required:
+          - record_id
+          - mark_text
+          - owner
+          - classes
+          - status
+          - registration_date
+        properties:
+          record_id:
+            type: string
+          mark_text:
+            type: string
+          owner:
+            type: string
+          classes:
+            type: array
+            items:
+              type: integer
+          status:
+            type: string
+          registration_date:
+            type: string
+          goods_services:
+            type: string
+    analysis_depth:
+      type: string
+      enum: [quick, standard, deep]
+      default: standard
+
+output_schema:
+  type: object
+  required:
+    - has_relative_grounds
+    - conflicts_found
+    - overall_risk
+    - recommendation
+    - confidence
+  properties:
+    has_relative_grounds:
+      type: boolean
+    conflicts_found:
+      type: array
+      items:
+        type: object
+        required:
+          - conflict_mark
+          - registration_number
+          - classes
+          - similarity_type
+          - similarity_score
+          - owner
+          - risk
+        properties:
+          conflict_mark:
+            type: string
+          registration_number:
+            type: string
+          classes:
+            type: array
+            items:
+              type: integer
+          similarity_type:
+            type: array
+            items:
+              type: string
+              enum: [visual, phonetic, semantic]
+          visual_similarity_score:
+            type: number
+            minimum: 0
+            maximum: 1
+          phonetic_similarity_score:
+            type: number
+            minimum: 0
+            maximum: 1
+          semantic_similarity_score:
+            type: number
+            minimum: 0
+            maximum: 1
+          similarity_score:
+            type: number
+            minimum: 0
+            maximum: 1
+            description: Интегральный показатель сходства
+          goods_services_homogeneity:
+            type: boolean
+            description: Однородность товаров/услуг
+          likelihood_of_confusion:
+            type: boolean
+          owner:
+            type: string
+          risk:
+            type: string
+            enum: [low, medium, high, critical]
+          legal_basis:
+            type: string
+            description: Применимый пункт ст.1483 ГК РФ
+    overall_risk:
+      type: string
+      enum: [low, medium, high, critical]
+    recommendation:
+      type: string
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+
+examples:
+  - input:
+      applicant_mark:
+        text: "ЯНДОРА"
+        type: "словесное"
+        classes: [35, 42]
+        goods_services_description: "Интернет-реклама, разработка ПО"
+      conflicting_marks:
+        - record_id: "RU0001234"
+          mark_text: "ЯНДЕКС"
+          owner: "ООО «Яндекс»"
+          classes: [35, 38, 42]
+          status: "registered"
+          registration_date: "2005-01-15"
+    output:
+      has_relative_grounds: true
+      conflicts_found:
+        - conflict_mark: "ЯНДЕКС"
+          registration_number: "RU0001234"
+          classes: [35, 38, 42]
+          similarity_type: ["visual", "phonetic"]
+          visual_similarity_score: 0.72
+          phonetic_similarity_score: 0.68
+          semantic_similarity_score: 0.30
+          similarity_score: 0.70
+          goods_services_homogeneity: true
+          likelihood_of_confusion: true
+          owner: "ООО «Яндекс»"
+          risk: "high"
+          legal_basis: "п.6 ст.1483 ГК РФ"
+      overall_risk: "high"
+      recommendation: >
+        Обнаружено сходство с широкоизвестным обозначением ЯНДЕКС по визуальному
+        и фонетическому критериям. Рекомендуется изменить обозначение заявки.
+      confidence: 0.85
+
+guardrails:
+  - similarity_score должен быть средневзвешенным из трёх критериев
+  - likelihood_of_confusion = true только при similarity_score > 0.65 И однородности товаров
+  - Не путай абсолютные основания (ст.1483 п.1-4) с относительными (п.6-9)
+  - Для каждого конфликта указывай конкретный пункт ст.1483 ГК РФ
+  - overall_risk = max(risk по всем конфликтам)
+
+evaluation_notes: >
+  Проверить: правильность применения трёхкритериальной методики Роспатента,
+  корректность оценки однородности товаров (однородность ≠ идентичность классов),
+  обоснованность likelihood_of_confusion, наличие ссылки на норму закона.

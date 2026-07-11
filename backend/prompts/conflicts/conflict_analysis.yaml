@@ -1,0 +1,256 @@
+id: conflicts.conflict_analysis
+version: "1.0.0"
+description: >
+  Анализирует найденные конфликтующие обозначения, оценивает уровень риска
+  для каждого конфликта и для заявки в целом, рекомендует дальнейшие действия.
+
+system: |
+  Ты — эксперт-патентовед, специализирующийся на анализе рисков при регистрации
+  товарных знаков в России.
+
+  При анализе конфликтов применяй следующую методологию:
+
+  ОЦЕНКА ВЕРОЯТНОСТИ СМЕШЕНИЯ (likelihood of confusion):
+  Анализируется совокупность факторов:
+  1. Степень сходства обозначений (визуальная, фонетическая, семантическая)
+  2. Однородность/идентичность товаров и услуг
+  3. Различительная способность старшего знака (чем выше, тем сильнее охрана)
+  4. Известность/репутация правообладателя
+  5. Внимательность среднего потребителя (специализированный рынок vs массовый)
+
+  УРОВНИ РИСКА:
+  - critical: Вероятность отказа >85%. Классический случай смешения
+  - high: Вероятность отказа 60-85%. Существенные схождения
+  - medium: Вероятность отказа 30-60%. Требует проработки
+  - low: Вероятность отказа <30%. Незначительные совпадения
+
+  РЕКОМЕНДОВАННЫЕ ДЕЙСТВИЯ:
+  - proceed: Подавать без изменений
+  - modify_mark: Изменить обозначение
+  - modify_goods_services: Сузить перечень товаров/услуг
+  - file_coexistence: Запросить согласие правообладателя (коэксистенция)
+  - challenge_prior: Оспорить старший знак (при наличии оснований)
+  - human_review: Передать на рассмотрение юриста
+  - abandon: Отказаться от регистрации данного обозначения
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Проведи анализ конфликтных обозначений для заявки.
+
+  ## Заявленное обозначение:
+  - Текст: {{ applicant_mark.text }}
+  - Вид: {{ applicant_mark.type }}
+  - Классы: {{ applicant_mark.classes | join(', ') }}
+  - Товары/услуги: {{ applicant_mark.goods_services_description }}
+
+  ## Найденные конфликты ({{ conflicts | length }} шт.):
+  {% for c in conflicts %}
+  ### Конфликт {{ loop.index }}: {{ c.mark_text }} ({{ c.record_id }})
+  - Правообладатель: {{ c.owner }}
+  - Классы: {{ c.classes | join(', ') }}
+  - Статус: {{ c.status }}
+  - Сходство визуальное: {{ c.visual_similarity | default('н/д') }}
+  - Сходство фонетическое: {{ c.phonetic_similarity | default('н/д') }}
+  - Сходство семантическое: {{ c.semantic_similarity | default('н/д') }}
+  {% if c.known_brand is defined and c.known_brand %}
+  - ИЗВЕСТНЫЙ БРЕНД: ДА
+  {% endif %}
+  {% endfor %}
+
+  {% if applicant_budget is defined %}
+  ## Бюджет клиента на юридическую защиту: {{ applicant_budget }}
+  {% endif %}
+
+  Для каждого конфликта проведи детальный анализ. Дай общую оценку рисков и рекомендации.
+
+input_schema:
+  type: object
+  required:
+    - applicant_mark
+    - conflicts
+  properties:
+    applicant_mark:
+      type: object
+      required:
+        - text
+        - type
+        - classes
+        - goods_services_description
+      properties:
+        text:
+          type: string
+        type:
+          type: string
+        classes:
+          type: array
+          items:
+            type: integer
+        goods_services_description:
+          type: string
+    conflicts:
+      type: array
+      items:
+        type: object
+        required:
+          - record_id
+          - mark_text
+          - owner
+          - classes
+          - status
+        properties:
+          record_id:
+            type: string
+          mark_text:
+            type: string
+          owner:
+            type: string
+          classes:
+            type: array
+            items:
+              type: integer
+          status:
+            type: string
+          visual_similarity:
+            type: number
+          phonetic_similarity:
+            type: number
+          semantic_similarity:
+            type: number
+          known_brand:
+            type: boolean
+    applicant_budget:
+      type: string
+      description: Бюджет клиента на правовую защиту (low/medium/high)
+
+output_schema:
+  type: object
+  required:
+    - total_conflicts
+    - high_risk_conflicts
+    - medium_risk_conflicts
+    - low_risk_conflicts
+    - overall_risk
+    - detailed_analysis
+    - recommended_action
+    - confidence
+  properties:
+    total_conflicts:
+      type: integer
+    high_risk_conflicts:
+      type: integer
+    medium_risk_conflicts:
+      type: integer
+    low_risk_conflicts:
+      type: integer
+    critical_conflicts:
+      type: integer
+    overall_risk:
+      type: string
+      enum: [low, medium, high, critical]
+    detailed_analysis:
+      type: array
+      items:
+        type: object
+        required:
+          - record_id
+          - mark
+          - visual_similarity
+          - phonetic_similarity
+          - semantic_similarity
+          - goods_services_overlap
+          - risk_level
+          - likelihood_of_confusion
+          - owner
+          - recommendation
+        properties:
+          record_id:
+            type: string
+          mark:
+            type: string
+          visual_similarity:
+            type: number
+          phonetic_similarity:
+            type: number
+          semantic_similarity:
+            type: number
+          goods_services_overlap:
+            type: boolean
+          risk_level:
+            type: string
+            enum: [low, medium, high, critical]
+          likelihood_of_confusion:
+            type: boolean
+          owner:
+            type: string
+          recommendation:
+            type: string
+          legal_basis:
+            type: string
+    recommended_action:
+      type: string
+      enum: [proceed, modify_mark, modify_goods_services, file_coexistence, challenge_prior, human_review, abandon]
+    action_rationale:
+      type: string
+    confidence:
+      type: number
+      minimum: 0
+      maximum: 1
+
+examples:
+  - input:
+      applicant_mark:
+        text: "МЕГАФОН ПЛЮС"
+        type: "словесное"
+        classes: [38]
+        goods_services_description: "Услуги мобильной связи и передачи данных"
+      conflicts:
+        - record_id: "RU0056789"
+          mark_text: "МЕГАФОН"
+          owner: "ПАО «МегаФон»"
+          classes: [38, 35, 42]
+          status: "registered"
+          visual_similarity: 0.88
+          phonetic_similarity: 0.85
+          semantic_similarity: 0.95
+          known_brand: true
+    output:
+      total_conflicts: 1
+      high_risk_conflicts: 0
+      medium_risk_conflicts: 0
+      low_risk_conflicts: 0
+      critical_conflicts: 1
+      overall_risk: "critical"
+      detailed_analysis:
+        - record_id: "RU0056789"
+          mark: "МЕГАФОН"
+          visual_similarity: 0.88
+          phonetic_similarity: 0.85
+          semantic_similarity: 0.95
+          goods_services_overlap: true
+          risk_level: "critical"
+          likelihood_of_confusion: true
+          owner: "ПАО «МегаФон»"
+          recommendation: >
+            Обозначение МЕГАФОН ПЛЮС содержит в качестве доминирующего элемента
+            широко известный товарный знак «МЕГАФОН». Слово «ПЛЮС» не придаёт
+            достаточной различительной способности. Регистрация крайне маловероятна.
+          legal_basis: "п.6, п.10 ст.1483 ГК РФ"
+      recommended_action: "abandon"
+      action_rationale: >
+        Конфликт с известным брендом федерального масштаба при полном совпадении
+        классов и высоком тройном сходстве. Регистрация практически невозможна.
+        Рекомендуется разработать новое оригинальное обозначение.
+      confidence: 0.95
+
+guardrails:
+  - Сумма high+medium+low+critical конфликтов = total_conflicts
+  - overall_risk = наивысший уровень среди всех конфликтов
+  - recommended_action должен быть реалистичным с учётом уровня риска
+  - Для known_brand=true применяй более строгие стандарты оценки (охрана расширяется)
+  - likelihood_of_confusion = true только при risk_level high или critical
+
+evaluation_notes: >
+  Проверить: соответствие recommended_action уровню рисков, обоснование
+  likelihood_of_confusion, правильность подсчёта конфликтов по уровням,
+  наличие legal_basis для критических конфликтов.

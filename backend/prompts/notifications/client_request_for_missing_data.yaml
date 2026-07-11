@@ -1,0 +1,225 @@
+id: notifications.client_request_for_missing_data
+version: "1.0.0"
+description: >
+  Генерирует вежливый, профессиональный запрос к клиенту на предоставление
+  недостающих данных на русском языке. Учитывает тип недостающей информации
+  и деловой стиль общения.
+
+system: |
+  Ты — менеджер патентного бюро, специализирующийся на коммуникации с клиентами.
+  Твоя задача — написать профессиональное деловое письмо клиенту с запросом
+  недостающих документов или сведений.
+
+  Принципы составления письма:
+  1. Вежливый, деловой тон без излишней формальности
+  2. Чёткое объяснение, ПОЧЕМУ нужны конкретные данные
+  3. Указание на последствия непредоставления (задержка/отказ)
+  4. Конкретные инструкции по формату предоставления данных
+  5. Чёткий дедлайн
+
+  Формат предоставления документов:
+  - Изображение знака: JPG/PNG/TIFF, минимум 300 dpi, фон белый
+  - Документы: PDF/A, подписанные ЭЦП
+  - Сканы: разрешение не менее 300 dpi, чёткость
+
+  Правовые последствия при непредоставлении:
+  - Отзыв заявки по истечении срока
+  - Потеря даты приоритета
+  - Дополнительные пошлины за восстановление
+
+  Отвечай ТОЛЬКО валидным JSON.
+
+user_template: |
+  Составь письмо-запрос клиенту о предоставлении недостающих данных.
+
+  ## Данные клиента:
+  - Имя/Наименование: {{ client_name }}
+  {% if client_contact_person is defined %}
+  - Контактное лицо: {{ client_contact_person }}
+  {% endif %}
+  - Email: {{ client_email }}
+  - Обращение: {{ salutation | default('Уважаемый клиент') }}
+
+  ## Заявка:
+  - Номер: {{ application_ref }}
+  - Обозначение: {{ mark_text }}
+
+  ## Недостающие данные:
+  {% for item in missing_items %}
+  {{ loop.index }}. Поле: {{ item.field }}
+     Причина: {{ item.reason }}
+     Критичность: {{ item.criticality }}
+     {% if item.format_hint is defined %}
+     Формат: {{ item.format_hint }}
+     {% endif %}
+  {% endfor %}
+
+  ## Срок предоставления: {{ deadline_days }} рабочих дней
+
+  {% if urgency is defined and urgency == 'high' %}
+  СРОЧНО: Требуется быстрый ответ во избежание задержки с подачей.
+  {% endif %}
+
+  {% if agent_name is defined %}
+  Письмо подписывает: {{ agent_name }}
+  {% endif %}
+
+input_schema:
+  type: object
+  required:
+    - client_name
+    - client_email
+    - application_ref
+    - mark_text
+    - missing_items
+    - deadline_days
+  properties:
+    client_name:
+      type: string
+    client_contact_person:
+      type: string
+    client_email:
+      type: string
+      format: email
+    application_ref:
+      type: string
+    mark_text:
+      type: string
+    salutation:
+      type: string
+    missing_items:
+      type: array
+      minItems: 1
+      items:
+        type: object
+        required:
+          - field
+          - reason
+          - criticality
+        properties:
+          field:
+            type: string
+          reason:
+            type: string
+          criticality:
+            type: string
+            enum: [blocking, non_blocking, recommended]
+          format_hint:
+            type: string
+    deadline_days:
+      type: integer
+      minimum: 1
+      maximum: 30
+    urgency:
+      type: string
+      enum: [normal, high]
+      default: normal
+    agent_name:
+      type: string
+
+output_schema:
+  type: object
+  required:
+    - subject
+    - body
+    - missing_items
+    - urgency
+    - language
+  properties:
+    subject:
+      type: string
+      description: Тема письма
+    body:
+      type: string
+      description: Полный текст письма на русском языке
+    missing_items:
+      type: array
+      items:
+        type: object
+        properties:
+          item:
+            type: string
+          deadline_days:
+            type: integer
+    urgency:
+      type: string
+      enum: [normal, high]
+    language:
+      type: string
+      enum: [ru, en]
+    estimated_response_days:
+      type: integer
+    follow_up_required:
+      type: boolean
+
+examples:
+  - input:
+      client_name: 'ООО "Новый Старт"'
+      client_contact_person: "Александр Иванов"
+      client_email: "a.ivanov@novistart.ru"
+      application_ref: "APP-2024-007"
+      mark_text: "НОВЫЙ СТАРТ"
+      salutation: "Уважаемый Александр"
+      missing_items:
+        - field: "mark.image_file"
+          reason: "Изображение обозначения обязательно для регистрации"
+          criticality: "blocking"
+          format_hint: "JPG или PNG, не менее 300 dpi, белый фон"
+        - field: "applicant.ogrn"
+          reason: "ОГРН необходим для идентификации юридического лица"
+          criticality: "blocking"
+          format_hint: "13-значный номер"
+      deadline_days: 5
+      agent_name: "Мария Петрова"
+    output:
+      subject: "Запрос дополнительных сведений по заявке APP-2024-007 «НОВЫЙ СТАРТ»"
+      body: |
+        Уважаемый Александр,
+
+        Благодарим Вас за обращение в наше патентное бюро. В ходе подготовки
+        заявки на регистрацию товарного знака «НОВЫЙ СТАРТ» (рег. № APP-2024-007)
+        нами выявлены следующие недостающие сведения, без которых подача заявки
+        в Роспатент невозможна:
+
+        1. Изображение товарного знака
+           Формат: JPG или PNG, разрешение не менее 300 dpi, фон белый.
+           Необходимо для идентификации обозначения как объекта охраны.
+
+        2. Основной государственный регистрационный номер (ОГРН)
+           Формат: 13-значный номер.
+           Требуется для идентификации юридического лица-заявителя.
+
+        Просим Вас предоставить указанные документы и сведения в течение
+        5 (пяти) рабочих дней с момента получения настоящего письма.
+
+        Обращаем Ваше внимание: непредоставление запрошенных сведений в
+        установленный срок может повлечь задержку подачи заявки и потерю
+        даты приоритета.
+
+        Документы просим направлять на электронный адрес, с которого Вы
+        получили данное письмо, с пометкой «APP-2024-007».
+
+        С уважением,
+        Мария Петрова
+        Патентное бюро
+      missing_items:
+        - item: "Изображение товарного знака (JPG/PNG, 300+ dpi)"
+          deadline_days: 5
+        - item: "ОГРН организации (13 цифр)"
+          deadline_days: 5
+      urgency: "normal"
+      language: "ru"
+      estimated_response_days: 5
+      follow_up_required: true
+
+guardrails:
+  - body должен быть полным профессиональным письмом на русском языке
+  - Каждый missing_item должен быть объяснён в теле письма
+  - Всегда включай конкретный дедлайн в текст письма
+  - Не используй угрожающий тон — только информационный
+  - Тема письма (subject) должна включать номер заявки и название знака
+
+evaluation_notes: >
+  Проверить: вежлив ли тон? Чётко ли объяснены причины запроса?
+  Упомянуты ли все missing_items в теле? Указан ли дедлайн?
+  Профессиональна ли подпись?

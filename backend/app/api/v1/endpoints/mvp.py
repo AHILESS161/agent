@@ -770,10 +770,17 @@ async def run_mvp_pipeline(
         documents = await _step_documents(session, app, llm, registry)
         _record("documents", "completed", **documents)
 
-        submission = await _step_submission(
-            session, app, llm, registry, registry_provider, request, current_user
+        # Подача НЕ выполняется в общем прогоне. Это юридически значимое
+        # действие: оно требует отдельного вызова, явного feature flag и
+        # подтверждения специалистом. См. POST /{id}/submit.
+        _record(
+            "submission",
+            "skipped",
+            reason=(
+                "Подача заявки не выполняется автоматически. "
+                "Требуется отдельное подтверждение специалистом."
+            ),
         )
-        _record("submission", "completed", **submission)
 
         status_step = await _step_status_monitor(session, app, llm, registry, registry_provider)
         _record("status", "completed", **status_step)

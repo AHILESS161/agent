@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from app.infrastructure.database.models import UserRole
 from app.services import file_storage
+from tests.conftest import login_headers
 
 # Синтаксически корректный PDF с одной пустой страницей.
 # Заглушка вида b"%PDF-" + мусор проходит проверку сигнатуры, но не
@@ -33,27 +35,14 @@ def isolated_storage(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def lawyer_token(client) -> dict[str, str]:
+async def lawyer_token(client, api_user_factory) -> dict[str, str]:
     """Реальный пользователь в тестовой БД + настоящий токен.
 
     Синтетический токен из conftest не подходит: get_current_user
     сверяет пользователя с БД, а в in-memory БД его нет.
     """
-    client.post(
-        "/api/v1/auth/register",
-        json={
-            "email": "lawyer-docs@test.ru",
-            "password": "test12345",
-            "full_name": "Тестовый юрист",
-            "role": "lawyer",
-        },
-    )
-    response = client.post(
-        "/api/v1/auth/login/json",
-        json={"email": "lawyer-docs@test.ru", "password": "test12345"},
-    )
-    token = response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    await api_user_factory("lawyer-docs@test.ru", UserRole.lawyer)
+    return login_headers(client, "lawyer-docs@test.ru")
 
 
 @pytest.fixture

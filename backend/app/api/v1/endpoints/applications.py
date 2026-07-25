@@ -133,6 +133,7 @@ async def _create_audit(
 from app.api.dependencies import (  # noqa: E402
     _get_llm_provider,
     _get_prompt_registry,
+    _get_registry_provider,
 )
 
 
@@ -651,7 +652,7 @@ async def search_conflicts(
         from app.infrastructure.providers.factory import ProviderFactory
         llm = _get_llm_provider()
         registry = _get_prompt_registry()
-        provider = ProviderFactory.create("fips")
+        provider = _get_registry_provider()
 
         orchestrator = ConflictSearchOrchestrator(registry, llm, provider=provider)  # type: ignore[call-arg]
 
@@ -982,10 +983,48 @@ async def approve_documents(
 async def submit_to_fips(
     application_id: int,
     request: Request,
+    confirm: bool = Query(
+        default=False,
+        description="Явное подтверждение специалистом необратимого действия",
+    ),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(require_roles("admin", "lawyer", "manager")),
 ) -> MessageResponse:
-    """Submit application to FIPS via the registered provider."""
+    """Подать заявку во внешний реестр через провайдера.
+
+    Действие юридически значимое и по умолчанию запрещено.
+    Требуется одновременно:
+      - ENABLE_REAL_SUBMISSION=true;
+      - выключенный DEMO_MODE;
+      - подтверждение специалистом (confirm=true).
+    """
+    from app.core.config import settings
+
+    if settings.DEMO_MODE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Система работает в демонстрационном режиме: реальная подача "
+                "заявки запрещена. Отключите DEMO_MODE, чтобы разрешить её."
+            ),
+        )
+    if not settings.ENABLE_REAL_SUBMISSION:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Подача заявки отключена. Включите ENABLE_REAL_SUBMISSION "
+                "после проверки готовности пакета документов."
+            ),
+        )
+    if not confirm:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Подача заявки — необратимое действие. Повторите запрос "
+                "с параметром confirm=true, подтверждая осознанность."
+            ),
+        )
+
     app = await _get_app_or_404(application_id, session, load_client=True)
 
     # Basic completeness check for submission
@@ -1000,7 +1039,7 @@ async def submit_to_fips(
     try:
         from app.infrastructure.providers.factory import ProviderFactory
         from app.infrastructure.providers.base import SubmissionPayload
-        provider = ProviderFactory.create("fips")
+        provider = _get_registry_provider()
 
         sub_payload = SubmissionPayload(
             application_id=str(application_id),

@@ -43,10 +43,14 @@ class ProviderFactory:
             return MockFipsProvider()
 
         if provider_type in ("fips", "rospatent"):
-            # Real FIPS/Роспатент provider is not yet implemented. Fall back to
-            # the mock dataset so development/integration tests keep working.
-            from app.infrastructure.providers.mock_fips import MockFipsProvider
-            return MockFipsProvider()
+            # Реальная интеграция с ФИПС/Роспатентом не реализована.
+            # Молча подставлять демо-датасет нельзя: это выдало бы
+            # ограниченный demo-поиск за полноценный поиск по реестру.
+            raise NotImplementedError(
+                "Провайдер ФИПС/Роспатент пока не реализован. "
+                "Укажите FIPS_PROVIDER=mock, чтобы работать с демо-датасетом "
+                "и получать честную отметку demo-режима в отчётах."
+            )
 
         raise ValueError(
             f"Unknown registry provider type: '{provider_type}'. "

@@ -150,6 +150,67 @@ def client(async_engine):
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def disable_rate_limit(monkeypatch):
+    """Отключить ограничение частоты запросов в тестах.
+
+    Тесты обращаются к /auth/login десятки раз подряд с одного адреса
+    и упирались бы в лимит. Сам лимитер проверяется отдельно
+    в tests/unit/test_rate_limit.py.
+    """
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+
+
+# ---------------------------------------------------------------------------
+# Реальные пользователи в тестовой БД
+# ---------------------------------------------------------------------------
+
+@pytest_asyncio.fixture
+async def api_user_factory(async_engine):
+    """Создать пользователя прямо в тестовой БД.
+
+    Через API это больше невозможно: /auth/register закрыт для всех,
+    кроме администратора, — эндпоинт принимает поле role и в открытом
+    виде позволял назначить себе роль admin.
+    """
+    async def _create(
+        email: str,
+        role: UserRole = UserRole.lawyer,
+        password: str = "test12345",
+    ) -> User:
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        factory = async_sessionmaker(
+            bind=async_engine, class_=AsyncSession, expire_on_commit=False
+        )
+        async with factory() as session:
+            user = User(
+                email=email,
+                hashed_password=hash_password(password),
+                full_name=f"Тестовый {role.value}",
+                role=role,
+                is_active=True,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
+
+    return _create
+
+
+def login_headers(client, email: str, password: str = "test12345") -> dict[str, str]:
+    """Получить настоящий заголовок авторизации через /auth/login/json."""
+    response = client.post(
+        "/api/v1/auth/login/json", json={"email": email, "password": password}
+    )
+    assert response.status_code == 200, response.text
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
 # ---------------------------------------------------------------------------
 # Seed helpers
 # ---------------------------------------------------------------------------

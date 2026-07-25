@@ -10,6 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.api.middleware.rate_limit import RateLimitMiddleware
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
@@ -68,6 +69,9 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # ---- Ограничение частоты запросов ----------------------------------------
+    app.add_middleware(RateLimitMiddleware)
 
     # ---- Request ID middleware ------------------------------------------------
     @app.middleware("http")

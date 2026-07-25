@@ -27,13 +27,29 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
+from app.infrastructure.database.models import UserRole
+from tests.conftest import login_headers
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _register_and_login(client: TestClient, email: str, role: str = "manager") -> str:
-    """Register a user and return the access token."""
+@pytest.fixture
+async def admin_auth(client, api_user_factory) -> dict:
+    """Заголовок администратора для создания тестовых пользователей."""
+    await api_user_factory("e2e-admin@test.ru", UserRole.admin)
+    return login_headers(client, "e2e-admin@test.ru")
+
+
+def _register_and_login(
+    client: TestClient, email: str, admin_auth: dict, role: str = "manager"
+) -> str:
+    """Создать пользователя (от имени администратора) и войти под ним.
+
+    Регистрация закрыта для всех, кроме admin: эндпоинт принимает поле
+    role и в открытом виде позволял самоназначение роли администратора.
+    """
     client.post(
         "/api/v1/auth/register",
         json={
@@ -42,6 +58,7 @@ def _register_and_login(client: TestClient, email: str, role: str = "manager") -
             "full_name": f"Test {role.title()}",
             "role": role,
         },
+        headers=admin_auth,
     )
     resp = client.post(
         "/api/v1/auth/login",
@@ -125,7 +142,7 @@ class TestFullApplicationFlow:
         assert response.status_code == 200
         assert response.json()["status"] == "ok"
 
-    def test_step_2_register_manager(self, client: TestClient):
+    async def test_step_2_register_manager(self, client: TestClient, admin_auth):
         """
         Step 2: Register a manager user who will process applications.
         A manager can create clients, create applications, and assign lawyers.
@@ -138,6 +155,7 @@ class TestFullApplicationFlow:
                 "full_name": "Менеджер E2E Тест",
                 "role": "manager",
             },
+            headers=admin_auth,
         )
 
         # Assert
@@ -146,7 +164,7 @@ class TestFullApplicationFlow:
         assert body["role"] == "manager"
         assert "id" in body
 
-    def test_step_3_manager_login(self, client: TestClient):
+    async def test_step_3_manager_login(self, client: TestClient, admin_auth):
         """
         Step 3: Manager logs in and receives a JWT token.
         The token will be used for all subsequent API calls.
@@ -160,6 +178,7 @@ class TestFullApplicationFlow:
                 "full_name": "Менеджер E2E Тест 2",
                 "role": "manager",
             },
+            headers=admin_auth,
         )
 
         response = client.post(
@@ -174,12 +193,12 @@ class TestFullApplicationFlow:
         assert body["token_type"] == "bearer"
         assert body["expires_in"] > 0
 
-    def test_step_4_create_client(self, client: TestClient):
+    async def test_step_4_create_client(self, client: TestClient, admin_auth):
         """
         Step 4: Manager creates a client entity (ООО "ТехноСфера").
         The client record stores legal name, INN, address, and contact info.
         """
-        token = _register_and_login(client, "e2e_mgr_step4@test.ru")
+        token = _register_and_login(client, "e2e_mgr_step4@test.ru", admin_auth)
 
         response = _create_client_entity(client, token, 'ООО "ТехноСфера E2E"', "7701234568")
 
@@ -191,12 +210,12 @@ class TestFullApplicationFlow:
             body = response.json()
             assert "id" in body
 
-    def test_step_5_create_application_draft(self, client: TestClient):
+    async def test_step_5_create_application_draft(self, client: TestClient, admin_auth):
         """
         Step 5: Manager creates a new application draft.
         The application starts in 'draft' status with minimal required data.
         """
-        token = _register_and_login(client, "e2e_mgr_step5@test.ru")
+        token = _register_and_login(client, "e2e_mgr_step5@test.ru", admin_auth)
 
         # First create a client (may return 201 or 200 depending on endpoint)
         client_resp = _create_client_entity(client, token, 'ООО "АпплТест E2E"', "7701234569")
@@ -210,12 +229,12 @@ class TestFullApplicationFlow:
                 f"Application creation failed: {app_resp.text}"
             )
 
-    def test_step_6_list_applications(self, client: TestClient):
+    async def test_step_6_list_applications(self, client: TestClient, admin_auth):
         """
         Step 6: Manager can list applications and see the newly created one.
         The list endpoint supports filtering and pagination.
         """
-        token = _register_and_login(client, "e2e_mgr_step6@test.ru")
+        token = _register_and_login(client, "e2e_mgr_step6@test.ru", admin_auth)
 
         response = client.get(
             "/api/v1/applications",
@@ -252,7 +271,7 @@ class TestIncompleteApplicationFlow:
     incomplete information and the system generates a data request.
     """
 
-    def test_scenario2_step_1_setup(self, client: TestClient):
+    async def test_scenario2_step_1_setup(self, client: TestClient, admin_auth):
         """
         Step 1: Setup — register users and verify the system accepts their requests.
         """
@@ -264,6 +283,7 @@ class TestIncompleteApplicationFlow:
                 "password": "ManagerPass123",
                 "role": "manager",
             },
+            headers=admin_auth,
         )
         assert mgr_resp.status_code == 201
 
@@ -275,10 +295,11 @@ class TestIncompleteApplicationFlow:
                 "password": "LawyerPass123",
                 "role": "lawyer",
             },
+            headers=admin_auth,
         )
         assert lwr_resp.status_code == 201
 
-    def test_scenario2_step_2_incomplete_application_attempt(self, client: TestClient):
+    async def test_scenario2_step_2_incomplete_application_attempt(self, client: TestClient, admin_auth):
         """
         Step 2: Attempt to create an application with missing goods_services_raw.
 
@@ -287,7 +308,7 @@ class TestIncompleteApplicationFlow:
         Both behaviours are acceptable depending on implementation.
         """
         # Register and login
-        mgr_token = _register_and_login(client, "e2e_s2_mgr2@test.ru")
+        mgr_token = _register_and_login(client, "e2e_s2_mgr2@test.ru", admin_auth)
 
         # Create client first
         client_resp = _create_client_entity(
@@ -355,12 +376,12 @@ class TestIncompleteApplicationFlow:
         blocking_fields = {issue.field for issue in result.blocking_issues}
         assert "mark_image_file_id" in blocking_fields
 
-    def test_scenario2_step_4_notifications_endpoint_accessible(self, client: TestClient):
+    async def test_scenario2_step_4_notifications_endpoint_accessible(self, client: TestClient, admin_auth):
         """
         Step 4: Notifications endpoint is accessible to authenticated users.
         After a blocking event, the user should be able to retrieve notifications.
         """
-        token = _register_and_login(client, "e2e_s2_notif@test.ru")
+        token = _register_and_login(client, "e2e_s2_notif@test.ru", admin_auth)
 
         response = client.get(
             "/api/v1/notifications",
@@ -370,12 +391,12 @@ class TestIncompleteApplicationFlow:
         # Acceptable: 200 (empty list) or 403 (role restrictions)
         assert response.status_code in (200, 403)
 
-    def test_scenario2_step_5_audit_log_accessible(self, client: TestClient):
+    async def test_scenario2_step_5_audit_log_accessible(self, client: TestClient, admin_auth):
         """
         Step 5: Audit log endpoint is accessible to admin users.
         All system actions should be traceable via the audit log.
         """
-        token = _register_and_login(client, "e2e_s2_admin@test.ru", role="admin")
+        token = _register_and_login(client, "e2e_s2_admin@test.ru", admin_auth, role="admin")
 
         response = client.get(
             "/api/v1/audit",

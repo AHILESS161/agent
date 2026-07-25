@@ -14,9 +14,10 @@ from app.core.security import (
     create_access_token,
     get_current_user,
     hash_password,
+    require_roles,
     verify_password,
 )
-from app.infrastructure.database.models import User
+from app.infrastructure.database.models import User, UserRole
 from app.infrastructure.database.session import get_session
 from app.schemas.auth import LoginRequest, PasswordChange, TokenResponse, UserCreate, UserResponse
 
@@ -98,8 +99,16 @@ async def login_json(
 async def register(
     payload: UserCreate,
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_roles(UserRole.admin.value)),
 ) -> UserResponse:
-    """Register a new user account."""
+    """Создать учётную запись. Доступно только администратору.
+
+    Регистрация намеренно закрыта: эндпоинт принимает поле ``role``,
+    поэтому в открытом виде он позволял любому желающему создать себе
+    учётную запись с ролью администратора.
+    """
+    del current_user  # используется только как проверка прав
+
     result = await session.execute(select(User).where(User.email == str(payload.email)))
     if result.scalar_one_or_none():
         raise HTTPException(

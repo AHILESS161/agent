@@ -1,0 +1,245 @@
+# ---------------------------------------------------------------------------
+# Паттерны извлечения реквизитов из выписки ЕГРЮЛ.
+#
+# Формат выписки — нумерованная таблица:
+#     <№ строки> <Наименование показателя> <Значение показателя>
+# Значение может занимать несколько строк, поэтому используется захват
+# [\s\S]+? и общий терминатор {ROW_END} (раскрывается в extractors/registry.py).
+#
+# ВАЖНО: все паттерны привязаны к подписи поля. «Голый» поиск цифр
+# недопустим — в типовой выписке десятки 13-значных номеров ГРН и
+# несколько ИНН (директор, учредители), которые иначе будут приняты
+# за реквизиты организации.
+#
+# Файл версионируется; изменение схемы требует поднятия version.
+# ---------------------------------------------------------------------------
+version: 1
+document_kind: egrul_extract
+description: Выписка из Единого государственного реестра юридических лиц
+
+# Разделы документа. Нужны, потому что одинаковые подписи полей
+# встречаются в разных разделах:
+#   - «Фамилия/Имя/Отчество» — и у руководителя, и у учредителей;
+#   - «Дата регистрации» — и у организации, и у регистрации в ПФР и ФСС.
+sections:
+  registration:
+    start: '(?m)^\s*Сведения о регистрации\s*$'
+    end: 'Сведения о регистрирующем органе'
+  director:
+    start: 'Сведения о лице,\s*имеющем право без доверенности действовать'
+    end: 'Сведения об учредителях|Сведения о видах экономической|Сведения о состоянии'
+  founders:
+    start: 'Сведения об учредителях'
+    end: 'Сведения о видах экономической|Сведения о состоянии'
+
+fields:
+  # --- Наименование -------------------------------------------------------
+  - field_id: registry.legal_entity.full_name
+    label: Полное наименование юридического лица
+    required: true
+    normalizer: legal_entity_name
+    patterns:
+      - pattern_id: egrul_full_name_row
+        regex: '(?m)^\s*\d+\s+Полное наименование\s+([\s\S]+?){ROW_END}'
+        confidence: 0.95
+
+  - field_id: registry.legal_entity.short_name
+    label: Сокращённое наименование
+    required: false
+    normalizer: legal_entity_name
+    patterns:
+      - pattern_id: egrul_short_name_row
+        regex: '(?m)^\s*\d+\s+Сокращенное наименование\s+([\s\S]+?){ROW_END}'
+        confidence: 0.95
+
+  # --- Идентификаторы -----------------------------------------------------
+  - field_id: registry.legal_entity.ogrn
+    label: ОГРН
+    required: true
+    normalizer: ogrn
+    validator: ogrn
+    patterns:
+      # Строка таблицы «13 ОГРН 1184205019129».
+      - pattern_id: egrul_ogrn_row
+        regex: '(?m)^\s*\d+\s+ОГРН\s+(\d{13})(?!\d)'
+        confidence: 0.95
+      # Колонтитул страницы «03.06.2020 05:52:20 ОГРН 1184205019129».
+      # Даёт то же значение и служит подтверждением, а не конфликтом.
+      - pattern_id: egrul_ogrn_footer
+        regex: 'ОГРН\s+(\d{13})(?!\d)'
+        confidence: 0.75
+
+  - field_id: registry.legal_entity.inn
+    label: ИНН
+    required: true
+    normalizer: inn
+    validator: inn_legal_entity
+    patterns:
+      # Строго 10 цифр: у директора и учредителей ИНН 12-значный.
+      - pattern_id: egrul_inn_row
+        regex: '(?m)^\s*\d+\s+ИНН\s+(\d{10})(?!\d)'
+        confidence: 0.95
+
+  - field_id: registry.legal_entity.kpp
+    label: КПП
+    required: false
+    normalizer: kpp
+    validator: kpp
+    patterns:
+      - pattern_id: egrul_kpp_row
+        regex: '(?m)^\s*\d+\s+КПП\s+(\d{9})(?!\d)'
+        confidence: 0.95
+
+  # --- Регистрация --------------------------------------------------------
+  - field_id: registry.legal_entity.registration_date
+    label: Дата регистрации
+    required: false
+    # Ограничено разделом: «Дата регистрации» встречается ещё дважды —
+    # в сведениях о регистрации в ПФР и ФСС.
+    section: registration
+    normalizer: date
+    validator: date
+    patterns:
+      - pattern_id: egrul_registration_date_row
+        regex: '(?m)^\s*\d+\s+Дата регистрации\s+(\d{2}\.\d{2}\.\d{4})'
+        confidence: 0.95
+
+  - field_id: registry.legal_entity.registering_authority
+    label: Регистрирующий орган
+    required: false
+    normalizer: whitespace
+    patterns:
+      - pattern_id: egrul_registering_authority_row
+        regex: '(?m)^\s*\d+\s+Наименование регистрирующего органа\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.formation_method
+    label: Способ образования
+    required: false
+    normalizer: whitespace
+    patterns:
+      - pattern_id: egrul_formation_method_row
+        regex: '(?m)^\s*\d+\s+Способ образования\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  # --- Адрес (собирается из компонентов) ----------------------------------
+  - field_id: registry.legal_entity.address.postal_code
+    label: Почтовый индекс
+    required: false
+    normalizer: digits
+    address_part: postal_code
+    patterns:
+      - pattern_id: egrul_postal_code_row
+        regex: '(?m)^\s*\d+\s+Почтовый индекс\s+(\d{6})'
+        confidence: 0.95
+
+  - field_id: registry.legal_entity.address.region
+    label: Субъект Российской Федерации
+    required: false
+    address_part: region
+    patterns:
+      - pattern_id: egrul_region_row
+        regex: '(?m)^\s*\d+\s+Субъект Российской Федерации\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.address.city
+    label: Город
+    required: false
+    address_part: city
+    patterns:
+      - pattern_id: egrul_city_row
+        regex: '(?m)^\s*\d+\s+Город \(волость и т\.п\.\)\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.address.street
+    label: Улица
+    required: false
+    address_part: street
+    patterns:
+      - pattern_id: egrul_street_row
+        regex: '(?m)^\s*\d+\s+Улица \(проспект, переулок и т\.д\.\)\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.address.house
+    label: Дом
+    required: false
+    address_part: house
+    patterns:
+      - pattern_id: egrul_house_row
+        regex: '(?m)^\s*\d+\s+Дом \(владение и т\.п\.\)\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.address.office
+    label: Офис / квартира
+    required: false
+    address_part: office
+    patterns:
+      - pattern_id: egrul_office_row
+        regex: '(?m)^\s*\d+\s+Офис \(квартира и т\.п\.\)\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  # --- Руководитель -------------------------------------------------------
+  # Ограничены разделом: у учредителей подписи полей такие же.
+  - field_id: registry.legal_entity.director.last_name
+    label: Фамилия руководителя
+    required: false
+    sensitive: true
+    section: director
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrul_director_last_name
+        regex: '(?m)^\s*\d+\s+Фамилия\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.director.first_name
+    label: Имя руководителя
+    required: false
+    sensitive: true
+    section: director
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrul_director_first_name
+        regex: '(?m)^\s*\d+\s+Имя\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.director.middle_name
+    label: Отчество руководителя
+    required: false
+    sensitive: true
+    section: director
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrul_director_middle_name
+        regex: '(?m)^\s*\d+\s+Отчество\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  - field_id: registry.legal_entity.director.position
+    label: Должность руководителя
+    required: false
+    section: director
+    normalizer: whitespace
+    patterns:
+      - pattern_id: egrul_director_position
+        regex: '(?m)^\s*\d+\s+Должность\s+([\s\S]+?){ROW_END}'
+        confidence: 0.9
+
+  # --- Реквизиты самой выписки -------------------------------------------
+  - field_id: registry.extract.number
+    label: Номер выписки
+    required: false
+    # Номер переносится на другую строку — пробелы внутри убираем.
+    normalizer: no_whitespace
+    patterns:
+      - pattern_id: egrul_extract_number
+        regex: '№\s*(ЮЭ[\d\-\s]+?\d)\s*(?=\n|дата|$)'
+        confidence: 0.85
+
+  - field_id: registry.extract.issue_date
+    label: Дата формирования выписки
+    required: false
+    normalizer: date
+    validator: date
+    patterns:
+      - pattern_id: egrul_extract_date
+        regex: '(?m)^\s*(\d{2}\.\d{2}\.\d{4})\s+№\s*ЮЭ'
+        confidence: 0.9

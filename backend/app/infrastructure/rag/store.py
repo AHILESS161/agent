@@ -97,6 +97,7 @@ async def ingest_file(
         source = existing
         source.version = version
         source.name = title
+        source.source_type = source_type
         source.is_active = True
     else:
         source = KnowledgeSource(
@@ -137,6 +138,24 @@ async def ingest_file(
     )
 
 
+# Соответствие файлов типам источников. Тип определяет, в какой анализ
+# попадёт материал: нормы — в оценку оснований отказа, справочник МКТУ —
+# в подбор классов.
+_SOURCE_TYPE_BY_NAME: dict[str, KnowledgeSourceType] = {
+    "gk_rf": KnowledgeSourceType.law,
+    "nice_classification": KnowledgeSourceType.methodology,
+    "rospatent_guidelines": KnowledgeSourceType.regulation,
+}
+
+
+def detect_source_type(path: Path) -> KnowledgeSourceType:
+    stem = path.stem.lower()
+    for prefix, source_type in _SOURCE_TYPE_BY_NAME.items():
+        if stem.startswith(prefix):
+            return source_type
+    return KnowledgeSourceType.regulation
+
+
 async def ingest_directory(
     session: AsyncSession,
     directory: Path,
@@ -145,7 +164,7 @@ async def ingest_directory(
     """Проиндексировать все документы каталога."""
     results = []
     for path in sorted(directory.glob(pattern)):
-        results.append(await ingest_file(session, path))
+        results.append(await ingest_file(session, path, detect_source_type(path)))
     return results
 
 
@@ -161,6 +180,9 @@ class StoredChunk:
     anchor: str
     article: str | None
     clause: str | None
+    # Тип источника: по нему анализы отбирают свой корпус. Нормы нужны
+    # для оценки оснований отказа, справочник МКТУ — для подбора классов.
+    source_type: str = "regulation"
 
     @property
     def citation_id(self) -> str:
@@ -188,6 +210,7 @@ async def load_active_chunks(session: AsyncSession) -> list[StoredChunk]:
                 source_id=source.id,
                 source_name=source.name,
                 source_version=source.version,
+                source_type=source.source_type.value,
                 content=chunk.content,
                 anchor=meta.get("anchor") or "без раздела",
                 article=meta.get("article"),

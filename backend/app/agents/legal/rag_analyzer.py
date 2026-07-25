@@ -34,7 +34,7 @@ from app.schemas.analysis import AnalysisResult, InsufficientData, RiskLevel
 logger = get_logger(__name__)
 
 # Ограничение на объём контекста: слабые модели теряются в длинном тексте.
-MAX_CONTEXT_CHUNKS = 6
+MAX_CONTEXT_CHUNKS = 8
 
 SYSTEM_PROMPT = """Ты — помощник патентного поверенного. Твоя задача —
 предварительная оценка рисков регистрации товарного знака по абсолютным
@@ -52,6 +52,21 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 5. Не давай категоричных заключений о том, что знак будет зарегистрирован.
    Это предварительная оценка, а не юридическое заключение.
 6. Отвечай СТРОГО валидным JSON по указанной схеме, без пояснений вокруг.
+
+ПРИНЦИП СПЕЦИАЛИЗАЦИИ (обязательно учитывать):
+
+Описательность и различительная способность оцениваются НЕ сами по себе,
+а ТОЛЬКО в отношении конкретных заявленных товаров и услуг.
+
+Одно и то же обозначение может быть описательным для одних товаров
+и фантазийным для других:
+  - «ЯБЛОКО» для свежих фруктов — описательное, указывает на вид товара;
+  - «ЯБЛОКО» для компьютеров — произвольное, различительная способность есть.
+
+Поэтому в каждом выводе о различительной способности обязательно
+указывай, применительно к каким именно товарам или услугам сделан вывод,
+и включай их в case_facts_used. Вывод «обозначение описательное» без
+привязки к товарам неверен.
 """
 
 USER_TEMPLATE = """ФАКТЫ ДЕЛА:
@@ -93,27 +108,66 @@ class AnalysisOutcome:
 class RagAbsoluteGroundsAnalyzer:
     """Анализ абсолютных оснований с проверкой цитат."""
 
+    # Корпус для оценки оснований отказа: нормы и подзаконные акты.
+    # Справочник МКТУ сюда не входит — он нужен для подбора классов,
+    # а в контексте оснований только вытесняет нормы.
+    SOURCE_TYPES = frozenset({"law", "regulation"})
+
     def __init__(self, llm_provider: Any, chunks: list[StoredChunk]) -> None:
         self._llm = llm_provider
-        self._retriever = Retriever(chunks)
+        legal_chunks = [c for c in chunks if c.source_type in self.SOURCE_TYPES]
+        # Если типы не проставлены (старая индексация), работаем со всем
+        # корпусом: лучше шум, чем пустой контекст.
+        self._retriever = Retriever(legal_chunks or chunks)
 
-    def _build_query(self, facts: dict[str, Any]) -> str:
-        """Запрос к базе знаний строится из фактов дела."""
-        parts = [
-            str(facts.get("mark_text") or ""),
-            str(facts.get("description") or ""),
-            str(facts.get("goods_services") or ""),
-            # Терминология оснований помогает поднять релевантные нормы.
-            "различительная способность описательность введение в заблуждение "
-            "общественные интересы мораль государственная символика "
-            "всеобщее употребление отказ в регистрации",
+    def _retrieve_grounds_context(self, facts: dict[str, Any]) -> list:
+        """Отобрать нормы по каждому основанию отдельно.
+
+        Один смешанный запрос не работает: факты дела перевешивают
+        юридическую терминологию. На деле «программное обеспечение,
+        SaaS» поднимало справочник классов МКТУ вместо статьи 1483.
+
+        Поэтому поиск идёт по каждому основанию своим запросом —
+        так же, как поверенный проверяет их по очереди, — а результаты
+        объединяются без дублей.
+        """
+        case_hint = " ".join(
+            str(facts.get(key) or "")
+            for key in ("mark_text", "description", "goods_services")
+        )
+
+        # Запросы намеренно составлены из терминов норм, а не из фактов
+        # дела: факты добавляются лишь как небольшая подсказка.
+        ground_queries = [
+            "различительная способность обозначения отсутствует",
+            "описательное обозначение характеризует вид качество назначение товара",
+            "вошло во всеобщее употребление общепринятый термин символ",
+            "приобретённая различительная способность неохраняемые элементы",
+            "ложное обозначение вводит потребителя в заблуждение изготовитель",
+            "противоречит общественным интересам принципам гуманности и морали",
+            "государственные символы гербы флаги официальные наименования",
+            "объекты культурного наследия культурные ценности",
         ]
-        return " ".join(p for p in parts if p)
+
+        selected: dict[str, Any] = {}
+        for query in ground_queries:
+            for hit in self._retriever.retrieve(f"{query} {case_hint[:120]}", top_k=2):
+                # Один и тот же фрагмент может подойти нескольким основаниям.
+                if hit.citation_id not in selected:
+                    selected[hit.citation_id] = hit
+
+        # Фрагменты с правовым якорем (статья/пункт) идут первыми:
+        # для оценки оснований отказа норма важнее справочного материала,
+        # даже если справочник совпал по словам лучше.
+        ranked = sorted(
+            selected.values(),
+            key=lambda item: (bool(item.chunk.article), item.score),
+            reverse=True,
+        )
+        return ranked[:MAX_CONTEXT_CHUNKS]
 
     async def analyse(self, facts: dict[str, Any]) -> AnalysisOutcome:
-        retrieved = self._retriever.retrieve(
-            self._build_query(facts), top_k=MAX_CONTEXT_CHUNKS
-        )
+        retrieved = self._retrieve_grounds_context(facts)
 
         if not retrieved:
             return AnalysisOutcome(
@@ -256,19 +310,26 @@ class RagAbsoluteGroundsAnalyzer:
         )
 
     async def _call_llm(self, prompt: str) -> str | None:
+        """Вызвать модель через интерфейс BaseLLMProvider.
+
+        Поддерживается и упрощённый интерфейс ``complete(prompt)`` —
+        он используется в тестах с подставными моделями.
+        """
         try:
-            response = await self._llm.complete(
-                prompt=prompt,
-                system=SYSTEM_PROMPT,
-                temperature=0.1,
-            )
-        except TypeError:
-            # Провайдеры с иной сигнатурой (позиционные аргументы).
-            try:
-                response = await self._llm.complete(prompt)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("Ошибка вызова LLM", error=str(exc))
-                return None
+            if hasattr(self._llm, "generate"):
+                from app.infrastructure.llm.base import LLMMessage
+
+                response = await self._llm.generate(
+                    messages=[
+                        LLMMessage(role="system", content=SYSTEM_PROMPT),
+                        LLMMessage(role="user", content=prompt),
+                    ],
+                    temperature=0.1,
+                )
+            else:
+                response = await self._llm.complete(
+                    prompt=prompt, system=SYSTEM_PROMPT, temperature=0.1
+                )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Ошибка вызова LLM", error=str(exc))
             return None

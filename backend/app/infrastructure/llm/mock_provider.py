@@ -3,6 +3,7 @@ Mock LLM provider that returns canned, realistic responses for trademark analysi
 Used for development, testing, and offline operation.
 """
 import json
+import re
 import time
 from typing import Any
 
@@ -222,6 +223,77 @@ _CANNED_STRUCTURED: dict[str, Any] = {
 }
 
 
+def _build_rag_analysis_response(full_text: str) -> str | None:
+    """Ответ для RAG-анализа абсолютных оснований.
+
+    Промпт содержит раздел ИСТОЧНИКИ с блоками вида
+    ``[source_id: kb-N] [название — якорь]`` и текстом фрагмента.
+    Заготовленная цитата здесь не годится: она не пройдёт проверку,
+    потому что её нет в базе знаний. Поэтому mock берёт настоящий
+    фрагмент из переданного контекста — так демонстрируется весь
+    контур целиком, включая подтверждение цитаты.
+    """
+    blocks = re.findall(
+        r"\[source_id:\s*(kb-\d+)\]\s*\[([^\]]*)\]\s*\n(.+?)(?=\n\n---\n\n|\Z)",
+        full_text,
+        re.DOTALL,
+    )
+    if not blocks:
+        return None
+
+    source_id, header, content = blocks[0]
+    anchor = header.split("—")[-1].strip() if "—" in header else header.strip()
+
+    # Берём осмысленный отрезок реального текста источника.
+    sentences = [s.strip() for s in re.split(r"(?<=[.;])\s+", content.strip()) if s.strip()]
+    quote = sentences[0] if sentences else content.strip()[:200]
+    quote = " ".join(quote.split())[:280]
+
+    return json.dumps(
+        {
+            "overall_risk": "medium",
+            "summary": (
+                "Демонстрационный анализ: проверка выполнена по нормативным "
+                "материалам базы знаний. Требуется оценка специалистом."
+            ),
+            "findings": [
+                {
+                    "category": "no_distinctiveness",
+                    "level": "medium",
+                    "legal_basis": f"ГК РФ {anchor}" if anchor else "ГК РФ ст. 1483",
+                    "explanation": (
+                        "Обозначение следует проверить на соответствие требованию "
+                        "различительной способности применительно к заявленным "
+                        "товарам и услугам. Вывод демонстрационный."
+                    ),
+                    "case_facts_used": ["Заявленное обозначение", "Перечень товаров и услуг"],
+                    "citations": [
+                        {"source_id": source_id, "quote": quote, "anchor": anchor}
+                    ],
+                    "confidence": 0.55,
+                    "missing_data": [
+                        "Сведения об использовании обозначения",
+                        "Результаты поиска по реестру товарных знаков",
+                    ],
+                    "recommended_action": (
+                        "Провести проверку по реестру и оценить приобретённую "
+                        "различительную способность"
+                    ),
+                }
+            ],
+            "limitations": [
+                "Ответ сформирован демонстрационным провайдером (LLM_PROVIDER=mock), "
+                "а не реальной языковой моделью",
+                "Поиск по реестру товарных знаков не выполнялся",
+                "База знаний ограничена загруженными материалами",
+            ],
+            "missing_data": ["Результаты поиска по реестру"],
+            "requires_specialist_review": True,
+        },
+        ensure_ascii=False,
+    )
+
+
 def _detect_topic(messages: list[LLMMessage]) -> str:
     """Detect which topic the messages relate to based on keyword matching."""
     full_text = " ".join(m.content.lower() for m in messages)
@@ -264,9 +336,15 @@ class MockLLMProvider(BaseLLMProvider):
         max_tokens: int = 4096,
     ) -> LLMResponse:
         t0 = time.time()
-        topic = _detect_topic(messages)
-        structured = _CANNED_STRUCTURED.get(topic, _CANNED_STRUCTURED["recommendation"])
-        content = json.dumps(structured, ensure_ascii=False, indent=2)
+        full_text = " ".join(m.content for m in messages)
+
+        # RAG-анализ распознаётся по разделу ИСТОЧНИКИ в промпте:
+        # для него нужен ответ в схеме AnalysisResult с настоящей цитатой.
+        content = _build_rag_analysis_response(full_text)
+        if content is None:
+            topic = _detect_topic(messages)
+            structured = _CANNED_STRUCTURED.get(topic, _CANNED_STRUCTURED["recommendation"])
+            content = json.dumps(structured, ensure_ascii=False, indent=2)
         latency = int((time.time() - t0) * 1000) + 42  # simulate small latency
         return LLMResponse(
             content=content,

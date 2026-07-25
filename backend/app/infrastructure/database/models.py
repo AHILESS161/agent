@@ -1214,3 +1214,206 @@ class FieldConfirmation(Base):
 
     field: Mapped["ExtractedField"] = relationship(back_populates="confirmations")
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+
+
+# ===========================================================================
+# Оценка рисков регистрации с прослеживаемостью до базы знаний
+# ---------------------------------------------------------------------------
+# Каждый вывод хранится вместе с цитатами, а каждая цитата — со ссылкой
+# на конкретный фрагмент базы знаний и результатом его проверки.
+# Это позволяет спустя время воспроизвести, на чём был основан вывод,
+# и увидеть, что именно было подтверждено, а что отброшено.
+# ===========================================================================
+
+class AnalysisKind(str, enum.Enum):
+    absolute_grounds = "absolute_grounds"   # ст. 1483 п. 1-4
+    relative_grounds = "relative_grounds"   # ст. 1483 п. 5-10
+    combined = "combined"
+
+
+class SearchMode(str, enum.Enum):
+    """Режим поиска по реестру — обязан быть виден в отчёте."""
+
+    real = "real"          # полноценный поиск по реестру
+    demo = "demo"          # ограниченный демонстрационный датасет
+    limited = "limited"    # частичный доступ к источнику
+    not_performed = "not_performed"
+
+
+class CitationStatus(str, enum.Enum):
+    verified = "verified"               # текст найден в источнике дословно
+    partial = "partial"                 # найдена большая часть слов
+    not_found = "not_found"             # в источнике такого нет
+    source_missing = "source_missing"   # источника не существует
+    too_short = "too_short"             # цитата слишком коротка для проверки
+
+
+class RiskAssessment(Base):
+    """Результат одного прогона анализа рисков."""
+
+    __tablename__ = "risk_assessments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    analysis_kind: Mapped[AnalysisKind] = mapped_column(
+        Enum(AnalysisKind, name="analysiskind"),
+        nullable=False,
+        default=AnalysisKind.absolute_grounds,
+    )
+
+    # --- результат ---
+    overall_risk: Mapped[Optional[RiskLevel]] = mapped_column(
+        Enum(RiskLevel, name="risklevel"), nullable=True
+    )
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    limitations_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    missing_data_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    # Вывод не сделан: данных или источников недостаточно.
+    is_inconclusive: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    inconclusive_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # --- воспроизводимость ---
+    # Без этих полей нельзя понять, на чём был основан вывод спустя время.
+    knowledge_base_version: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True
+    )
+    model_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    llm_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    search_mode: Mapped[SearchMode] = mapped_column(
+        Enum(SearchMode, name="searchmode"),
+        nullable=False,
+        default=SearchMode.not_performed,
+    )
+    sources_used_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    verification_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    # Признак обязателен и всегда истинен: система не даёт заключений.
+    requires_specialist_review: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        foreign_keys=[application_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )
+    findings: Mapped[list["RiskFinding"]] = relationship(
+        back_populates="assessment", cascade="all, delete-orphan"
+    )
+
+
+class RiskFinding(Base):
+    """Один установленный риск с обоснованием."""
+
+    __tablename__ = "risk_findings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    assessment_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("risk_assessments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(String(64), nullable=False)
+    level: Mapped[RiskLevel] = mapped_column(
+        Enum(RiskLevel, name="risklevel"), nullable=False
+    )
+    legal_basis: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    explanation: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Факты дела, на которых основан вывод.
+    case_facts_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    missing_data_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    recommended_action: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Хотя бы одна цитата подтверждена дословно в источнике.
+    citations_verified: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    verification_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    # Решение специалиста по выводу.
+    reviewer_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewer_decision: Mapped[Optional[ReviewerDecision]] = mapped_column(
+        Enum(ReviewerDecision, name="reviewerdecision"), nullable=True
+    )
+    reviewer_comment: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    assessment: Mapped["RiskAssessment"] = relationship(back_populates="findings")
+    citations: Mapped[list["AnalysisCitation"]] = relationship(
+        back_populates="finding", cascade="all, delete-orphan"
+    )
+    reviewer: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[reviewer_id]
+    )
+
+
+class AnalysisCitation(Base):
+    """Цитата из базы знаний с результатом её проверки.
+
+    Хранится и подтверждённая, и отклонённая цитата: отклонённые нужны,
+    чтобы специалист видел, что именно система не приняла и почему.
+    """
+
+    __tablename__ = "analysis_citations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    finding_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("risk_findings.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Ссылка на конкретный фрагмент базы знаний. NULL, если модель
+    # сослалась на несуществующий источник — такую цитату тоже сохраняем.
+    knowledge_chunk_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("knowledge_chunks.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    source_ref: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    anchor: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    status: Mapped[CitationStatus] = mapped_column(
+        Enum(CitationStatus, name="citationstatus"), nullable=False
+    )
+    matched_ratio: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    finding: Mapped["RiskFinding"] = relationship(back_populates="citations")
+    knowledge_chunk: Mapped[Optional["KnowledgeChunk"]] = relationship(
+        "KnowledgeChunk", foreign_keys=[knowledge_chunk_id]
+    )

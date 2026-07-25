@@ -15,6 +15,7 @@ from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.endpoints.intake import router as intake_router
 from app.api.v1.endpoints.mvp import router as mvp_router
 from app.api.v1.endpoints.notifications import router as notifications_router
+from app.api.v1.endpoints.risk import router as risk_router
 from app.api.v1.endpoints.users import router as users_router
 
 api_router = APIRouter(prefix="/api/v1")
@@ -27,6 +28,7 @@ api_router.include_router(clients_router)
 api_router.include_router(applications_router)
 api_router.include_router(documents_router)
 api_router.include_router(extraction_router)
+api_router.include_router(risk_router)
 api_router.include_router(mvp_router)
 api_router.include_router(notifications_router)
 api_router.include_router(audit_router)

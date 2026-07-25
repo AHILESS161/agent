@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useRoute } from "wouter";
 import { useAuth } from "@/lib/auth";
 import {
@@ -18,6 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SourceDocumentsTab } from "@/components/source-documents-tab";
+import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -30,7 +33,7 @@ import {
 import {
   Info, Shield, Layers, Crosshair, FileCheck, FileText,
   History, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
-  Send, Download, Eye, Clock, ArrowRight, Gavel,
+  Send, Download, Eye, Clock, ArrowRight, Gavel, Upload, ClipboardList,
   Check, X, Minus, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -698,6 +701,9 @@ function InfoRow({ label, value, mono, children }: { label: string; value?: stri
 export default function ApplicationDetailPage() {
   const [, params] = useRoute("/applications/:id");
   const appId = params?.id ? parseInt(params.id) : 0;
+  // Меняется после извлечения реквизитов, чтобы вкладка сверки
+  // перечитала данные при следующем открытии.
+  const [fieldsRefreshKey, setFieldsRefreshKey] = useState(0);
   const app = getApplicationById(appId);
 
   if (!app) {
@@ -728,6 +734,8 @@ export default function ApplicationDetailPage() {
         <TabsList className="w-full flex overflow-x-auto justify-start bg-transparent border-b border-border rounded-none h-auto p-0 gap-0">
           {[
             { value: "general", label: "Общие сведения", icon: Info },
+            { value: "source-documents", label: "Исходные документы", icon: Upload },
+            { value: "fields", label: "Сверка полей", icon: ClipboardList },
             { value: "completeness", label: "Полнота данных", icon: ClipboardCheck },
             { value: "legal", label: "Правовой анализ", icon: Shield },
             { value: "classes", label: "Классы МКТУ", icon: Layers },
@@ -750,6 +758,12 @@ export default function ApplicationDetailPage() {
 
         <div className="mt-4">
           <TabsContent value="general"><GeneralInfoTab appId={appId} /></TabsContent>
+          <TabsContent value="source-documents">
+            <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
+          </TabsContent>
+          <TabsContent value="fields">
+            <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
+          </TabsContent>
           <TabsContent value="completeness"><CompletenessTab appId={appId} /></TabsContent>
           <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
           <TabsContent value="classes"><ClassesTab appId={appId} /></TabsContent>

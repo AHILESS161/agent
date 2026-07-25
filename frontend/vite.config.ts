@@ -18,9 +18,25 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    port: 3000,
+    // Слушаем на всех интерфейсах: нужно для запуска в Docker и для
+    // проброса через туннель (Cloudflare/ngrok).
+    host: true,
     fs: {
       strict: true,
       deny: ["**/.*"],
     },
+    proxy: {
+      // Все запросы к API уходят на FastAPI. Адрес бэкенда задаётся
+      // переменной окружения и не зашивается в исходный код —
+      // это же позволяет работать через внешний туннель.
+      "/api": {
+        target: process.env.VITE_API_URL || "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
+    // Туннели Cloudflare/ngrok отдают собственный хост, который Vite
+    // по умолчанию отклоняет.
+    allowedHosts: true,
   },
 });

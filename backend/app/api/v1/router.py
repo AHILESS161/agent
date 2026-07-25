@@ -10,6 +10,7 @@ from app.api.v1.endpoints.audit import router as audit_router
 from app.api.v1.endpoints.auth import router as auth_router
 from app.api.v1.endpoints.clients import router as clients_router
 from app.api.v1.endpoints.documents import router as documents_router
+from app.api.v1.endpoints.extraction import router as extraction_router
 from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.endpoints.intake import router as intake_router
 from app.api.v1.endpoints.mvp import router as mvp_router
@@ -25,6 +26,7 @@ api_router.include_router(users_router)
 api_router.include_router(clients_router)
 api_router.include_router(applications_router)
 api_router.include_router(documents_router)
+api_router.include_router(extraction_router)
 api_router.include_router(mvp_router)
 api_router.include_router(notifications_router)
 api_router.include_router(audit_router)

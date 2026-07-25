@@ -31,6 +31,12 @@ ACTION_EDIT = "edit"
 ACTION_REJECT = "reject"
 ACTION_LEAVE_EMPTY = "leave_empty"
 
+# Статусы, означающие, что специалист уже принял решение по полю.
+# Автоматические правила такие поля не пересчитывают.
+_DECIDED_BY_SPECIALIST = frozenset(
+    {FieldStatus.confirmed, FieldStatus.rejected, FieldStatus.left_empty}
+)
+
 
 @dataclass
 class MappingRow:
@@ -166,24 +172,28 @@ class FieldMappingEngine:
             # Значение по умолчанию — предложение, а не факт из документа.
             row.status = FieldStatus.needs_review
 
-        # Расхождение реестра и карточки дела — всегда конфликт.
-        if (
-            row.registry_value
-            and row.case_value
-            and row.registry_value != row.case_value
-        ):
-            row.status = FieldStatus.conflict
-            row.validation_error = (
-                "Значение в карточке дела отличается от значения в выписке"
-            )
+        # Решение специалиста окончательно: автоматические правила ниже
+        # не должны его перебивать, иначе подтверждённое поле снова
+        # покажется конфликтным и работа человека потеряется.
+        if row.status not in _DECIDED_BY_SPECIALIST:
+            # Расхождение реестра и карточки дела — конфликт.
+            if (
+                row.registry_value
+                and row.case_value
+                and row.registry_value != row.case_value
+            ):
+                row.status = FieldStatus.conflict
+                row.validation_error = (
+                    "Значение в карточке дела отличается от значения в выписке"
+                )
 
-        # Собранные по правилу значения подтверждаются всегда.
-        if spec.get("always_needs_review") and row.status is FieldStatus.matched:
-            row.status = FieldStatus.needs_review
-            row.validation_error = row.validation_error or (
-                "Значение собрано из нескольких частей документа — "
-                "требуется проверка"
-            )
+            # Значения, собранные по правилу, подтверждаются всегда.
+            if spec.get("always_needs_review") and row.status is FieldStatus.matched:
+                row.status = FieldStatus.needs_review
+                row.validation_error = row.validation_error or (
+                    "Значение собрано из нескольких частей документа — "
+                    "требуется проверка"
+                )
 
         row.available_actions = self._actions_for(row)
         return row

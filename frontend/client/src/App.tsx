@@ -1,4 +1,5 @@
 import { Switch, Route, Router, Redirect } from "wouter";
+import { Loader2 } from "lucide-react";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -43,7 +44,20 @@ function AuthenticatedRoutes() {
 }
 
 function AppRouter() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
+
+  // Пока восстанавливается сессия из сохранённого токена, показывать
+  // экран входа нельзя — иначе он мигает при каждой перезагрузке.
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span className="text-sm">Загрузка…</span>
+        </div>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) {
     return <LoginPage />;

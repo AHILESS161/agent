@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useTheme } from "@/lib/theme";
-import { getUnreadCount } from "@/lib/mock-data";
+import { useUnreadCount } from "@/lib/use-unread-count";
 import { cn } from "@/lib/utils";
 import type { UserRole } from "@shared/schema";
 import { ROLE_LABELS } from "@shared/schema";
@@ -66,7 +66,7 @@ function getNavItems(unreadCount: number): NavItem[] {
 function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { user } = useAuth();
   const [location] = useLocation();
-  const unreadCount = user ? getUnreadCount(user.id) : 0;
+  const unreadCount = useUnreadCount();
   const navItems = getNavItems(unreadCount).filter(item => user && item.roles.includes(user.role));
 
   return (
@@ -135,7 +135,7 @@ function TopBar() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [location, setLocation] = useLocation();
-  const unreadCount = user ? getUnreadCount(user.id) : 0;
+  const unreadCount = useUnreadCount();
   const initials = user?.fullName.split(" ").map(s => s[0]).join("").slice(0, 2) || "?";
 
   return (

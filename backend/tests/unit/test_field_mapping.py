@@ -177,6 +177,68 @@ class TestHumanInTheLoop:
             assert row.status is not FieldStatus.confirmed
 
 
+class TestSpecialistDecisionIsFinal:
+    """Решение специалиста не должно пересчитываться автоматикой.
+
+    Регрессия: подтверждённое поле снова помечалось как конфликт,
+    потому что значение в карточке дела по-прежнему отличалось
+    от значения в выписке, — и работа человека терялась.
+    """
+
+    def _confirmed_field(self, field_id: str, value: str):
+        from app.document_processing.extractors.registry import ExtractedFieldResult
+
+        return ExtractedFieldResult(
+            field_id=field_id,
+            label="Тестовое поле",
+            status=FieldStatus.confirmed,
+            value=value,
+            normalized_value=value,
+            confidence=0.95,
+            page_number=1,
+        )
+
+    def test_confirmed_field_stays_confirmed_despite_case_mismatch(self):
+        confirmed = self._confirmed_field("registry.legal_entity.inn", "7707083893")
+        result, _ = build_reconciliation(
+            [confirmed], case_values={"case.applicant.inn": "9999999999"}
+        )
+        row = {r.case_field: r for r in result}["case.applicant.inn"]
+        assert row.status is FieldStatus.confirmed
+
+    def test_confirmed_composed_address_is_not_reset_to_needs_review(self):
+        confirmed = self._confirmed_field(
+            "registry.legal_entity.address.full", "101000, Москва"
+        )
+        result, _ = build_reconciliation([confirmed])
+        row = {r.case_field: r for r in result}["case.applicant.legal_address"]
+        assert row.status is FieldStatus.confirmed
+
+    def test_confirmed_required_field_no_longer_blocks_draft(self):
+        confirmed = self._confirmed_field(
+            "registry.legal_entity.address.full", "101000, Москва"
+        )
+        result, _ = build_reconciliation([confirmed])
+        row = {r.case_field: r for r in result}["case.applicant.legal_address"]
+        assert row.blocks_document_generation is False
+
+    def test_rejected_field_is_not_recomputed(self):
+        from app.document_processing.extractors.registry import ExtractedFieldResult
+
+        rejected = ExtractedFieldResult(
+            field_id="registry.legal_entity.inn",
+            label="ИНН",
+            status=FieldStatus.rejected,
+            value="7707083893",
+            normalized_value="7707083893",
+        )
+        result, _ = build_reconciliation(
+            [rejected], case_values={"case.applicant.inn": "9999999999"}
+        )
+        row = {r.case_field: r for r in result}["case.applicant.inn"]
+        assert row.status is FieldStatus.rejected
+
+
 class TestSummary:
     def test_summary_reports_versions(self, extracted):
         _, summary = build_reconciliation(extracted)

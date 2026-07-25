@@ -6,14 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Moon, Sun, LogIn, AlertCircle } from "lucide-react";
+import { Moon, Sun, LogIn, AlertCircle, Loader2 } from "lucide-react";
 
+// Учётные записи демо-стенда. Пароль настоящий и проверяется на сервере.
 const DEMO_USERS = [
+  { email: "lawyer@demo.ru", role: "Специалист (юрист)" },
   { email: "admin@demo.ru", role: "Администратор" },
-  { email: "lawyer@demo.ru", role: "Юрист" },
-  { email: "manager@demo.ru", role: "Менеджер" },
-  { email: "client@demo.ru", role: "Клиент" },
 ];
+
+const DEMO_PASSWORD = "demo123";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -21,24 +22,36 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const submit = async (loginEmail: string, loginPassword: string) => {
+    setError("");
+    if (!loginEmail) {
+      setError("Введите адрес электронной почты");
+      return;
+    }
+    if (!loginPassword) {
+      setError("Введите пароль");
+      return;
+    }
+    setIsSubmitting(true);
+    try {
+      const message = await login(loginEmail, loginPassword);
+      if (message) setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    if (!email) {
-      setError("Введите email");
-      return;
-    }
-    const ok = login(email, password);
-    if (!ok) {
-      setError("Неверный email или пароль");
-    }
+    void submit(email, password);
   };
 
   const handleDemoLogin = (demoEmail: string) => {
     setEmail(demoEmail);
-    setError("");
-    login(demoEmail, "demo");
+    setPassword(DEMO_PASSWORD);
+    void submit(demoEmail, DEMO_PASSWORD);
   };
 
   return (
@@ -79,6 +92,8 @@ export default function LoginPage() {
                   placeholder="your@email.ru"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
+                  disabled={isSubmitting}
+                  autoComplete="username"
                   data-testid="input-email"
                 />
               </div>
@@ -90,6 +105,8 @@ export default function LoginPage() {
                   placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
+                  disabled={isSubmitting}
+                  autoComplete="current-password"
                   data-testid="input-password"
                 />
               </div>
@@ -101,18 +118,36 @@ export default function LoginPage() {
                 </div>
               )}
 
-              <Button type="submit" className="w-full" data-testid="button-login">
-                <LogIn className="w-4 h-4 mr-2" />
-                Войти
+              <Button
+                type="submit"
+                className="w-full"
+                disabled={isSubmitting}
+                data-testid="button-login"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Вход…
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4 mr-2" />
+                    Войти
+                  </>
+                )}
               </Button>
             </form>
 
             <div className="mt-6">
-              <p className="text-xs text-muted-foreground text-center mb-3">Демо-доступ (любой пароль):</p>
+              <p className="text-xs text-muted-foreground text-center mb-3">
+                Учётные записи демо-стенда (пароль {DEMO_PASSWORD}):
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 {DEMO_USERS.map(u => (
                   <button
                     key={u.email}
+                    type="button"
+                    disabled={isSubmitting}
                     onClick={() => handleDemoLogin(u.email)}
                     className="flex flex-col items-start p-2 rounded-md border border-border hover:bg-accent transition-colors text-left"
                     data-testid={`demo-${u.email.split("@")[0]}`}
@@ -123,6 +158,13 @@ export default function LoginPage() {
                 ))}
               </div>
             </div>
+
+            <p className="mt-6 text-[11px] leading-relaxed text-muted-foreground text-center">
+              Демонстрационный стенд. Результаты формируются с применением
+              автоматической обработки и носят предварительный информационный
+              характер. Они требуют проверки специалистом. Заявка в Роспатент
+              не подаётся.
+            </p>
           </CardContent>
         </Card>
       </div>

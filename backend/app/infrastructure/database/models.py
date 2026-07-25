@@ -357,6 +357,11 @@ class TrademarkApplicationDraft(Base):
     audit_logs: Mapped[list["AuditLog"]] = relationship(
         back_populates="application", foreign_keys="AuditLog.application_id"
     )
+    source_documents: Mapped[list["SourceDocument"]] = relationship(
+        back_populates="application",
+        cascade="all, delete-orphan",
+        foreign_keys="SourceDocument.application_id",
+    )
 
 
 class GoodsServicesItem(Base):
@@ -889,3 +894,323 @@ class BackgroundJob(Base):
     completed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+# ===========================================================================
+# Документы, извлечённые поля и подтверждения специалистом
+# ---------------------------------------------------------------------------
+# Раньше загруженный файл нигде не сохранялся: intake-эндпоинт парсил байты
+# и выбрасывал их. Эти сущности дают прослеживаемость от исходного файла
+# до значения, попавшего в заявление: файл -> страница -> поле -> кандидаты
+# -> решение специалиста.
+# ===========================================================================
+
+class DocumentKind(str, enum.Enum):
+    """Тип загруженного документа."""
+
+    trademark_application = "trademark_application"   # заявка на ТЗ (бланк Роспатента)
+    egrul_extract = "egrul_extract"                   # выписка ЕГРЮЛ
+    egrip_extract = "egrip_extract"                   # выписка ЕГРИП
+    unknown_registry_extract = "unknown_registry_extract"  # реестровая справка, тип неясен
+    power_of_attorney = "power_of_attorney"           # доверенность
+    mark_image = "mark_image"                         # изображение обозначения
+    other = "other"
+    unknown = "unknown"
+
+
+class DocumentProcessingStatus(str, enum.Enum):
+    uploaded = "uploaded"
+    extracting = "extracting"
+    extracted = "extracted"
+    failed = "failed"
+    rejected = "rejected"      # не прошёл проверку типа/размера/MIME
+
+
+class ExtractionMethod(str, enum.Enum):
+    """Как получено значение. Порядок соответствует убыванию доверия."""
+
+    pdf_text_layer = "pdf_text_layer"
+    docx_parser = "docx_parser"
+    plain_text = "plain_text"
+    regex = "regex"
+    rule = "rule"
+    ocr = "ocr"
+    llm_fallback = "llm_fallback"
+    manual = "manual"
+
+
+class FieldStatus(str, enum.Enum):
+    """Статус извлечённого поля в процессе проверки специалистом."""
+
+    matched = "matched"             # извлечено и прошло валидацию
+    missing = "missing"             # обязательное поле не найдено
+    conflict = "conflict"           # несколько несовместимых кандидатов
+    needs_review = "needs_review"   # требует глаз специалиста
+    confirmed = "confirmed"         # подтверждено специалистом
+    rejected = "rejected"           # специалист отклонил значение
+    left_empty = "left_empty"       # специалист сознательно оставил пустым
+
+
+class ConfirmationAction(str, enum.Enum):
+    accept = "accept"
+    edit = "edit"
+    reject = "reject"
+    leave_empty = "leave_empty"
+
+
+class SourceChannel(str, enum.Enum):
+    """Канал поступления документа (используется inbound router'ом)."""
+
+    manual_upload = "manual_upload"
+    crm = "crm"
+    email = "email"
+    webhook = "webhook"
+    api = "api"
+
+
+class SourceDocument(Base):
+    """Оригинал загруженного файла и метаданные его обработки."""
+
+    __tablename__ = "source_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    client_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("clients.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    uploaded_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # --- файл ---
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    declared_content_type: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    detected_mime: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    # SHA-256 не уникален: один и тот же файл может законно относиться
+    # к нескольким делам. Индекс нужен для дедупликации в рамках дела.
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+
+    # --- классификация ---
+    document_kind: Mapped[DocumentKind] = mapped_column(
+        Enum(DocumentKind, name="documentkind"),
+        nullable=False,
+        default=DocumentKind.unknown,
+    )
+    kind_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    kind_requires_confirmation: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True
+    )
+
+    # --- обработка ---
+    processing_status: Mapped[DocumentProcessingStatus] = mapped_column(
+        Enum(DocumentProcessingStatus, name="documentprocessingstatus"),
+        nullable=False,
+        default=DocumentProcessingStatus.uploaded,
+    )
+    extraction_method: Mapped[Optional[ExtractionMethod]] = mapped_column(
+        Enum(ExtractionMethod, name="extractionmethod"), nullable=True
+    )
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # --- происхождение ---
+    source_channel: Mapped[SourceChannel] = mapped_column(
+        Enum(SourceChannel, name="sourcechannel"),
+        nullable=False,
+        default=SourceChannel.manual_upload,
+    )
+    metadata_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    application: Mapped[Optional["TrademarkApplicationDraft"]] = relationship(
+        back_populates="source_documents"
+    )
+    uploaded_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[uploaded_by_user_id]
+    )
+    pages: Mapped[list["DocumentPage"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+    extracted_fields: Mapped[list["ExtractedField"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan"
+    )
+
+
+class DocumentPage(Base):
+    """Текст одной страницы с указанием способа извлечения."""
+
+    __tablename__ = "document_pages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("source_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    text_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    char_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    extraction_method: Mapped[ExtractionMethod] = mapped_column(
+        Enum(ExtractionMethod, name="extractionmethod"), nullable=False
+    )
+    # Заполняется только при OCR; для текстового слоя остаётся NULL,
+    # чтобы не выдавать отсутствие OCR за стопроцентную уверенность.
+    ocr_confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    document: Mapped["SourceDocument"] = relationship(back_populates="pages")
+
+
+class ExtractedField(Base):
+    """Одно извлечённое поле с полной прослеживаемостью до источника."""
+
+    __tablename__ = "extracted_fields"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("source_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    application_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    # Канонический путь поля, напр. "registry.legal_entity.inn"
+    field_path: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    label: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
+    raw_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    normalized_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # --- прослеживаемость ---
+    source_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pattern_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    extraction_method: Mapped[ExtractionMethod] = mapped_column(
+        Enum(ExtractionMethod, name="extractionmethod"), nullable=False
+    )
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+
+    # --- валидация и статус ---
+    status: Mapped[FieldStatus] = mapped_column(
+        Enum(FieldStatus, name="fieldstatus"),
+        nullable=False,
+        default=FieldStatus.needs_review,
+    )
+    validation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    candidate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    # Персональные данные — маскировать в логах и не отдавать без нужды.
+    is_sensitive: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    # Relationships
+    document: Mapped["SourceDocument"] = relationship(back_populates="extracted_fields")
+    candidates: Mapped[list["FieldCandidate"]] = relationship(
+        back_populates="field", cascade="all, delete-orphan"
+    )
+    confirmations: Mapped[list["FieldConfirmation"]] = relationship(
+        back_populates="field", cascade="all, delete-orphan"
+    )
+
+
+class FieldCandidate(Base):
+    """Один из нескольких конкурирующих вариантов значения поля.
+
+    Если regex нашёл больше одного правдоподобного значения, все варианты
+    сохраняются, поле получает статус ``conflict``/``needs_review``, и
+    выбор делает специалист. Молча брать первый вариант запрещено.
+    """
+
+    __tablename__ = "field_candidates"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    field_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("extracted_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    raw_value: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_snippet: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    page_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    pattern_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    extraction_method: Mapped[ExtractionMethod] = mapped_column(
+        Enum(ExtractionMethod, name="extractionmethod"), nullable=False
+    )
+    confidence: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    validation_passed: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+    is_selected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    field: Mapped["ExtractedField"] = relationship(back_populates="candidates")
+
+
+class FieldConfirmation(Base):
+    """История решений специалиста по полю: кто, что и когда изменил."""
+
+    __tablename__ = "field_confirmations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    field_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("extracted_fields.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    action: Mapped[ConfirmationAction] = mapped_column(
+        Enum(ConfirmationAction, name="confirmationaction"), nullable=False
+    )
+    previous_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    selected_candidate_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("field_candidates.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    field: Mapped["ExtractedField"] = relationship(back_populates="confirmations")
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])

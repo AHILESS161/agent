@@ -44,11 +44,36 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
 )
 
 
-async def init_db() -> None:
-    """Create all tables. Call on startup."""
-    async with engine.begin() as conn:
-        from app.infrastructure.database import models  # noqa: F401 — ensures models are registered
-        await conn.run_sync(Base.metadata.create_all)
+async def check_schema() -> tuple[bool, str | None]:
+    """Проверить, что БД доступна и схема накатана миграциями.
+
+    Схему создаёт Alembic (``alembic upgrade head``), а не приложение:
+    ``create_all()`` при старте не версионируется и молча расходится
+    с миграциями. Здесь только проверка — никакого DDL.
+
+    Возвращает ``(ok, error)``.
+    """
+    from sqlalchemy import text
+
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+            result = await conn.execute(
+                text("SELECT version_num FROM alembic_version LIMIT 1")
+            )
+            revision = result.scalar()
+    except Exception as exc:  # noqa: BLE001
+        return False, (
+            f"БД недоступна или схема не инициализирована: {exc}. "
+            "Выполните: alembic upgrade head"
+        )
+
+    if not revision:
+        return False, (
+            "Таблица alembic_version пуста — миграции не применялись. "
+            "Выполните: alembic upgrade head"
+        )
+    return True, None
 
 
 async def close_db() -> None:

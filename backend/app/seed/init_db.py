@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[3]  # backend/
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import settings
@@ -868,10 +868,14 @@ def main() -> None:
 
     engine = _build_sync_engine()
 
-    # Create all tables
-    log.info("Creating database tables...")
-    Base.metadata.create_all(bind=engine)
-    log.info("  Tables created (or already exist)")
+    # Схему создают миграции Alembic, а не этот скрипт: create_all()
+    # не версионируется и со временем расходится с миграциями.
+    if not inspect(engine).has_table("alembic_version"):
+        raise SystemExit(
+            "Схема БД не инициализирована. Сначала выполните:\n"
+            "    alembic upgrade head"
+        )
+    log.info("  Схема БД проверена (миграции применены)")
 
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 

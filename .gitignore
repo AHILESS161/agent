@@ -70,3 +70,8 @@ tmp/
 trademark.db
 backend/test_run.db
 backend/*.db
+
+# --- Файловое хранилище документов (runtime) ---
+backend/storage/
+storage/
+backend/_e2e*

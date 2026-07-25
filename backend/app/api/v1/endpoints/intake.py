@@ -14,10 +14,13 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import APIRouter, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
 from app.agents.intake.application_pdf_parser import ApplicationPdfParserAgent
-from app.api.dependencies import _get_llm_provider, _get_prompt_registry  # type: ignore
+from app.api.dependencies import _get_llm_provider, _get_prompt_registry
+from app.core.security import get_current_user
+from app.infrastructure.database.models import User
+from app.services import file_storage
 from app.schemas.intake import (
     ParseApplicationFromTextRequest,
     ParsedApplicationResponse,
@@ -61,21 +64,31 @@ async def _run_parser(raw_text: str, use_llm: bool) -> ParsedApplicationResponse
 )
 async def parse_application(
     file: UploadFile = File(..., description="PDF/DOCX заполненной заявки"),
-    use_llm: bool = True,
+    use_llm: bool = False,
+    _current_user: User = Depends(get_current_user),
 ) -> ParsedApplicationResponse:
-    """Парсит загруженный файл формы заявки (PDF или DOCX)."""
+    """Парсит загруженный файл формы заявки (PDF или DOCX).
+
+    Ничего не сохраняет — результат используется для предзаполнения формы.
+    Для загрузки документа в дело есть ``POST /applications/{id}/documents``.
+
+    ``use_llm`` по умолчанию выключен: сначала детерминированные правила,
+    LLM — только явным запросом как fallback.
+    """
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="filename is required",
+            detail="Не указано имя файла",
         )
 
     content = await file.read()
-    if len(content) > MAX_UPLOAD_BYTES:
+    # Тип проверяется по сигнатуре содержимого, а не по расширению.
+    try:
+        file_storage.validate_upload(content, file.filename)
+    except file_storage.FileValidationError as exc:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File too large: {len(content)} bytes (max {MAX_UPLOAD_BYTES})",
-        )
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
 
     t0 = time.perf_counter()
     try:
@@ -115,6 +128,7 @@ async def parse_application(
 )
 async def parse_application_text(
     payload: ParseApplicationFromTextRequest,
+    _current_user: User = Depends(get_current_user),
 ) -> ParsedApplicationResponse:
     """Парсит уже извлечённый текст формы (используется в тестах и в e2e)."""
     response = await _run_parser(payload.raw_text, payload.use_llm)

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,85 @@ def extract_docx_text(content: bytes) -> str:
     result = "\n".join(chunks)
     logger.info("extract_docx_text: %d chunks, %d chars", len(chunks), len(result))
     return result
+
+
+@dataclass(frozen=True)
+class ExtractedPage:
+    """Текст одной страницы с указанием способа получения."""
+
+    page_number: int
+    text: str
+    method: str            # значение ExtractionMethod
+    ocr_confidence: float | None = None
+
+
+def extract_pages_from_bytes(content: bytes, filename: str) -> list[ExtractedPage]:
+    """Постранично извлечь текст, фиксируя способ извлечения.
+
+    Постраничность нужна для прослеживаемости: каждое извлечённое поле
+    должно ссылаться на конкретную страницу источника.
+
+    OCR не реализован. Скан (PDF без текстового слоя, изображение)
+    осознанно приводит к ошибке, а не к пустому результату, который
+    можно принять за «в документе ничего нет».
+    """
+    ext = detect_extension_for_pages(filename)
+
+    if ext == ".pdf":
+        if not _PDFPLUMBER_AVAILABLE:
+            raise RuntimeError("pdfplumber не установлен. Выполните: pip install pdfplumber")
+        pages: list[ExtractedPage] = []
+        with pdfplumber.open(io.BytesIO(content)) as pdf:
+            for index, page in enumerate(pdf.pages, start=1):
+                text = page.extract_text() or ""
+                pages.append(
+                    ExtractedPage(page_number=index, text=text, method="pdf_text_layer")
+                )
+        if not any(p.text.strip() for p in pages):
+            raise NoTextLayerError(
+                "PDF не содержит текстового слоя — вероятно, это скан. "
+                "Распознавание сканов (OCR) в текущей версии не поддерживается."
+            )
+        return pages
+
+    if ext in (".docx", ".doc"):
+        # python-docx не даёт разбиения на страницы: разбивку определяет
+        # рендерер Word. Возвращаем один блок и честно помечаем его как
+        # страницу 1, а не выдумываем границы страниц.
+        return [
+            ExtractedPage(page_number=1, text=extract_docx_text(content), method="docx_parser")
+        ]
+
+    if ext == ".txt":
+        for encoding in ("utf-8", "cp1251"):
+            try:
+                return [
+                    ExtractedPage(page_number=1, text=content.decode(encoding), method="plain_text")
+                ]
+            except UnicodeDecodeError:
+                continue
+        raise UnsupportedDocumentType("Не удалось декодировать TXT (пробовали UTF-8 и CP1251)")
+
+    if ext in (".png", ".jpg", ".jpeg"):
+        raise NoTextLayerError(
+            "Извлечение текста из изображений требует OCR, который "
+            "в текущей версии не поддерживается. Загрузите PDF или DOCX."
+        )
+
+    raise UnsupportedDocumentType(f"Неподдерживаемое расширение: {ext}")
+
+
+class NoTextLayerError(ValueError):
+    """В документе нет извлекаемого текста — нужен OCR."""
+
+
+def detect_extension_for_pages(filename: str) -> str:
+    """Как detect_extension, но допускает также изображения."""
+    name = (filename or "").lower()
+    for ext in (".pdf", ".docx", ".doc", ".txt", ".png", ".jpeg", ".jpg"):
+        if name.endswith(ext):
+            return ext
+    raise UnsupportedDocumentType(f"Неподдерживаемый тип файла: {filename}")
 
 
 def extract_from_path(path) -> str:

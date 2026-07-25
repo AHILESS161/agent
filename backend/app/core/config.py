@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
+    # Файловое хранилище оригиналов документов
+    FILE_STORAGE_PATH: str = "./storage/documents"
+    MAX_UPLOAD_MB: int = 25
+
     # Logging
     LOG_LEVEL: str = "INFO"
 

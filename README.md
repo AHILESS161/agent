@@ -1,408 +1,173 @@
 # Система регистрации товарных знаков РФ
 
-Автоматизированная система сопровождения регистрации товарных знаков в Роспатенте с использованием мультиагентного ИИ на базе LangGraph.
+Помогает патентному поверенному и юристу вести дело по регистрации
+товарного знака: принять документы, извлечь реквизиты заявителя,
+сопоставить их с полями заявления, провести предварительный анализ
+рисков и подготовить черновой пакет документов.
+
+> **Система не выдаёт результаты AI за юридическое заключение
+> и не подаёт заявку в Роспатент автоматически.**
+> Каждое юридически значимое действие требует подтверждения специалистом.
 
 ---
 
-## Содержание
+## Статус: MVP в разработке
 
-- [Описание](#описание)
-- [Архитектура](#архитектура)
-- [Стек технологий](#стек-технологий)
-- [Быстрый старт](#быстрый-старт)
-- [Структура проекта](#структура-проекта)
-- [API документация](#api-документация)
-- [Агентная архитектура](#агентная-архитектура)
-- [Статус модулей](#статус-модулей)
-- [Переменные окружения](#переменные-окружения)
-- [Документация](#документация)
+Основной контур **документ → реквизиты → подтверждение → сопоставление**
+работает на реальных данных. Отчёт о рисках и генерация пакета документов
+не завершены.
 
----
+Подробно и без прикрас: [`docs/roadmap.md`](docs/roadmap.md).
 
-## Описание
+| Контур | Состояние |
+|---|---|
+| Вход, роли, аудит | ✅ работает |
+| Загрузка и хранение документов | ✅ работает |
+| Извлечение реквизитов из выписки ЕГРЮЛ | ✅ **21 из 21 поля, без LLM** |
+| Сверка реестр → дело → заявление | ✅ работает |
+| Подтверждение полей специалистом | ✅ работает |
+| Поиск по реестру товарных знаков | ⚠️ demo-датасет, 55 записей |
+| Правовой анализ, классы МКТУ, рекомендации | ⚠️ demo-режим |
+| Отчёт о рисках как артефакт, экспорт | ❌ не реализовано |
+| Генерация пакета документов | ❌ не собран сквозной сценарий |
+| OCR для сканов | ❌ не реализовано |
+| Приём из CRM / email / webhook | ❌ не реализовано |
 
-Система автоматизирует весь жизненный цикл заявки на регистрацию товарного знака:
-
-- **Приём заявки** — нормализация данных, проверка полноты через 18 правил
-- **Классификация по МКТУ** — ИИ-агент предлагает классы, юрист утверждает
-- **Правовая экспертиза** — проверка абсолютных и относительных оснований для отказа (ГК РФ ч.IV, ст.1483)
-- **Поиск конфликтов** — интеграция с базой данных ФИПС (в MVP — mock-провайдер)
-- **Генерация документов** — автоматическое формирование заявления, писем, меморандумов
-- **Уведомления** — клиент и команда получают актуальный статус на каждом этапе
-
-Система спроектирована как **модульный монолит** с чёткими границами поддоменов, что позволяет легко выделять отдельные сервисы при масштабировании.
-
----
-
-## Архитектура
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Модульный монолит                          │
-│                                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │  Intake  │→ │  Class.  │→ │  Legal   │→ │Conflicts │   │
-│  │  Agent   │  │  Agent   │  │  Agents  │  │  Agent   │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-│        ↓              ↓             ↓             ↓         │
-│  ┌──────────────────────────────────────────────────────┐  │
-│  │            ApplicationStateMachine (18 states)        │  │
-│  └──────────────────────────────────────────────────────┘  │
-│        ↓              ↓             ↓             ↓         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
-│  │  Docs    │  │  Human   │  │  Status  │  │Recommend.│   │
-│  │  Agent   │  │  Review  │  │ Monitor  │  │  Agent   │   │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
-│                                                             │
-│  ┌──────────────────┐  ┌──────────────────────────────┐    │
-│  │  RAG Pipeline    │  │  LLM Provider (Ollama/OpenAI) │    │
-│  │  (TF-IDF/BM25)   │  │  + Prompt Registry (YAML)    │    │
-│  └──────────────────┘  └──────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
-                              ↑
-              FastAPI REST API (v1) + WebSocket
-                              ↑
-              React + Vite + shadcn/ui Frontend
-```
-
-### Bounded Contexts (18)
-
-| # | Контекст | Описание |
-|---|----------|----------|
-| 1 | Identity & Access | Пользователи, роли, JWT |
-| 2 | Client Management | Клиенты, представители |
-| 3 | Application Intake | Приём и нормализация заявок |
-| 4 | Completeness Validation | 18 правил полноты |
-| 5 | NICE Classification | Классификация товаров/услуг |
-| 6 | Legal Review | Абсолютные и относительные основания |
-| 7 | Conflict Search | Поиск конфликтующих знаков (ФИПС) |
-| 8 | Human Review | Пакет для юриста |
-| 9 | Recommendations | Рекомендации и мемо |
-| 10 | Document Generation | Заявление, письма, доверенность |
-| 11 | Document Approval | Согласование документов |
-| 12 | Submission | Подача в Роспатент |
-| 13 | Status Tracking | Мониторинг статуса после подачи |
-| 14 | Notifications | Email/push-уведомления |
-| 15 | Audit & Compliance | Журнал всех действий |
-| 16 | Knowledge Base | RAG для нормативных документов |
-| 17 | Prompt Management | Реестр промптов с версионированием |
-| 18 | Background Jobs | Асинхронные задачи |
-
-### AI-агенты (13)
-
-| Агент | Файл | Функция |
-|-------|------|---------|
-| IntakeValidator | agents/intake/validator.py | Первичная валидация |
-| IntakeNormalizer | agents/intake/normalizer.py | Нормализация данных |
-| NiceClassifier | agents/classification/nice_classifier.py | МКТУ-классификация |
-| AbsoluteGroundsReviewer | agents/legal/absolute_grounds.py | Ст. 1483 п.1-4 |
-| RelativeGroundsReviewer | agents/legal/relative_grounds.py | Ст. 1483 п.6 |
-| ConflictQueryBuilder | agents/conflicts/query_builder.py | Построение запросов ФИПС |
-| ConflictAnalyzer | agents/conflicts/analyzer.py | Анализ результатов |
-| ConflictOrchestrator | agents/conflicts/orchestrator.py | Оркестрация поиска |
-| HumanReviewPackager | agents/human_review/packager.py | Пакет для юриста |
-| Recommender | agents/recommendations/recommender.py | Итоговые рекомендации |
-| DocumentAssembler | agents/documents/assembler.py | Сборка документов |
-| StatusMonitor | agents/status/monitor.py | Мониторинг после подачи |
-| Submitter | agents/submission/submitter.py | Подача в ФИПС |
-
----
-
-## Стек технологий
-
-| Слой | Технологии |
-|------|------------|
-| **Backend** | Python 3.12, FastAPI 0.111, SQLAlchemy 2.0 (async), LangGraph, Alembic |
-| **LLM** | LangGraph, Ollama (qwen2.5), OpenAI-compatible API, Mock-провайдер |
-| **Frontend** | React 18, Vite, shadcn/ui, Tailwind CSS, TanStack Query |
-| **БД** | SQLite (разработка) → PostgreSQL (production) |
-| **Очередь** | Redis (опционально, для фоновых задач) |
-| **RAG** | TF-IDF/BM25 (MVP) → pgvector / Qdrant (production) |
-| **Документы** | python-docx, docxtpl |
-| **Аутентификация** | JWT (python-jose), passlib[bcrypt] |
-| **Контейнеризация** | Docker, Docker Compose |
-| **Тестирование** | pytest, httpx, pytest-asyncio |
+Экраны, читающие демонстрационные данные, помечены в интерфейсе баннером —
+их нельзя принять за результат работы системы.
 
 ---
 
 ## Быстрый старт
 
-### Предварительные требования
-
-- Python 3.12+
-- Node.js 20+
-- (Опционально) Docker & Docker Compose
-
-### Без Docker
-
-```bash
-# Клонировать репозиторий
-git clone <repo-url>
-cd trademark-system
-
-# Backend
-cd backend
-pip install -r requirements.txt
-
-# Скопировать конфигурацию
-cp ../.env.example .env
-
-# Инициализировать БД и загрузить тестовые данные
-python -m app.seed.init_db
-
-# Запустить сервер
-uvicorn app.main:app --reload --port 8000
-
-# Frontend (в новом терминале)
-cd ../frontend
-npm install
-npm run dev
-```
-
-### С Docker Compose
-
 ```bash
 cp .env.example .env
 docker compose up --build
+docker compose exec api alembic upgrade head
+docker compose exec api python -m app.seed.init_db
 ```
 
-Сервисы:
-- API: http://localhost:8000
-- Frontend: http://localhost:3000
-- API документация: http://localhost:8000/docs
+Интерфейс: <http://localhost:3000> · API: <http://localhost:8000/docs>
 
-### Тестовые учётные данные
+Без Docker и подробности — [`docs/demo-deployment.md`](docs/demo-deployment.md).
+
+### Учётные записи демо-стенда
 
 | Логин | Пароль | Роль |
-|-------|--------|------|
-| admin@demo.ru | demo123 | Администратор |
-| lawyer@demo.ru | demo123 | Юрист |
-| manager@demo.ru | demo123 | Менеджер |
-| client@demo.ru | demo123 | Клиент |
+|---|---|---|
+| `lawyer@demo.ru` | `demo123` | Специалист (юрист) |
+| `admin@demo.ru` | `demo123` | Администратор |
+
+Пароли демонстрационные — смените перед выдачей доступа наружу.
+Самостоятельная регистрация закрыта: создавать пользователей может
+только администратор.
+
+### Сквозной сценарий для проверки
+
+1. Войти под `lawyer@demo.ru`.
+2. Открыть любое дело → вкладка **«Исходные документы»**.
+3. Загрузить `Выписка_ЕГРЮЛ_03062020-1.pdf` из корня репозитория.
+4. Нажать **«Извлечь реквизиты»** — 21 поле, regex, без LLM.
+5. Перейти на вкладку **«Сверка полей»**: значение из документа, значение
+   в карточке дела, целевое поле заявления, страница-источник, паттерн,
+   уверенность.
+6. Подтвердить или изменить поля. Черновик заявления не сформируется,
+   пока критичные поля не подтверждены.
 
 ---
 
-## Структура проекта
+## Стек
 
-```
-trademark-system/
-├── README.md                          # Этот файл
-├── docker-compose.yml                 # Оркестрация контейнеров
-├── .env.example                       # Шаблон переменных окружения
-│
-├── backend/
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   ├── pytest.ini
-│   ├── app/
-│   │   ├── main.py                    # FastAPI application entry point
-│   │   ├── core/
-│   │   │   ├── config.py              # Настройки (pydantic-settings)
-│   │   │   ├── security.py            # JWT, bcrypt
-│   │   │   ├── exceptions.py          # Доменные исключения
-│   │   │   └── logging.py             # Структурированное логирование
-│   │   ├── api/v1/
-│   │   │   ├── router.py              # Корневой роутер
-│   │   │   └── endpoints/             # auth, clients, applications, ...
-│   │   ├── agents/                    # 13 AI-агентов
-│   │   │   ├── base.py
-│   │   │   ├── intake/
-│   │   │   ├── classification/
-│   │   │   ├── legal/
-│   │   │   ├── conflicts/
-│   │   │   ├── human_review/
-│   │   │   ├── recommendations/
-│   │   │   ├── documents/
-│   │   │   ├── status/
-│   │   │   └── submission/
-│   │   ├── services/
-│   │   │   ├── completeness_engine.py # 18 правил полноты
-│   │   │   ├── state_machine.py       # 18 состояний заявки
-│   │   │   └── document_generator.py  # Генерация DOCX
-│   │   ├── infrastructure/
-│   │   │   ├── database/
-│   │   │   │   ├── models.py          # SQLAlchemy ORM
-│   │   │   │   └── session.py         # Async engine
-│   │   │   ├── llm/
-│   │   │   │   ├── base.py
-│   │   │   │   ├── factory.py
-│   │   │   │   ├── mock_provider.py
-│   │   │   │   ├── openai_compatible_provider.py
-│   │   │   │   └── prompt_registry.py
-│   │   │   ├── providers/             # ФИПС, внешние API
-│   │   │   └── rag/
-│   │   │       ├── pipeline.py        # RAG pipeline (BM25)
-│   │   │       └── knowledge_loader.py
-│   │   ├── schemas/                   # Pydantic schemas
-│   │   └── seed/
-│   │       └── init_db.py             # Инициализация БД и демо-данных
-│   ├── prompts/                       # YAML промпты (версионированные)
-│   │   ├── intake/
-│   │   ├── classes/
-│   │   ├── legal/
-│   │   ├── conflicts/
-│   │   ├── recommendations/
-│   │   ├── notifications/
-│   │   └── docs/
-│   ├── knowledge/                     # База знаний для RAG
-│   │   ├── gk_rf_part4_trademarks.md
-│   │   ├── rospatent_guidelines.md
-│   │   └── nice_classification_overview.md
-│   ├── templates/                     # Шаблоны документов
-│   │   └── README.md
-│   └── tests/
-│       ├── conftest.py
-│       ├── unit/
-│       ├── api/
-│       └── e2e/
-│
-├── frontend/
-│   ├── Dockerfile
-│   ├── client/src/
-│   │   ├── pages/                     # dashboard, applications, clients, ...
-│   │   ├── components/ui/             # shadcn/ui компоненты
-│   │   └── lib/                       # auth, queryClient, utils
-│   └── ...
-│
-└── docs/
-    ├── architecture.md
-    ├── domain-model.md
-    ├── state-machine.md
-    ├── agent-graph.md
-    ├── api-contracts.md
-    ├── document-pipeline.md
-    ├── rag-design.md
-    ├── prompt-registry.md
-    ├── security.md
-    └── testing-strategy.md
+| Слой | Технологии |
+|---|---|
+| Backend | FastAPI, SQLAlchemy 2.0 (async), Alembic, Pydantic v2, structlog |
+| БД | SQLite (dev) → PostgreSQL (prod) |
+| Документы | pdfplumber, python-docx, docxtpl |
+| Frontend | React 18, Vite, TypeScript, TanStack Query, shadcn/ui, wouter |
+| AI | OpenAI-совместимый провайдер, промпты в YAML-реестре |
+| RAG | BM25 на чистом Python → pgvector/Qdrant |
+
+Собственного backend у frontend нет: запросы к `/api` проксируются
+на FastAPI, адрес задаётся `VITE_API_URL`.
+
+---
+
+## Тесты
+
+```bash
+cd backend && ../venv/Scripts/python -m pytest     # 323 теста
+cd frontend && npm run check && npm run build
 ```
 
----
-
-## API документация
-
-После запуска бэкенда документация доступна по адресам:
-
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/openapi.json
-
-### Основные эндпоинты
-
-| Метод | Путь | Описание |
-|-------|------|----------|
-| POST | /api/v1/auth/register | Регистрация пользователя |
-| POST | /api/v1/auth/login | Вход (получение JWT) |
-| GET | /api/v1/applications | Список заявок |
-| POST | /api/v1/applications | Создание заявки |
-| GET | /api/v1/applications/{id} | Детали заявки |
-| POST | /api/v1/applications/{id}/transition | Смена статуса |
-| GET | /api/v1/clients | Список клиентов |
-| GET | /api/v1/notifications | Уведомления пользователя |
-| GET | /api/v1/audit | Журнал аудита |
-| GET | /api/v1/health | Проверка состояния |
-
-Подробные контракты: [docs/api-contracts.md](docs/api-contracts.md)
-
----
-
-## Агентная архитектура
-
-Агенты построены на основе **LangGraph** и обмениваются состоянием через общий граф. Каждый агент:
-
-1. Получает входные данные из состояния заявки
-2. Вызывает LLM через `PromptRegistry` (YAML-промпты с версионированием)
-3. Записывает результат в БД
-4. Логирует в `AgentRun` (модель наблюдаемости)
-5. Обновляет статус заявки через `ApplicationStateMachine`
-
-Подробнее: [docs/agent-graph.md](docs/agent-graph.md)
-
-### Конфигурация LLM
-
-Система поддерживает три провайдера:
-
-- **mock** — детерминированные ответы для тестирования
-- **local** — Ollama с моделью `qwen2.5-abliterate:14b` (рекомендуется)
-- **openai** — OpenAI-compatible API (любой провайдер)
-
----
-
-## Статус модулей
-
-| Модуль | Статус | Примечания |
-|--------|--------|------------|
-| FastAPI приложение | ✅ Реализован | Все роутеры, CORS, middleware |
-| Аутентификация (JWT) | ✅ Реализован | Register, login, refresh |
-| ORM-модели (SQLAlchemy) | ✅ Реализован | 20+ таблиц |
-| State Machine (18 состояний) | ✅ Реализован | Полная карта переходов |
-| Completeness Engine (18 правил) | ✅ Реализован | Строгая/мягкая валидация |
-| Prompt Registry (YAML) | ✅ Реализован | Jinja2-шаблоны, версионирование |
-| LLM Mock Provider | ✅ Реализован | Детерминированные ответы |
-| LLM OpenAI-compatible | ✅ Реализован | Ollama, OpenAI, etc. |
-| ФИПС Mock Provider | ✅ Реализован | Случайные результаты |
-| NICE Classifier Agent | ✅ Реализован | Предлагает классы МКТУ |
-| Absolute Grounds Agent | ✅ Реализован | ГК РФ ст.1483 п.1-4 |
-| Relative Grounds Agent | ✅ Реализован | ГК РФ ст.1483 п.6 |
-| Conflict Search Agents (3) | ✅ Реализован | Query builder + Analyzer + Orchestrator |
-| Human Review Packager | ✅ Реализован | Пакет для юриста |
-| Recommender Agent | ✅ Реализован | Итоговое мемо |
-| Document Assembler Agent | ✅ Реализован | Инициирует генерацию |
-| Document Generator Service | ✅ Реализован | python-docx, без шаблонов |
-| RAG Pipeline (BM25) | ✅ Реализован | TF-IDF, готов к pgvector |
-| Knowledge Loader | ✅ Реализован | .txt, .md файлы |
-| Seed Data | ✅ Реализован | 4 пользователя, 5 клиентов, 8 заявок |
-| Frontend (React) | ✅ Реализован | Dashboard, заявки, клиенты |
-| Docker Compose | ✅ Реализован | API + Web + Redis |
-| Alembic миграции | 🔶 Частично | Только init_db (create_all) |
-| Status Monitor Agent | 🔶 Частично | Базовый polling |
-| Submission Agent | 🔶 Частично | Mock submission |
-| WebSocket уведомления | 🔶 Отложено | Только REST endpoint |
-| Email уведомления | 🔶 Отложено | Только БД-запись |
-| ФИПС SOAP API | 🔶 Отложено | Mock в MVP |
-| pgvector / Qdrant | 🔶 Отложено | BM25 в MVP |
-| Celery Workers | 🔶 Отложено | Inline execution в MVP |
+Что покрыто и какие ошибки нашли тесты — [`docs/testing.md`](docs/testing.md).
 
 ---
 
 ## Переменные окружения
 
-Скопируйте `.env.example` → `.env` и отредактируйте:
+Полный список — в [`.env.example`](.env.example). Ключевые:
 
-| Переменная | По умолчанию | Описание |
-|------------|-------------|----------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./trademark.db` | URL подключения к БД |
-| `SECRET_KEY` | `change-me-...` | Секрет для подписи JWT (**обязательно изменить**) |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | Время жизни токена (минуты) |
-| `LLM_PROVIDER` | `mock` | Провайдер LLM: `mock` / `local` / `openai` |
-| `LLM_MODEL` | `huihui_ai/qwen2.5-abliterate:14b-instruct-q4_K_M` | Имя модели |
-| `LLM_BASE_URL` | `http://localhost:11434/v1` | Base URL для Ollama / OpenAI |
-| `LLM_API_KEY` | _(пусто)_ | API ключ (для OpenAI) |
-| `FIPS_PROVIDER` | `mock` | Провайдер ФИПС: `mock` / `soap` |
-| `VECTOR_STORE_TYPE` | `mock` | Тип хранилища: `mock` / `qdrant` / `pgvector` |
-| `REDIS_URL` | `redis://localhost:6379` | URL Redis для кэша/очередей |
-| `LOG_LEVEL` | `INFO` | Уровень логирования |
-| `CORS_ORIGINS` | `["http://localhost:3000",...]` | Разрешённые CORS origins |
+| Переменная | По умолчанию | Назначение |
+|---|---|---|
+| `DEMO_MODE` | `true` | запрещает реальные внешние действия |
+| `ENABLE_REAL_SUBMISSION` | `false` | фактическая подача заявки |
+| `RATE_LIMIT_ENABLED` | `true` | защита от подбора пароля |
+| `FIPS_PROVIDER` | `mock` | провайдер реестра ТЗ |
+| `LLM_PROVIDER` | `mock` | провайдер LLM |
+| `FILE_STORAGE_PATH` | `./storage/documents` | хранилище оригиналов |
+| `MAX_UPLOAD_MB` | `25` | лимит размера загрузки |
+| `SECRET_KEY` | — | **обязательно сменить** |
+
+Схему БД создаёт Alembic, а не приложение: `create_all()` при старте
+не версионируется и расходится с миграциями.
+
+---
+
+## Приложенные документы
+
+В корне репозитория лежат два реальных документа, на которых
+проверялась работа системы:
+
+- `Выписка_ЕГРЮЛ_03062020-1.pdf` — выписка ЕГРЮЛ, 10 страниц;
+- `Пример заявки.pdf` — заполненный бланк заявки Роспатента, 3 страницы.
+
+Хэши, форматы и результаты анализа — в
+[`docs/document-extraction.md`](docs/document-extraction.md).
+
+> Выписка содержит персональные данные (ФИО и ИНН учредителей), поэтому
+> в git она не добавлена. Файлы нужно положить в корень вручную.
 
 ---
 
 ## Документация
 
-| Файл | Описание |
-|------|----------|
-| [docs/architecture.md](docs/architecture.md) | Общая архитектура системы |
-| [docs/domain-model.md](docs/domain-model.md) | Доменная модель и сущности |
-| [docs/state-machine.md](docs/state-machine.md) | 18 состояний заявки, карта переходов |
-| [docs/agent-graph.md](docs/agent-graph.md) | Граф агентов LangGraph |
-| [docs/api-contracts.md](docs/api-contracts.md) | REST API контракты |
-| [docs/document-pipeline.md](docs/document-pipeline.md) | Пайплайн генерации документов |
-| [docs/rag-design.md](docs/rag-design.md) | Архитектура RAG |
-| [docs/prompt-registry.md](docs/prompt-registry.md) | Управление промптами |
-| [docs/security.md](docs/security.md) | Безопасность и авторизация |
-| [docs/testing-strategy.md](docs/testing-strategy.md) | Стратегия тестирования |
+| Документ | О чём |
+|---|---|
+| [`docs/repository-audit.md`](docs/repository-audit.md) | что было найдено и что сделано |
+| [`docs/document-extraction.md`](docs/document-extraction.md) | пайплайн, паттерны, маппинг, политика LLM |
+| [`docs/demo-deployment.md`](docs/demo-deployment.md) | запуск, туннель, чек-лист безопасности |
+| [`docs/testing.md`](docs/testing.md) | команды и покрытие |
+| [`docs/roadmap.md`](docs/roadmap.md) | план и честные ограничения |
+| [`docs/architecture.md`](docs/architecture.md) | компоненты и потоки данных |
+
+> Документы `agent-graph.md`, `api-contracts.md`, `domain-model.md`,
+> `rag-design.md`, `state-machine.md`, `document-pipeline.md`,
+> `prompt-registry.md`, `security.md`, `testing-strategy.md` —
+> **проектные спецификации, написанные до реализации**. Они описывают
+> замысел, а не текущее состояние кода. Сверяйтесь с `repository-audit.md`.
 
 ---
 
-## Лицензия
+## Ограничения
 
-Проприетарное программное обеспечение. Все права защищены.
+- Поиск по реестру товарных знаков — **демонстрационный датасет**,
+  а не полный поиск по Роспатенту.
+- Правовой анализ носит предварительный характер и требует проверки
+  специалистом.
+- Распознавание сканов не поддерживается: PDF без текстового слоя
+  и изображения дают явную ошибку.
+- Отмеченность чекбоксов бланка из PDF определить невозможно — вид знака,
+  тип приоритета и пункт пошлины заполняются только вручную.
+- Паттерны извлечения проверены на одной типовой форме выписки ЕГРЮЛ.
+
+Полный перечень — в [`docs/roadmap.md`](docs/roadmap.md).

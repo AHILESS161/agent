@@ -1,0 +1,134 @@
+# ---------------------------------------------------------------------------
+# Сопоставление полей: реестровая выписка -> карточка дела -> заявление.
+#
+# Конфигурация версионируется и покрыта тестами. Менять её напрямую в коде
+# нельзя: маппинг определяет, какие данные попадут в юридически значимый
+# документ.
+#
+# Правило: значение НИКОГДА не подставляется в заявление автоматически.
+# Маппинг лишь показывает специалисту, откуда что возьмётся; перенос
+# происходит только после подтверждения.
+# ---------------------------------------------------------------------------
+version: 1
+description: Выписка ЕГРЮЛ -> дело -> заявка на регистрацию товарного знака
+applies_to_document_kind: egrul_extract
+application_schema_version: "1.0.0"
+
+mappings:
+  # --- Наименование заявителя --------------------------------------------
+  - registry_field: registry.legal_entity.full_name
+    case_field: case.applicant.full_name
+    application_field: application.applicant.name
+    label: Полное наименование заявителя
+    required_for_application: true
+    # Наименование юрлица в заявлении должно совпадать со сведениями ЕГРЮЛ.
+    critical: true
+
+  - registry_field: registry.legal_entity.short_name
+    case_field: case.applicant.short_name
+    application_field: null
+    label: Сокращённое наименование
+    required_for_application: false
+    critical: false
+    note: В бланке заявки отдельного поля нет; хранится в карточке дела.
+
+  # --- Идентификаторы -----------------------------------------------------
+  - registry_field: registry.legal_entity.inn
+    case_field: case.applicant.inn
+    application_field: application.applicant.inn
+    label: ИНН
+    required_for_application: true
+    critical: true
+
+  - registry_field: registry.legal_entity.ogrn
+    case_field: case.applicant.ogrn
+    application_field: application.applicant.ogrn
+    label: ОГРН
+    required_for_application: true
+    critical: true
+
+  - registry_field: registry.legal_entity.kpp
+    case_field: case.applicant.kpp
+    application_field: application.applicant.kpp
+    label: КПП
+    required_for_application: false
+    critical: false
+
+  # --- Адрес --------------------------------------------------------------
+  - registry_field: registry.legal_entity.address.full
+    case_field: case.applicant.legal_address
+    application_field: application.applicant.address
+    label: Адрес места нахождения
+    required_for_application: true
+    critical: true
+    # Адрес собирается из компонентов таблицы, поэтому подтверждение
+    # обязательно даже при успешном извлечении всех частей.
+    always_needs_review: true
+
+  # --- Руководитель -------------------------------------------------------
+  - registry_field: registry.legal_entity.director.last_name
+    case_field: case.applicant.director.last_name
+    application_field: null
+    label: Фамилия руководителя
+    required_for_application: false
+    critical: false
+    sensitive: true
+    note: >-
+      Используется для блока подписи. Отдельного поля в бланке нет:
+      подписант указывается в конце заявления.
+
+  - registry_field: registry.legal_entity.director.first_name
+    case_field: case.applicant.director.first_name
+    application_field: null
+    label: Имя руководителя
+    required_for_application: false
+    critical: false
+    sensitive: true
+
+  - registry_field: registry.legal_entity.director.middle_name
+    case_field: case.applicant.director.middle_name
+    application_field: null
+    label: Отчество руководителя
+    required_for_application: false
+    critical: false
+    sensitive: true
+
+  - registry_field: registry.legal_entity.director.position
+    case_field: case.applicant.director.position
+    application_field: null
+    label: Должность руководителя
+    required_for_application: false
+    critical: false
+
+  # --- Страна -------------------------------------------------------------
+  # Код страны в бланке заполняется по стандарту ВОИС ST.3. Для выписки
+  # ЕГРЮЛ он всегда RU, но подставляется только после подтверждения.
+  - registry_field: null
+    case_field: case.applicant.country_code
+    application_field: application.applicant.country_code
+    label: Код страны (ВОИС ST.3)
+    required_for_application: false
+    critical: false
+    default_value: "RU"
+    note: >-
+      Значение по умолчанию для российского юрлица. Требует подтверждения:
+      заявителем может быть иностранное лицо.
+
+# Поля заявления, которые НЕ заполняются из реестровой выписки.
+# Перечислены явно, чтобы отсутствие источника было видимым, а не
+# выглядело как пропущенный маппинг.
+not_sourced_from_registry:
+  - field: application.mark.image
+    reason: Изображение обозначения предоставляет заявитель
+  - field: application.mark.description
+    reason: Описание обозначения составляет специалист
+  - field: application.mark.kind
+    reason: Вид знака отмечается чекбоксом; определяется только вручную
+  - field: application.goods_services
+    reason: Перечень товаров и услуг формируется отдельно (классификация МКТУ)
+  - field: application.correspondence_address
+    reason: Адрес для переписки может отличаться от адреса заявителя
+  - field: application.representative.name
+    reason: Представитель назначается заявителем
+  - field: application.priority.first_filing_date
+    reason: Приоритет заявляется отдельно

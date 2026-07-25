@@ -1,0 +1,1430 @@
+{
+  "schema_version": "1.0.0",
+  "template_name": "Заявка на государственную регистрацию товарного знака",
+  "source": {
+    "filename": "Пример заявки.pdf",
+    "sha256": "c92c0cc0bd4b86409f234c09067de7a367a41d551b3d326cb2ed14de77c10ed6",
+    "file_size": 544201,
+    "format": "pdf",
+    "page_count": 3,
+    "has_text_layer": true
+  },
+  "analysed_at": "2026-07-25T20:00:38.434368+00:00",
+  "analysis_method": "deterministic (pdfplumber: text, rects, tables). LLM не использовался.",
+  "limitations": [
+    "Чекбоксы бланка нарисованы векторными прямоугольниками и отсутствуют в текстовом слое; их отмеченность из PDF надёжно не определяется. Все поля вида choice/boolean требуют ручного подтверждения специалистом.",
+    "Область (540) «Заявляемое обозначение» содержит изображение, а не текст: значение подтверждается вручную.",
+    "Позиции полей приведены с точностью до страницы; координаты сохранены только для чекбоксов."
+  ],
+  "statistics": {
+    "fields_total": 34,
+    "fields_found_in_template": 34,
+    "fields_requiring_manual_confirmation": 8,
+    "checkboxes_detected": 56,
+    "checkboxes_without_label": 0,
+    "tables_detected": 3
+  },
+  "fields": [
+    {
+      "field_id": "application.registration_number",
+      "label": "Регистрационный номер заявки",
+      "section": "Бланк заявки",
+      "inid_code": "210",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "rospatent",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.filing_date",
+      "label": "Дата подачи заявки",
+      "section": "Бланк заявки",
+      "inid_code": "220",
+      "data_type": "date",
+      "required": false,
+      "filled_by": "rospatent",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.correspondence_address",
+      "label": "Адрес для переписки с Роспатентом",
+      "section": "Бланк заявки",
+      "inid_code": "750",
+      "data_type": "text",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.block",
+      "label": "Заявитель",
+      "section": "Бланк заявки",
+      "inid_code": "731",
+      "data_type": "text",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.representative.block",
+      "label": "Представитель заявителя",
+      "section": "Бланк заявки",
+      "inid_code": "740",
+      "data_type": "text",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.mark.image",
+      "label": "Заявляемое обозначение",
+      "section": "Бланк заявки",
+      "inid_code": "540",
+      "data_type": "image",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.description",
+      "label": "Описание заявляемого обозначения",
+      "section": "Бланк заявки",
+      "inid_code": "571",
+      "data_type": "text",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.mark.colors",
+      "label": "Цвет или цветовое сочетание",
+      "section": "Бланк заявки",
+      "inid_code": "591",
+      "data_type": "text",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 1
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.mark.kind",
+      "label": "Указание, относящееся к виду знака",
+      "section": "Бланк заявки",
+      "inid_code": "550",
+      "data_type": "choice",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_collective",
+      "label": "Коллективный знак",
+      "section": "Бланк заявки",
+      "inid_code": "551",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_volumetric",
+      "label": "Объёмный знак",
+      "section": "Бланк заявки",
+      "inid_code": "554",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_holographic",
+      "label": "Голографический знак",
+      "section": "Бланк заявки",
+      "inid_code": "555",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_sound",
+      "label": "Звуковой знак",
+      "section": "Бланк заявки",
+      "inid_code": "556",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_olfactory",
+      "label": "Обонятельный знак",
+      "section": "Бланк заявки",
+      "inid_code": "557",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.is_colour_only",
+      "label": "Знак из одного или нескольких цветов",
+      "section": "Бланк заявки",
+      "inid_code": "558",
+      "data_type": "boolean",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": true
+    },
+    {
+      "field_id": "application.mark.disclaimed_elements",
+      "label": "Неохраняемые элементы",
+      "section": "Бланк заявки",
+      "inid_code": "526",
+      "data_type": "text",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.goods_services",
+      "label": "Перечень товаров и услуг по классам МКТУ",
+      "section": "Бланк заявки",
+      "inid_code": "511",
+      "data_type": "table",
+      "required": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.first_filing_date",
+      "label": "Дата подачи первой заявки (конвенционный приоритет)",
+      "section": "Бланк заявки",
+      "inid_code": "320",
+      "data_type": "date",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.country_code",
+      "label": "Код страны подачи первой заявки",
+      "section": "Бланк заявки",
+      "inid_code": "330",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.first_application_number",
+      "label": "Номер первой заявки",
+      "section": "Бланк заявки",
+      "inid_code": "310",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.exhibition_date",
+      "label": "Дата начала показа экспоната на выставке",
+      "section": "Бланк заявки",
+      "inid_code": "230",
+      "data_type": "date",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.parent_application_number",
+      "label": "Номер первоначальной заявки (выделенная заявка)",
+      "section": "Бланк заявки",
+      "inid_code": "641",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.international_registration_number",
+      "label": "Номер международной регистрации",
+      "section": "Бланк заявки",
+      "inid_code": "151",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.priority.territorial_extension",
+      "label": "Территориальное расширение по международной регистрации",
+      "section": "Бланк заявки",
+      "inid_code": "646",
+      "data_type": "string",
+      "required": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": 2
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.name",
+      "label": "Полное наименование заявителя (или ФИО ИП)",
+      "section": "Бланк заявки",
+      "inid_code": "731",
+      "is_subfield_of_block": true,
+      "data_type": "string",
+      "required": true,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": "legal_entity_name"
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.address",
+      "label": "Полный адрес места нахождения заявителя",
+      "section": "Бланк заявки",
+      "inid_code": "731",
+      "is_subfield_of_block": true,
+      "data_type": "text",
+      "required": true,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": "whitespace"
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.representative.name",
+      "label": "ФИО представителя заявителя",
+      "section": "Бланк заявки",
+      "inid_code": "740",
+      "is_subfield_of_block": true,
+      "data_type": "string",
+      "required": false,
+      "sensitive": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "normalizer": "person_name"
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.ogrn",
+      "label": "ОГРН заявителя",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": "ogrn",
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.ogrnip",
+      "label": "ОГРНИП заявителя",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": "ogrnip",
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.inn",
+      "label": "ИНН заявителя",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": "inn",
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.kpp",
+      "label": "КПП заявителя",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": "kpp",
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.applicant.country_code",
+      "label": "Код страны по стандарту ВОИС ST.3",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.representative.registration_number",
+      "label": "Регистрационный номер патентного поверенного",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": false,
+      "sensitive": false,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    },
+    {
+      "field_id": "application.signature.name",
+      "label": "ФИО подписавшего",
+      "section": "Бланк заявки",
+      "inid_code": null,
+      "data_type": "string",
+      "required": true,
+      "sensitive": true,
+      "filled_by": "applicant",
+      "found_in_template": true,
+      "source_document_position": {
+        "page": null
+      },
+      "validation": {
+        "regex": null,
+        "validator": null,
+        "normalizer": null
+      },
+      "manual_confirmation_required": false
+    }
+  ],
+  "checkboxes": [
+    {
+      "page": 1,
+      "position": {
+        "x": 389.6,
+        "y": 429.8,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Патентным поверенным",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 1,
+      "position": {
+        "x": 388.3,
+        "y": 456.5,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Иным представителем",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 1,
+      "position": {
+        "x": 60.6,
+        "y": 564.7,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "ЗАЯВЛЯЕМОЕ ОБОЗНАЧЕНИЕ (571)",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 1,
+      "position": {
+        "x": 60.6,
+        "y": 760.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "заявляемое обозначение представлено на отдельном",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 1,
+      "position": {
+        "x": 60.6,
+        "y": 775.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Цвет или цветовое сочетание (если испрашивается",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 65.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Указание, относящееся к виду знака:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 251.3,
+        "y": 65.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "словесный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 329.5,
+        "y": 65.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "изобразительный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 435.4,
+        "y": 65.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "световой знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 80.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "изменяющийся знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 159.7,
+        "y": 80.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "позиционный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 252.1,
+        "y": 80.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "осязательный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 344.5,
+        "y": 80.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "вкусовой знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 95.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "объемный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 160.3,
+        "y": 95.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "голографический знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 290.0,
+        "y": 95.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "звуковой знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 384.9,
+        "y": 95.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "обонятельный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 110.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "знак, состоящий исключительно из одного или",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 125.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "комбинированный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 140.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "характеристики знака, не являющегося словесным,",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 171.7,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Коллективный знак",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 181.7,
+        "y": 171.7,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Неохраняемые элементы:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 380.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "подачи первой (первых) заявки (заявок) в государстве",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 417.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "начала открытого показа экспоната на выставке",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 431.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "приоритета первоначальной заявки, из которой",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 445.0,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "международной регистрации (пункт 4 статьи 1495",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 458.8,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "внесения записи о территориальном расширении по",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 482.8,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "приоритета международной регистрации (пункт 4",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 501.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "ПРОШУ УСТАНОВИТЬ ДАТУ ПОДАЧИ",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 539.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "№ первой заявки",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 553.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "№ первоначальной заявки",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 566.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "№ международной регистрации",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 60.6,
+        "y": 629.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "ПРОШУ ВЫДАТЬ СВИДЕТЕЛЬСТВО НА",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 57.7,
+        "y": 645.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Уплачена пошлина по подпункту",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 211.2,
+        "y": 645.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "2.1",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 238.4,
+        "y": 645.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "2.2",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 2,
+      "position": {
+        "x": 265.5,
+        "y": 645.3,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "2.4 приложения № 1 к Положению о патентных и иных",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 104.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Для российского юридического лица:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 298.1,
+        "y": 104.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Для иностранного юридического лица:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 298.1,
+        "y": 128.7,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "КИО (если имеется):",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 140.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Для российского индивидуального",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 298.1,
+        "y": 163.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "ИНН или его аналог в иностранном государстве (если",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 174.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Для российского физического лица:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 298.1,
+        "y": 198.5,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Для иностранного физического лица:",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 298.1,
+        "y": 258.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Гражданство (по общероссийскому",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 464.6,
+        "y": 258.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "Без гражданства",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 318.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "заявляемое обозначение,",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 179.7,
+        "y": 318.2,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "в том числе его трехмерная модель в электронной",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 344.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "перечень товаров и (или) услуг",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 361.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "устав коллективного знака, если заявка подается на",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 379.0,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "документ, подтверждающий уплату пошлины",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 402.4,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "перевод на русский язык документов, прилагаемых к заявке",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 419.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "доверенность, удостоверяющая полномочия представителя",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 189.1,
+        "y": 440.1,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "свидетельство №",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 453.9,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "на товарный знак, зарегистрированный ранее",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    },
+    {
+      "page": 3,
+      "position": {
+        "x": 60.6,
+        "y": 467.7,
+        "width": 5.8,
+        "height": 5.8
+      },
+      "label": "об исключительном праве на географическое указание,",
+      "observed_fill": false,
+      "state": "undetermined",
+      "manual_confirmation_required": true
+    }
+  ],
+  "tables": [
+    {
+      "page": 1,
+      "table_index": 0,
+      "rows": 9,
+      "columns": 5,
+      "bbox": [
+        55.3,
+        57.5,
+        568.5,
+        556.5
+      ]
+    },
+    {
+      "page": 2,
+      "table_index": 0,
+      "rows": 21,
+      "columns": 4,
+      "bbox": [
+        57.0,
+        57.5,
+        568.5,
+        640.9
+      ]
+    },
+    {
+      "page": 3,
+      "table_index": 0,
+      "rows": 10,
+      "columns": 3,
+      "bbox": [
+        55.2,
+        290.0,
+        568.5,
+        718.7
+      ]
+    }
+  ],
+  "unresolved": []
+}

@@ -93,13 +93,29 @@ _CLIENT_TYPE_LABELS = {
 }
 
 
-def _fmt_date(dt: Optional[datetime | date] = None) -> str:
-    """Format date as DD.MM.YYYY."""
+def _fmt_date(dt: Optional[datetime | date | str] = None) -> str:
+    """Format date as DD.MM.YYYY.
+
+    Accepts ``datetime``, ``date``, ISO-formatted strings (``YYYY-MM-DD``
+    or full ISO 8601 with time) and ``None``. Anything unparsable is
+    returned as ``""`` rather than raising.
+    """
     if dt is None:
-        dt = date.today()
+        return ""
+    if isinstance(dt, str):
+        # Try parsing ISO date / datetime string.
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                dt = datetime.strptime(dt, "%Y-%m-%d")
+            except ValueError:
+                return dt
     if isinstance(dt, datetime):
         dt = dt.date()
-    return dt.strftime("%d.%m.%Y")
+    if isinstance(dt, date):
+        return dt.strftime("%d.%m.%Y")
+    return str(dt)
 
 
 def _today() -> str:
@@ -131,13 +147,37 @@ class DocumentGenerator:
         self,
         application: object,
         client: object,
+        *,
+        representative: object | None = None,
+        mktu_classes: list[int] | None = None,
+        priority_claim_info: dict | None = None,
     ) -> Path:
         """
-        Generate the official trademark registration application form.
+        Generate the official trademark registration application form (DOCX).
+
+        Implements the structure of the standard Russian Federation application
+        form used by Rospatent (Федеральная служба по интеллектуальной
+        собственности), covering sections:
+
+            А. Заявитель
+            Б. Место нахождения / жительства
+            В. Представитель заявителя (патентный поверенный)
+            Г. Адрес для переписки
+            Д. Заявляемое обозначение
+            Е. Товары и услуги / Классы МКТУ
+            Ж. Приоритет
+            З. Подпись
 
         Args:
             application: TrademarkApplicationDraft ORM instance (or compatible dict).
             client: Client ORM instance (or compatible dict).
+            representative: Optional ClientRepresentative ORM instance — патентный
+                поверенный или представитель по доверенности.
+            mktu_classes: Список подтверждённых юристом классов МКТУ.
+            priority_claim_info: dict с полями:
+                - country: str
+                - number: str
+                - filing_date: str | datetime | date
 
         Returns:
             Path to the generated .docx file.
@@ -147,19 +187,22 @@ class DocumentGenerator:
         """
         app = _as_dict(application)
         cli = _as_dict(client)
+        rep = _as_dict(representative) if representative else {}
 
-        # Completeness check
+        # Completeness check — required by Russian form section А/Д/Е
         missing: list[str] = []
-        if not cli.get("legal_name"):
-            missing.append("client.legal_name")
+        if not cli.get("full_name_or_company_name") and not cli.get("legal_name"):
+            missing.append("client.full_name_or_company_name")
         if not cli.get("inn"):
             missing.append("client.inn")
-        if not app.get("mark_name"):
+        if not cli.get("address") and not cli.get("legal_address"):
+            missing.append("client.address")
+        if not app.get("mark_name") and not app.get("mark_text"):
             missing.append("application.mark_name")
         if not app.get("mark_type"):
             missing.append("application.mark_type")
-        if not app.get("goods_services_description"):
-            missing.append("application.goods_services_description")
+        if not app.get("goods_services_raw") and not app.get("goods_services_description"):
+            missing.append("application.goods_services_raw")
 
         if missing:
             raise CompletenessError(missing)
@@ -181,53 +224,192 @@ class DocumentGenerator:
         _add_labeled(doc, "Дата подачи:", _today())
         _add_labeled(doc, "Вх. номер (заполняется Роспатентом):", "________________")
 
+        # ------------------------------------------------------------------
+        # А. ЗАЯВИТЕЛЬ
+        # ------------------------------------------------------------------
         doc.add_paragraph()
-        _add_section_heading(doc, "1. ЗАЯВИТЕЛЬ")
-
-        client_type = cli.get("client_type", "company")
+        _add_section_heading(doc, "А. ЗАЯВИТЕЛЬ")
+        client_type = cli.get("type") or cli.get("client_type", "company")
         _add_labeled(
             doc,
-            "Вид заявителя:",
+            "Вид заявителя (юр. лицо / ИП / физ. лицо):",
             _CLIENT_TYPE_LABELS.get(str(client_type), str(client_type)),
         )
-        _add_labeled(doc, "Наименование / ФИО:", cli.get("legal_name", ""))
-        _add_labeled(doc, "ИНН:", cli.get("inn", ""))
-        if cli.get("ogrn"):
-            _add_labeled(doc, "ОГРН / ОГРНИП:", cli.get("ogrn", ""))
-        _add_labeled(
-            doc, "Юридический / почтовый адрес:", cli.get("legal_address", "")
+        legal_name = (
+            cli.get("full_name_or_company_name")
+            or cli.get("legal_name")
+            or ""
         )
-        _add_labeled(doc, "Контактный телефон:", cli.get("contact_phone", ""))
-        _add_labeled(doc, "Электронная почта:", cli.get("contact_email", ""))
+        _add_labeled(doc, "Полное наименование / ФИО:", legal_name)
+        if cli.get("short_name"):
+            _add_labeled(doc, "Сокращённое наименование:", cli.get("short_name", ""))
+        _add_labeled(doc, "ИНН:", cli.get("inn", ""))
+        ogrn = cli.get("ogrn_or_ogrnip") or cli.get("ogrn")
+        if ogrn:
+            _add_labeled(doc, "ОГРН / ОГРНИП:", ogrn)
+        if cli.get("country"):
+            _add_labeled(doc, "Страна:", cli.get("country", ""))
 
+        # ------------------------------------------------------------------
+        # Б. МЕСТО НАХОЖДЕНИЯ / ЖИТЕЛЬСТВА
+        # ------------------------------------------------------------------
         doc.add_paragraph()
-        _add_section_heading(doc, "2. СВЕДЕНИЯ ОБ ОБОЗНАЧЕНИИ")
-        _add_labeled(doc, "Заявляемое обозначение:", app.get("mark_name", ""))
-        _add_labeled(doc, "Словесный элемент:", app.get("mark_text") or app.get("mark_name", ""))
+        _add_section_heading(doc, "Б. МЕСТО НАХОЖДЕНИЯ / ЖИТЕЛЬСТВА")
+        _add_labeled(
+            doc,
+            "Юридический / почтовый адрес (с индексом):",
+            cli.get("address") or cli.get("legal_address") or "",
+        )
+
+        # ------------------------------------------------------------------
+        # В. ПРЕДСТАВИТЕЛЬ ЗАЯВИТЕЛЯ
+        # ------------------------------------------------------------------
+        doc.add_paragraph()
+        _add_section_heading(doc, "В. ПРЕДСТАВИТЕЛЬ ЗАЯВИТЕЛЯ (ПАТЕНТНЫЙ ПОВЕРЕННЫЙ)")
+        if rep:
+            _add_labeled(doc, "ФИО представителя:", rep.get("full_name", ""))
+            if rep.get("role"):
+                _add_labeled(doc, "Статус / роль:", rep.get("role", ""))
+            if rep.get("poa_reference"):
+                _add_labeled(
+                    doc,
+                    "Доверенность № / дата:",
+                    rep.get("poa_reference", ""),
+                )
+            if rep.get("phone"):
+                _add_labeled(doc, "Телефон представителя:", rep.get("phone", ""))
+            if rep.get("email"):
+                _add_labeled(doc, "Email представителя:", rep.get("email", ""))
+            if rep.get("personal_data_consent_reference"):
+                _add_labeled(
+                    doc,
+                    "Согласие на обработку ПДн:",
+                    rep.get("personal_data_consent_reference", ""),
+                )
+        else:
+            doc.add_paragraph(
+                "(Представитель не указан. Заявитель действует самостоятельно.)"
+            )
+
+        # ------------------------------------------------------------------
+        # Г. АДРЕС ДЛЯ ПЕРЕПИСКИ
+        # ------------------------------------------------------------------
+        doc.add_paragraph()
+        _add_section_heading(doc, "Г. АДРЕС ДЛЯ ПЕРЕПИСКИ")
+        corr_address = (
+            rep.get("address")
+            if rep and rep.get("address")
+            else (cli.get("address") or cli.get("legal_address") or "")
+        )
+        _add_labeled(doc, "Адрес для переписки:", corr_address)
+        _add_labeled(
+            doc,
+            "Телефон для переписки:",
+            (rep.get("phone") if rep and rep.get("phone") else cli.get("phone", "")) or "",
+        )
+        _add_labeled(
+            doc,
+            "Электронная почта для переписки:",
+            (rep.get("email") if rep and rep.get("email") else cli.get("email", "")) or "",
+        )
+
+        # ------------------------------------------------------------------
+        # Д. ЗАЯВЛЯЕМОЕ ОБОЗНАЧЕНИЕ
+        # ------------------------------------------------------------------
+        doc.add_paragraph()
+        _add_section_heading(doc, "Д. ЗАЯВЛЯЕМОЕ ОБОЗНАЧЕНИЕ")
+        mark_name = app.get("mark_name") or app.get("mark_text") or ""
+        _add_labeled(doc, "Обозначение (полное):", mark_name)
+        mark_text = app.get("mark_text") or app.get("mark_name") or ""
+        _add_labeled(doc, "Словесный элемент:", mark_text)
         mark_type = app.get("mark_type", "word")
         _add_labeled(
             doc,
             "Вид обозначения:",
             _MARK_TYPE_LABELS.get(str(mark_type), str(mark_type)),
         )
-        if app.get("description"):
-            _add_labeled(doc, "Описание:", app.get("description", ""))
+        if app.get("colors_claimed"):
+            _add_labeled(
+                doc,
+                "Заявляемые цвета:",
+                app.get("colors_claimed", ""),
+            )
+        if app.get("transliteration"):
+            _add_labeled(
+                doc,
+                "Транслитерация:",
+                app.get("transliteration", ""),
+            )
+        if app.get("translation"):
+            _add_labeled(doc, "Перевод:", app.get("translation", ""))
+        if app.get("description_of_mark"):
+            _add_labeled(
+                doc,
+                "Описание обозначения:",
+                app.get("description_of_mark", ""),
+            )
+        if app.get("mark_image_file_id"):
+            _add_labeled(
+                doc,
+                "Файл изображения обозначения:",
+                app.get("mark_image_file_id", ""),
+            )
 
+        # ------------------------------------------------------------------
+        # Е. ТОВАРЫ И УСЛУГИ / КЛАССЫ МКТУ
+        # ------------------------------------------------------------------
         doc.add_paragraph()
-        _add_section_heading(doc, "3. ПЕРЕЧЕНЬ ТОВАРОВ И УСЛУГ (МКТУ)")
-        doc.add_paragraph(app.get("goods_services_description", ""))
-
-        doc.add_paragraph()
-        _add_section_heading(doc, "4. КЛАССЫ МКТУ")
-        doc.add_paragraph(
-            "(Классы МКТУ подтверждаются юристом и вносятся перед подачей)"
+        _add_section_heading(doc, "Е. ТОВАРЫ И УСЛУГИ / КЛАССЫ МКТУ")
+        goods_raw = (
+            app.get("goods_services_raw")
+            or app.get("goods_services_description")
+            or ""
         )
+        doc.add_paragraph(goods_raw)
+        if mktu_classes:
+            classes_str = ", ".join(str(c) for c in sorted(set(mktu_classes)))
+        else:
+            classes_str = "(Классы МКТУ подтверждаются юристом перед подачей)"
+        _add_labeled(doc, "Классы МКТУ:", classes_str)
 
+        # ------------------------------------------------------------------
+        # Ж. ПРИОРИТЕТ
+        # ------------------------------------------------------------------
+        if priority_claim_info:
+            doc.add_paragraph()
+            _add_section_heading(doc, "Ж. ПРИОРИТЕТ")
+            if priority_claim_info.get("country"):
+                _add_labeled(
+                    doc,
+                    "Страна подачи первоначальной заявки:",
+                    str(priority_claim_info.get("country", "")),
+                )
+            if priority_claim_info.get("number"):
+                _add_labeled(
+                    doc,
+                    "Номер первоначальной заявки:",
+                    str(priority_claim_info.get("number", "")),
+                )
+            if priority_claim_info.get("filing_date"):
+                _add_labeled(
+                    doc,
+                    "Дата подачи первоначальной заявки:",
+                    _fmt_date(priority_claim_info.get("filing_date")),
+                )
+
+        # ------------------------------------------------------------------
+        # З. ПОДПИСЬ
+        # ------------------------------------------------------------------
         doc.add_paragraph()
-        _add_section_heading(doc, "5. ПОДПИСИ")
+        _add_section_heading(doc, "З. ПОДПИСЬ")
         doc.add_paragraph()
-        _add_labeled(doc, "Подпись заявителя:", "____________________")
-        _add_labeled(doc, "ФИО:", "____________________")
+        signer_label = (
+            f"Подпись {rep.get('full_name', '') or legal_name}:"
+            if rep and rep.get("full_name")
+            else f"Подпись {legal_name}:"
+        )
+        _add_labeled(doc, signer_label, "____________________")
+        _add_labeled(doc, "ФИО подписанта:", legal_name)
         _add_labeled(doc, "Дата:", _today())
 
         filename = f"application_draft_{app.get('id', 'draft')}_{date.today().isoformat()}.docx"

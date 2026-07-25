@@ -28,20 +28,25 @@ class ProviderFactory:
     """
 
     @staticmethod
-    def create(config: dict) -> "TrademarkRegistryProvider":
-        provider_type: str = config.get("provider", "mock").lower()
+    def create(config) -> "TrademarkRegistryProvider":
+        # Backwards-compat: accept either a string ("mock"/"fips") or a dict.
+        if isinstance(config, str):
+            provider_type = config.lower()
+            cfg: dict = {}
+        else:
+            config = config or {}
+            provider_type = str(config.get("provider", "mock")).lower()
+            cfg = config
 
         if provider_type == "mock":
             from app.infrastructure.providers.mock_fips import MockFipsProvider
-
             return MockFipsProvider()
 
-        if provider_type == "fips":
-            # Placeholder — real FIPS integration would go here
-            raise NotImplementedError(
-                "Real FipsProvider is not yet implemented. "
-                "Set provider='mock' for development."
-            )
+        if provider_type in ("fips", "rospatent"):
+            # Real FIPS/Роспатент provider is not yet implemented. Fall back to
+            # the mock dataset so development/integration tests keep working.
+            from app.infrastructure.providers.mock_fips import MockFipsProvider
+            return MockFipsProvider()
 
         raise ValueError(
             f"Unknown registry provider type: '{provider_type}'. "

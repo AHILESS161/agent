@@ -65,3 +65,8 @@ tmp/
 *.bak
 *.tmp
 *.log
+
+# --- Runtime DB artifacts ---
+trademark.db
+backend/test_run.db
+backend/*.db

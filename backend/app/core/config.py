@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     LLM_BASE_URL: Optional[str] = None
     LLM_API_KEY: Optional[str] = None
 
+    # Провайдер реестра товарных знаков (Роспатент / ФИПС).
+    # На текущем этапе реально доступен только "mock" — демо-датасет.
+    FIPS_PROVIDER: str = "mock"
+
     # Security
     SECRET_KEY: str = "change-me-in-production-use-secrets-token-hex-32"
     ALGORITHM: str = "HS256"

@@ -1,0 +1,134 @@
+id: intake.application_pdf_parse
+version: "1.0.0"
+description: >
+  Извлекает недостающие поля из распарсенного текста заполненной формы
+  заявки на товарный знак (Роспатент). Используется как LLM-fallback после
+  эвристического парсера по кодам INID.
+
+system: |
+  Ты — эксперт по заполнению форм заявок Роспатента на регистрацию товарных
+  знаков и по парсингу заполненных бланков формы (коды INID WIPO ST.9).
+
+  Тебе дают:
+    1. Сырой текст, извлечённый из PDF/DOCX формы заявки.
+    2. Словарь already_extracted — поля, которые уже извлёк эвристический парсер.
+
+  Твоя задача — найти в тексте и вернуть только те поля, которых НЕТ в
+  already_extracted или которые равны null/""/[]/{}. Для найденных полей
+  верни реальные значения из текста. Не придумывай данные, которых нет.
+
+  Поля формы, которые нужно искать (если пустые в already_extracted):
+    client.full_name_or_company_name   — полное наименование юр. лица или ФИО ИП
+    client.inn                         — ИНН (10 или 12 цифр)
+    client.ogrn_or_ogrnip              — ОГРН (13 цифр) или ОГРНИП (15 цифр)
+    client.kpp                         — КПП (9 цифр)
+    client.address                     — почтовый/юридический адрес
+    client.country_code                — двубуквенный код страны (WIPO ST.3)
+    client.email                       — email
+    client.phone                       — телефон
+
+    application.mark_name              — заявляемое обозначение (в кавычках)
+    application.mark_type              — один из: word, figurative, combined,
+                                         3d, sound, light, changing, positional,
+                                         tactile, taste, olfactory, holographic, color
+    application.description_of_mark    — описание обозначения
+    application.colors_claimed         — цвета/цветовое сочетание
+    application.goods_services_raw     — перечень товаров и услуг (по классам)
+    application.mktu_classes           — список номеров классов МКТУ (1..45)
+    application.correspondence_address — адрес для переписки
+    application.contact_phone          — телефон для переписки
+    application.contact_email          — email для переписки
+
+    representative.full_name           — ФИО представителя/пат. поверенного
+    representative.role                — "Патентный поверенный" или "Иной представитель"
+    representative.email               — email представителя
+    representative.phone               — телефон представителя
+    representative.address             — адрес представителя
+    representative.patent_attorney_reg_number — рег. номер пат. поверенного
+
+    priority.first_application_number      — номер первой заявки
+    priority.first_application_country     — код страны конвенционного приоритета
+    priority.first_application_filing_date — дата подачи первой заявки
+
+  Отвечай ТОЛЬКО валидным JSON согласно output_schema. Без пояснений вне JSON.
+
+user_template: |
+  ## Сырой текст формы заявки:
+  ```
+  {{ raw_text }}
+  ```
+
+  ## Уже извлечено эвристикой:
+  ```json
+  {{ already_extracted | tojson(indent=2) }}
+  ```
+
+  Верни JSON с дополнительно извлечёнными полями (по секциям client,
+  application, representative, priority). Не дублируй уже заполненные поля.
+  Если ничего нового найти не можешь — верни пустые словари.
+
+input_schema:
+  type: object
+  required:
+    - raw_text
+    - already_extracted
+  properties:
+    raw_text:
+      type: string
+      description: Сырой текст формы заявки
+    already_extracted:
+      type: object
+      description: Поля, которые эвристика уже извлекла
+
+output_schema:
+  type: object
+  required:
+    - client
+    - application
+    - representative
+    - priority
+  properties:
+    client:
+      type: object
+    application:
+      type: object
+    representative:
+      type: object
+    priority:
+      type: object
+
+examples:
+  - input:
+      raw_text: |
+        ЗАЯВЛЕНИЕ
+        ...
+        ОГРН: 1037746123123
+        ИНН: 7736777555
+        КПП: 773601001
+      already_extracted:
+        client:
+          full_name_or_company_name: "ООО «СОЮЗ»"
+        application: {}
+        representative: {}
+        priority: {}
+    output:
+      client:
+        ogrn_or_ogrnip: "1037746123123"
+        inn: "7736777555"
+        kpp: "773601001"
+      application: {}
+      representative: {}
+      priority: {}
+
+guardrails:
+  - Возвращай только те поля, которые реально присутствуют в тексте
+  - Не выдумывай данные
+  - mktu_classes — массив целых чисел 1..45
+  - mark_type — только из разрешённого списка
+  - Не дублируй поля, которые уже есть в already_extracted
+
+evaluation_notes: >
+  Ключевой критерий — точность. Если LLM не уверена, лучше вернуть пустое
+  поле, чем выдумать. На «Примере заявки» (форма Роспатента) эвристика
+  покрывает большую часть полей, LLM должна дополнять только сложные случаи
+  (например, рваный текст после OCR или нестандартное форматирование).

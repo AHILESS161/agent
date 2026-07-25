@@ -17,14 +17,16 @@ class LLMProviderFactory:
         - "mock"       → MockLLMProvider (no network, canned responses)
         - "local"      → OpenAICompatibleProvider pointed at a local server (e.g. Qwen via vLLM)
         - "openai"     → OpenAICompatibleProvider pointed at api.openai.com
+        - "routerai"   → OpenAICompatibleProvider pointed at https://routerai.ru/api/v1
+                         (OpenAI-compatible proxy, default model tencent/hy3)
         - "anthropic"  → (future) AnthropicProvider stub
         - "deepseek"   → OpenAICompatibleProvider pointed at DeepSeek API
 
     Config shape:
         {
-            "provider": "mock" | "local" | "openai" | "anthropic" | "deepseek",
+            "provider": "mock" | "local" | "openai" | "routerai" | "anthropic" | "deepseek",
 
-            # required for local/openai/deepseek:
+            # required for local/openai/routerai/deepseek:
             "base_url": "http://localhost:8080/v1",
             "api_key": "sk-...",
             "model": "qwen2.5-72b-instruct",
@@ -35,6 +37,26 @@ class LLMProviderFactory:
         }
     """
 
+    # Provider-specific defaults (used only if value is not provided in config)
+    PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+        "openai": {
+            "base_url": "https://api.openai.com/v1",
+            "model": "gpt-4o",
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com/v1",
+            "model": "deepseek-chat",
+        },
+        "routerai": {
+            "base_url": "https://routerai.ru/api/v1",
+            "model": "tencent/hy3",
+        },
+        "local": {
+            "base_url": "http://localhost:11434/v1",
+            "model": "qwen2.5-72b-instruct",
+        },
+    }
+
     @staticmethod
     def create(config: dict) -> "BaseLLMProvider":
         provider_type: str = config.get("provider", "mock").lower()
@@ -44,21 +66,20 @@ class LLMProviderFactory:
 
             return MockLLMProvider()
 
-        if provider_type in ("local", "openai", "deepseek"):
+        if provider_type in ("local", "openai", "deepseek", "routerai"):
             from app.infrastructure.llm.openai_compatible_provider import (
                 OpenAICompatibleProvider,
             )
 
-            base_url = config.get("base_url", "https://api.openai.com/v1")
+            defaults = LLMProviderFactory.PROVIDER_DEFAULTS.get(provider_type, {})
+            base_url = (
+                config.get("base_url")
+                or defaults.get("base_url", "https://api.openai.com/v1")
+            )
             api_key = config.get("api_key", "none")
-            model = config.get("model", "gpt-4o")
+            model = config.get("model") or defaults.get("model", "gpt-4o")
             timeout = float(config.get("timeout", 120.0))
             default_system_prompt = config.get("default_system_prompt")
-
-            # Provider-specific defaults
-            if provider_type == "deepseek":
-                base_url = config.get("base_url", "https://api.deepseek.com/v1")
-                model = config.get("model", "deepseek-chat")
 
             return OpenAICompatibleProvider(
                 base_url=base_url,
@@ -77,5 +98,5 @@ class LLMProviderFactory:
 
         raise ValueError(
             f"Unknown LLM provider type: '{provider_type}'. "
-            "Supported values: mock, local, openai, deepseek, anthropic."
+            "Supported values: mock, local, openai, routerai, deepseek, anthropic."
         )

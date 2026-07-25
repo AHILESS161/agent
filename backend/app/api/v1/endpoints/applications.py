@@ -128,17 +128,12 @@ async def _create_audit(
     session.add(entry)
 
 
-def _get_llm_provider() -> Any:
-    """Return an LLM provider based on configuration."""
-    from app.core.config import settings
-    from app.infrastructure.llm.factory import LLMProviderFactory
-    return LLMProviderFactory.create({"provider": settings.LLM_PROVIDER})
-
-
-def _get_prompt_registry() -> Any:
-    """Return the shared PromptRegistry."""
-    from app.infrastructure.llm.prompt_registry import PromptRegistry
-    return PromptRegistry()
+# Провайдеры живут в app.api.dependencies — единственный источник правды.
+# Имена реэкспортируются, чтобы не ломать существующие импорты и тесты.
+from app.api.dependencies import (  # noqa: E402
+    _get_llm_provider,
+    _get_prompt_registry,
+)
 
 
 # ---------------------------------------------------------------------------

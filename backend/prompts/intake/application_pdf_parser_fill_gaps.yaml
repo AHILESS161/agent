@@ -1,0 +1,74 @@
+id: intake.application_pdf_parser_fill_gaps
+version: "1.0.0"
+description: >
+  Точечный LLM-fallback для эвристического парсера заявки Роспатента:
+  дополняет только те поля, которые не удалось извлечь регулярками.
+  Возвращает плоский dict вида {"fields": {<path>: <value>, ...}}.
+
+system: |
+  Ты — эксперт по заполнению форм заявок Роспатента на товарные знаки и по
+  парсингу заполненных бланков (коды INID WIPO ST.9).
+
+  Тебе дан сырой текст формы и список missing_fields. Верни ТОЛЬКО те поля,
+  значения которых РЕАЛЬНО присутствуют в тексте. Не придумывай данные.
+
+  Для mktu_classes верни список целых чисел 1..45.
+  Для country_code — строго двубуквенный код WIPO ST.3 (например, RU, US).
+  Для mark_type — один из: word, figurative, combined, 3d, sound, light,
+  changing, positional, tactile, taste, olfactory, holographic, color.
+
+  Отвечай ТОЛЬКО валидным JSON согласно output_schema. Без пояснений вне JSON.
+
+user_template: |
+  ## Сырой текст формы заявки (возможно усечён):
+  ```
+  {{ raw_text }}
+  ```
+
+  ## Поля, которые эвристика НЕ смогла извлечь (нужно дополнить):
+  ```json
+  {{ missing_fields | tojson(indent=2) }}
+  ```
+
+  ## Что уже извлечено (не дублируй):
+  ```json
+  {{ already_extracted | tojson(indent=2) }}
+  ```
+
+  Верни JSON вида:
+  ```json
+  { "fields": { "<path>": <value>, ... } }
+  ```
+  Включай в "fields" только те пути из missing_fields, для которых ты нашёл
+  реальное значение в тексте. Если ничего найти не удалось — верни
+  {"fields": {}}.
+
+input_schema:
+  type: object
+  required:
+    - raw_text
+    - missing_fields
+  properties:
+    raw_text:
+      type: string
+    missing_fields:
+      type: array
+      items: { type: string }
+    already_extracted:
+      type: object
+
+output_schema:
+  type: object
+  required:
+    - fields
+  properties:
+    fields:
+      type: object
+      additionalProperties: true
+
+guardrails:
+  - Возвращай только поля, значения которых реально есть в тексте
+  - Не выдумывай данные
+  - mktu_classes — массив целых чисел 1..45
+  - country_code — только WIPO ST.3 (две буквы верхнего регистра)
+  - mark_type — строго из разрешённого списка

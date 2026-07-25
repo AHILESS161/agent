@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
-import { mockApplications, mockClients, mockUsers, getApplicationsByClientId, getApplicationsByAssignee } from "@/lib/mock-data";
+import { useCases } from "@/lib/use-cases";
 import { STATUS_LABELS, STATUS_COLORS, MARK_TYPE_LABELS, type ApplicationStatus } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, Filter, Eye, Pencil } from "lucide-react";
+import { Plus, Search, Filter, Eye, Pencil, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export default function ApplicationsListPage() {
@@ -17,30 +17,59 @@ export default function ApplicationsListPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
+  const { data, isLoading, error, reload } = useCases();
+  const applications = data?.applications ?? [];
+  const clientsById = data?.clientsById ?? {};
+
+  // Клиент видит только свои дела; остальные роли — все дела,
+  // фильтрация по исполнителю доступна вручную.
   const baseApps = useMemo(() => {
     if (!user) return [];
-    if (user.role === "client") return getApplicationsByClientId(user.id);
-    if (user.role === "lawyer") return getApplicationsByAssignee(user.id);
-    return mockApplications;
-  }, [user]);
+    if (user.role === "client") {
+      return applications.filter(app => app.clientId === user.id);
+    }
+    return applications;
+  }, [user, applications]);
 
   const filtered = useMemo(() => {
     return baseApps.filter(app => {
       if (statusFilter !== "all" && app.status !== statusFilter) return false;
       if (search) {
         const q = search.toLowerCase();
-        const client = mockClients.find(c => c.id === app.clientId);
+        const client = clientsById[app.clientId];
         return (
           app.markName.toLowerCase().includes(q) ||
           app.id.toString().includes(q) ||
-          client?.shortName.toLowerCase().includes(q)
+          (client?.shortName ?? "").toLowerCase().includes(q)
         );
       }
       return true;
     });
-  }, [baseApps, search, statusFilter]);
+  }, [baseApps, search, statusFilter, clientsById]);
 
   const statusOptions: ApplicationStatus[] = [...new Set(baseApps.map(a => a.status))];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-sm">Загрузка заявок…</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
+        <p className="flex-1 text-sm" data-testid="applications-error">{error}</p>
+        <Button variant="ghost" size="sm" onClick={reload}>
+          <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+          Повторить
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4" data-testid="applications-list-page">
@@ -102,8 +131,7 @@ export default function ApplicationsListPage() {
             </TableHeader>
             <TableBody>
               {filtered.map(app => {
-                const client = mockClients.find(c => c.id === app.clientId);
-                const assignee = app.assigneeId ? mockUsers.find(u => u.id === app.assigneeId) : null;
+                const client = clientsById[app.clientId];
                 return (
                   <TableRow key={app.id} data-testid={`app-table-row-${app.id}`}>
                     <TableCell className="font-mono text-xs text-muted-foreground">#{app.id}</TableCell>
@@ -126,7 +154,7 @@ export default function ApplicationsListPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {assignee ? assignee.fullName.split(" ").slice(0, 2).join(" ") : "—"}
+                      {app.assigneeId ? `Пользователь #${app.assigneeId}` : "—"}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-xs text-muted-foreground">
                       {new Date(app.updatedAt).toLocaleDateString("ru-RU")}

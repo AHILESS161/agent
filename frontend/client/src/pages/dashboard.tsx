@@ -42,12 +42,12 @@ function KpiCard({ title, value, icon: Icon, description, color }: {
 
 function StatusFunnel() {
   const statusGroups: { label: string; statuses: ApplicationStatus[]; color: string }[] = [
-    { label: "Черновик / Сбор данных", statuses: ["draft", "awaiting_client_data"], color: "bg-slate-400" },
-    { label: "Проверка / Анализ", statuses: ["intake_review", "legal_precheck_running", "awaiting_lawyer_review"], color: "bg-blue-500" },
-    { label: "Классы / Конфликты", statuses: ["classes_review", "conflict_search_running"], color: "bg-violet-500" },
-    { label: "Рекомендации / Документы", statuses: ["recommendation_ready", "docs_preparation", "awaiting_doc_approval"], color: "bg-amber-500" },
-    { label: "Подача / Мониторинг", statuses: ["ready_for_submission", "submitted", "status_monitoring"], color: "bg-teal-500" },
-    { label: "Завершена / Архив", statuses: ["completed", "rejected", "archived"], color: "bg-green-500" },
+    { label: "Черновик / Сбор данных", statuses: ["draft", "info_requested"], color: "bg-slate-400" },
+    { label: "Проверка / Анализ", statuses: ["info_received", "legal_review_pending", "legal_review_in_progress"], color: "bg-blue-500" },
+    { label: "Классы / Конфликты", statuses: ["classification_review", "conflict_search_in_progress"], color: "bg-violet-500" },
+    { label: "Рекомендации / Документы", statuses: ["memo_approved", "document_generation", "document_approved"], color: "bg-amber-500" },
+    { label: "Подача / Мониторинг", statuses: ["submitted"], color: "bg-teal-500" },
+    { label: "Завершена / Архив", statuses: ["closed"], color: "bg-green-500" },
   ];
 
   return (
@@ -133,16 +133,16 @@ function NotificationsList({ userId }: { userId: number }) {
 
 function LawyerDashboard({ userId }: { userId: number }) {
   const assigned = getApplicationsByAssignee(userId);
-  const pending = assigned.filter(a => ["awaiting_lawyer_review", "recommendation_ready", "awaiting_doc_approval"].includes(a.status));
-  const highRisk = assigned.filter(a => ["conflict_search_running", "office_action_received"].includes(a.status));
+  const pending = assigned.filter(a => ["legal_review_in_progress", "memo_approved", "document_approved"].includes(a.status));
+  const highRisk = assigned.filter(a => ["conflict_search_in_progress", "submitted"].includes(a.status));
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <KpiCard title="Активные заявки" value={assigned.filter(a => !["completed", "rejected", "archived"].includes(a.status)).length} icon={FileText} />
+        <KpiCard title="Активные заявки" value={assigned.filter(a => !["closed", "rejected", "closed"].includes(a.status)).length} icon={FileText} />
         <KpiCard title="Ожидают рассмотрения" value={pending.length} icon={Clock} description="Требуется ваше решение" color="bg-amber-100 dark:bg-amber-900/30" />
         <KpiCard title="Высокий риск" value={highRisk.length} icon={AlertTriangle} color="bg-red-100 dark:bg-red-900/30" />
-        <KpiCard title="Завершено" value={assigned.filter(a => a.status === "completed").length} icon={CheckCircle} color="bg-green-100 dark:bg-green-900/30" />
+        <KpiCard title="Завершено" value={assigned.filter(a => a.status === "closed").length} icon={CheckCircle} color="bg-green-100 dark:bg-green-900/30" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -177,8 +177,8 @@ function LawyerDashboard({ userId }: { userId: number }) {
 
 function ManagerDashboard() {
   const total = mockApplications.length;
-  const active = mockApplications.filter(a => !["completed", "rejected", "archived", "draft"].includes(a.status));
-  const awaitingData = mockApplications.filter(a => a.status === "awaiting_client_data");
+  const active = mockApplications.filter(a => !["closed", "rejected", "closed", "draft"].includes(a.status));
+  const awaitingData = mockApplications.filter(a => a.status === "info_requested");
 
   return (
     <div className="space-y-6">
@@ -213,14 +213,14 @@ function ClientDashboard({ userId }: { userId: number }) {
   // Client's applications — linked by clientId. For demo, client user 4 maps to client 4.
   const clientId = userId;
   const myApps = getApplicationsByClientId(clientId);
-  const actionRequired = myApps.filter(a => ["awaiting_client_data", "client_action_required"].includes(a.status));
+  const actionRequired = myApps.filter(a => ["info_requested", "info_requested"].includes(a.status));
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KpiCard title="Мои заявки" value={myApps.length} icon={FileText} />
         <KpiCard title="Требуют действий" value={actionRequired.length} icon={AlertTriangle} color="bg-amber-100 dark:bg-amber-900/30" />
-        <KpiCard title="Завершено" value={myApps.filter(a => a.status === "completed").length} icon={CheckCircle} color="bg-green-100 dark:bg-green-900/30" />
+        <KpiCard title="Завершено" value={myApps.filter(a => a.status === "closed").length} icon={CheckCircle} color="bg-green-100 dark:bg-green-900/30" />
       </div>
 
       <Card className="border border-card-border">

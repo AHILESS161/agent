@@ -50,7 +50,7 @@ export const mockClients: Client[] = [
 // ========== APPLICATIONS ==========
 export const mockApplications: Application[] = [
   {
-    id: 1, clientId: 1, status: "awaiting_lawyer_review", markType: "word", markName: "ТЕХНОПАРК",
+    id: 1, clientId: 1, status: "legal_review_in_progress", markType: "word", markName: "ТЕХНОПАРК",
     markText: "ТЕХНОПАРК", colorsClaimed: "", transliteration: "TEKHNOPARK", translation: "Technopark",
     descriptionOfMark: "Словесное обозначение, выполненное стандартным шрифтом заглавными буквами русского алфавита",
     businessDescription: "Разработка и продажа программного обеспечения, IT-консалтинг, облачные технологии",
@@ -59,7 +59,7 @@ export const mockApplications: Application[] = [
     assigneeId: 2, createdAt: "2026-01-20T10:30:00Z", updatedAt: "2026-03-15T14:00:00Z",
   },
   {
-    id: 2, clientId: 2, status: "conflict_search_running", markType: "combined", markName: "СИБИРСКИЙ МЁД",
+    id: 2, clientId: 2, status: "conflict_search_in_progress", markType: "combined", markName: "СИБИРСКИЙ МЁД",
     markText: "СИБИРСКИЙ МЁД", colorsClaimed: "Золотой, коричневый, белый",
     transliteration: "SIBIRSKIY MYOD", translation: "Siberian Honey",
     descriptionOfMark: "Комбинированное обозначение: стилизованное изображение медведя с сотами, с текстом «СИБИРСКИЙ МЁД»",
@@ -78,7 +78,7 @@ export const mockApplications: Application[] = [
     assigneeId: undefined, createdAt: "2026-03-01T15:00:00Z", updatedAt: "2026-03-01T15:00:00Z",
   },
   {
-    id: 4, clientId: 4, status: "recommendation_ready", markType: "word", markName: "ЧИСТЫЙ ДОМ",
+    id: 4, clientId: 4, status: "memo_approved", markType: "word", markName: "ЧИСТЫЙ ДОМ",
     markText: "ЧИСТЫЙ ДОМ", colorsClaimed: "", transliteration: "CHISTYY DOM", translation: "Clean Home",
     descriptionOfMark: "Словесное обозначение стандартным шрифтом",
     businessDescription: "Клининговые услуги для дома и офиса, продажа моющих средств",
@@ -87,7 +87,7 @@ export const mockApplications: Application[] = [
     assigneeId: 2, createdAt: "2026-02-10T12:00:00Z", updatedAt: "2026-03-18T16:45:00Z",
   },
   {
-    id: 5, clientId: 5, status: "completed", markType: "combined", markName: "ЗЕЛЁНАЯ ДОЛИНА",
+    id: 5, clientId: 5, status: "closed", markType: "combined", markName: "ЗЕЛЁНАЯ ДОЛИНА",
     markText: "ЗЕЛЁНАЯ ДОЛИНА", colorsClaimed: "Зелёный, белый",
     transliteration: "ZELYONAYA DOLINA", translation: "Green Valley",
     descriptionOfMark: "Комбинированное обозначение: стилизованный ландшафт с текстом",
@@ -107,7 +107,7 @@ export const mockApplications: Application[] = [
     assigneeId: 2, createdAt: "2025-11-01T13:00:00Z", updatedAt: "2026-02-28T09:00:00Z",
   },
   {
-    id: 7, clientId: 2, status: "rejected", markType: "word", markName: "НАТУРАЛЬНЫЙ",
+    id: 7, clientId: 2, status: "closed", markType: "word", markName: "НАТУРАЛЬНЫЙ",
     markText: "НАТУРАЛЬНЫЙ", colorsClaimed: "", transliteration: "NATURALNYY", translation: "Natural",
     descriptionOfMark: "Словесное обозначение, одно слово",
     businessDescription: "Продажа натуральных продуктов питания",
@@ -116,7 +116,7 @@ export const mockApplications: Application[] = [
     assigneeId: 5, createdAt: "2025-08-20T10:00:00Z", updatedAt: "2026-01-05T15:30:00Z",
   },
   {
-    id: 8, clientId: 4, status: "awaiting_client_data", markType: "combined", markName: "БЛЕСК ПЛЮС",
+    id: 8, clientId: 4, status: "info_requested", markType: "combined", markName: "БЛЕСК ПЛЮС",
     markText: "БЛЕСК ПЛЮС", colorsClaimed: "Голубой, серебристый",
     transliteration: "BLESK PLYUS", translation: "Shine Plus",
     descriptionOfMark: "Комбинированное обозначение: стилизованная звёздочка с текстом",
@@ -278,8 +278,8 @@ export const mockRecommendations: RecommendationMemo[] = [
 
 // ========== DOCUMENT PACKAGES ==========
 export const mockDocumentPackages: DocumentPackage[] = [
-  { id: 1, applicationId: 5, generationStatus: "completed", approvedBy: 5, approvedAt: "2025-12-20T14:00:00Z", createdAt: "2025-12-18T10:00:00Z" },
-  { id: 2, applicationId: 6, generationStatus: "completed", approvedBy: 2, approvedAt: "2026-02-25T11:00:00Z", createdAt: "2026-02-20T09:00:00Z" },
+  { id: 1, applicationId: 5, generationStatus: "closed", approvedBy: 5, approvedAt: "2025-12-20T14:00:00Z", createdAt: "2025-12-18T10:00:00Z" },
+  { id: 2, applicationId: 6, generationStatus: "closed", approvedBy: 2, approvedAt: "2026-02-25T11:00:00Z", createdAt: "2026-02-20T09:00:00Z" },
   { id: 3, applicationId: 4, generationStatus: "pending", approvedBy: null, approvedAt: null, createdAt: "2026-03-20T08:00:00Z" },
 ];
 
@@ -287,7 +287,7 @@ export const mockDocumentPackages: DocumentPackage[] = [
 export const mockNotifications: Notification[] = [
   { id: 1, userId: 2, applicationId: 1, type: "review_required", title: "Требуется правовой анализ", message: "Заявка №1 (ТЕХНОПАРК) ожидает вашего рассмотрения", isRead: false, createdAt: "2026-03-28T10:00:00Z" },
   { id: 2, userId: 2, applicationId: 2, type: "conflict_found", title: "Обнаружены конфликты", message: "По заявке №2 (СИБИРСКИЙ МЁД) найдены 2 потенциальных конфликта", isRead: false, createdAt: "2026-03-27T15:30:00Z" },
-  { id: 3, userId: 2, applicationId: 4, type: "recommendation_ready", title: "Рекомендации готовы", message: "Рекомендации по заявке №4 (ЧИСТЫЙ ДОМ) сформированы", isRead: true, createdAt: "2026-03-26T09:00:00Z" },
+  { id: 3, userId: 2, applicationId: 4, type: "memo_approved", title: "Рекомендации готовы", message: "Рекомендации по заявке №4 (ЧИСТЫЙ ДОМ) сформированы", isRead: true, createdAt: "2026-03-26T09:00:00Z" },
   { id: 4, userId: 3, applicationId: 8, type: "data_requested", title: "Ожидание данных клиента", message: "Клиенту отправлен запрос на дополнительные данные по заявке №8", isRead: false, createdAt: "2026-03-25T16:00:00Z" },
   { id: 5, userId: 4, applicationId: 8, type: "action_required", title: "Требуется ваше действие", message: "Пожалуйста, предоставьте скан логотипа для заявки №8 (БЛЕСК ПЛЮС)", isRead: false, createdAt: "2026-03-25T16:05:00Z" },
   { id: 6, userId: 4, applicationId: 4, type: "status_change", title: "Статус заявки обновлён", message: "Заявка №4 (ЧИСТЫЙ ДОМ) перешла в статус «Рекомендации готовы»", isRead: true, createdAt: "2026-03-18T17:00:00Z" },
@@ -314,12 +314,12 @@ export const mockAuditLogs: AuditLog[] = [
 // ========== STATUS HISTORY ==========
 export const mockStatusHistory: StatusHistoryEntry[] = [
   { id: 1, applicationId: 1, fromStatus: null, toStatus: "draft", changedBy: "Сидоров Д.О.", comment: "Заявка создана", createdAt: "2026-01-20T10:30:00Z" },
-  { id: 2, applicationId: 1, fromStatus: "draft", toStatus: "intake_review", changedBy: "Сидоров Д.О.", comment: "Отправлена на первичную проверку", createdAt: "2026-01-20T11:00:00Z" },
-  { id: 3, applicationId: 1, fromStatus: "intake_review", toStatus: "legal_precheck_running", changedBy: "Система", comment: "Запущен автоматический предварительный анализ", createdAt: "2026-01-21T09:00:00Z" },
-  { id: 4, applicationId: 1, fromStatus: "legal_precheck_running", toStatus: "awaiting_lawyer_review", changedBy: "Система", comment: "Анализ завершён, требуется рассмотрение юриста", createdAt: "2026-03-10T10:00:00Z" },
+  { id: 2, applicationId: 1, fromStatus: "draft", toStatus: "info_received", changedBy: "Сидоров Д.О.", comment: "Отправлена на первичную проверку", createdAt: "2026-01-20T11:00:00Z" },
+  { id: 3, applicationId: 1, fromStatus: "info_received", toStatus: "legal_review_pending", changedBy: "Система", comment: "Запущен автоматический предварительный анализ", createdAt: "2026-01-21T09:00:00Z" },
+  { id: 4, applicationId: 1, fromStatus: "legal_review_pending", toStatus: "legal_review_in_progress", changedBy: "Система", comment: "Анализ завершён, требуется рассмотрение юриста", createdAt: "2026-03-10T10:00:00Z" },
   { id: 5, applicationId: 2, fromStatus: null, toStatus: "draft", changedBy: "Сидоров Д.О.", comment: "Заявка создана", createdAt: "2026-02-01T09:00:00Z" },
-  { id: 6, applicationId: 2, fromStatus: "draft", toStatus: "intake_review", changedBy: "Сидоров Д.О.", comment: "", createdAt: "2026-02-01T09:15:00Z" },
-  { id: 7, applicationId: 2, fromStatus: "intake_review", toStatus: "conflict_search_running", changedBy: "Система", comment: "Запущен поиск конфликтов", createdAt: "2026-03-20T11:00:00Z" },
+  { id: 6, applicationId: 2, fromStatus: "draft", toStatus: "info_received", changedBy: "Сидоров Д.О.", comment: "", createdAt: "2026-02-01T09:15:00Z" },
+  { id: 7, applicationId: 2, fromStatus: "info_received", toStatus: "conflict_search_in_progress", changedBy: "Система", comment: "Запущен поиск конфликтов", createdAt: "2026-03-20T11:00:00Z" },
 ];
 
 // ========== COMPLETENESS CHECKS ==========

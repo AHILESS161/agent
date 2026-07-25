@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useCase } from "@/lib/use-cases";
+import type { Application, Client } from "@shared/schema";
 import { useRoute } from "wouter";
 import { useAuth } from "@/lib/auth";
 import {
@@ -21,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
+import { DemoDataNotice } from "@/components/demo-data-notice";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -33,16 +36,13 @@ import {
 import {
   Info, Shield, Layers, Crosshair, FileCheck, FileText,
   History, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
-  Send, Download, Eye, Clock, ArrowRight, Gavel, Upload, ClipboardList,
+  Send, Download, Eye, Clock, ArrowRight, Gavel, Upload, ClipboardList, Loader2, AlertCircle,
   Check, X, Minus, ClipboardCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ========== TAB: GENERAL INFO ==========
-function GeneralInfoTab({ appId }: { appId: number }) {
-  const app = getApplicationById(appId)!;
-  const client = getClientById(app.clientId);
-  const assignee = app.assigneeId ? getUserById(app.assigneeId) : null;
+function GeneralInfoTab({ app, client }: { app: Application; client: Client | null }) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -57,8 +57,11 @@ function GeneralInfoTab({ appId }: { appId: number }) {
           <InfoRow label="Статус">
             <Badge className={cn("text-[10px]", STATUS_COLORS[app.status])}>{STATUS_LABELS[app.status]}</Badge>
           </InfoRow>
-          <InfoRow label="Исполнитель" value={assignee?.fullName || "Не назначен"} />
-          <InfoRow label="Территория" value={app.territory} />
+          <InfoRow
+            label="Исполнитель"
+            value={app.assigneeId ? `Пользователь #${app.assigneeId}` : "Не назначен"}
+          />
+          <InfoRow label="Территория" value={app.territory || "—"} />
           <InfoRow label="Приоритет" value={app.priorityClaim || "Нет"} />
           <InfoRow label="Создана" value={new Date(app.createdAt).toLocaleDateString("ru-RU")} />
           <InfoRow label="Обновлена" value={new Date(app.updatedAt).toLocaleDateString("ru-RU")} />
@@ -77,7 +80,7 @@ function GeneralInfoTab({ appId }: { appId: number }) {
           {app.colorsClaimed && <InfoRow label="Цвета" value={app.colorsClaimed} />}
           {app.transliteration && <InfoRow label="Транслитерация" value={app.transliteration} mono />}
           {app.translation && <InfoRow label="Перевод" value={app.translation} />}
-          <InfoRow label="Описание" value={app.descriptionOfMark} />
+          <InfoRow label="Описание" value={app.descriptionOfMark || "—"} />
         </CardContent>
       </Card>
 
@@ -102,9 +105,9 @@ function GeneralInfoTab({ appId }: { appId: number }) {
           <CardTitle className="text-sm font-semibold">Товары и услуги</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <InfoRow label="Бизнес-описание" value={app.businessDescription} />
+          <InfoRow label="Бизнес-описание" value={app.businessDescription || "—"} />
           <Separator />
-          <p className="text-sm">{app.goodsServicesRaw}</p>
+          <p className="text-sm">{app.goodsServicesRaw || "Перечень пока не заполнен"}</p>
         </CardContent>
       </Card>
     </div>
@@ -113,6 +116,7 @@ function GeneralInfoTab({ appId }: { appId: number }) {
 
 // ========== TAB: COMPLETENESS ==========
 function CompletenessTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const checks = getCompletenessChecks(appId);
   const present = checks.filter(c => c.present).length;
   const pct = checks.length ? Math.round((present / checks.length) * 100) : 0;
@@ -181,6 +185,7 @@ function CompletenessTab({ appId }: { appId: number }) {
 
 // ========== TAB: LEGAL ANALYSIS ==========
 function LegalAnalysisTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const reviews = getLegalReviewsForApp(appId);
   const { user } = useAuth();
 
@@ -299,6 +304,7 @@ function LegalAnalysisTab({ appId }: { appId: number }) {
 
 // ========== TAB: NICE CLASSES ==========
 function ClassesTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const suggestions = getClassSuggestions(appId);
   const { user } = useAuth();
 
@@ -386,6 +392,7 @@ function ClassesTab({ appId }: { appId: number }) {
 
 // ========== TAB: CONFLICTS ==========
 function ConflictsTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const conflicts = getConflictResults(appId);
   const { user } = useAuth();
 
@@ -485,6 +492,7 @@ function ConflictsTab({ appId }: { appId: number }) {
 
 // ========== TAB: RECOMMENDATIONS ==========
 function RecommendationsTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const rec = getRecommendation(appId);
   const { user } = useAuth();
 
@@ -548,6 +556,7 @@ function RecommendationsTab({ appId }: { appId: number }) {
 
 // ========== TAB: DOCUMENTS ==========
 function DocumentsTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const docs = getDocPackages(appId);
   const { user } = useAuth();
 
@@ -582,7 +591,7 @@ function DocumentsTab({ appId }: { appId: number }) {
                     Создан: {new Date(doc.createdAt).toLocaleDateString("ru-RU")}
                   </p>
                 </div>
-                <Badge variant={doc.generationStatus === "completed" ? "default" : "secondary"} className="text-[10px]">
+                <Badge variant={doc.generationStatus === "closed" ? "default" : "secondary"} className="text-[10px]">
                   {statusLabels[doc.generationStatus] || doc.generationStatus}
                 </Badge>
               </div>
@@ -600,7 +609,7 @@ function DocumentsTab({ appId }: { appId: number }) {
                 <Button size="sm" variant="outline" data-testid={`download-doc-${doc.id}`}>
                   <Download className="w-3.5 h-3.5 mr-1.5" /> Скачать DOCX
                 </Button>
-                {user?.role === "lawyer" && !doc.approvedBy && doc.generationStatus === "completed" && (
+                {user?.role === "lawyer" && !doc.approvedBy && doc.generationStatus === "closed" && (
                   <Button size="sm" data-testid={`approve-doc-${doc.id}`}>
                     <Check className="w-3.5 h-3.5 mr-1.5" /> Утвердить
                   </Button>
@@ -616,6 +625,7 @@ function DocumentsTab({ appId }: { appId: number }) {
 
 // ========== TAB: STATUS & HISTORY ==========
 function StatusHistoryTab({ appId }: { appId: number }) {
+  // Данные этой вкладки пока демонстрационные, не из БД.
   const history = getStatusHistory(appId);
   const audit = getAuditLogs(appId);
 
@@ -704,15 +714,36 @@ export default function ApplicationDetailPage() {
   // Меняется после извлечения реквизитов, чтобы вкладка сверки
   // перечитала данные при следующем открытии.
   const [fieldsRefreshKey, setFieldsRefreshKey] = useState(0);
-  const app = getApplicationById(appId);
 
-  if (!app) {
+  // Шапка карточки берётся из API: раньше она читалась из моков и
+  // расходилась с реальными данными во вкладках.
+  const { data, isLoading, error, reload } = useCase(appId);
+
+  if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <p className="text-muted-foreground">Заявка не найдена</p>
+      <div className="flex items-center justify-center gap-2 min-h-[50vh] text-muted-foreground">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-sm">Загрузка дела…</span>
       </div>
     );
   }
+
+  if (error || !data) {
+    return (
+      <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2">
+        <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-destructive" />
+        <p className="flex-1 text-sm" data-testid="application-error">
+          {error ?? "Дело не найдено"}
+        </p>
+        <Button variant="ghost" size="sm" onClick={reload}>
+          Повторить
+        </Button>
+      </div>
+    );
+  }
+
+  const app = data.application;
+  const client = data.client;
 
   return (
     <div className="space-y-4" data-testid="application-detail-page">
@@ -725,7 +756,8 @@ export default function ApplicationDetailPage() {
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Заявка #{app.id} · {MARK_TYPE_LABELS[app.markType]} · {getClientById(app.clientId)?.shortName}
+            Заявка #{app.id} · {MARK_TYPE_LABELS[app.markType]}
+            {client ? ` · ${client.shortName}` : ""}
           </p>
         </div>
       </div>
@@ -757,20 +789,20 @@ export default function ApplicationDetailPage() {
         </TabsList>
 
         <div className="mt-4">
-          <TabsContent value="general"><GeneralInfoTab appId={appId} /></TabsContent>
+          <TabsContent value="general"><GeneralInfoTab app={app} client={client} /></TabsContent>
           <TabsContent value="source-documents">
             <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
           </TabsContent>
           <TabsContent value="fields">
             <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
           </TabsContent>
-          <TabsContent value="completeness"><CompletenessTab appId={appId} /></TabsContent>
-          <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
-          <TabsContent value="classes"><ClassesTab appId={appId} /></TabsContent>
-          <TabsContent value="conflicts"><ConflictsTab appId={appId} /></TabsContent>
-          <TabsContent value="recommendations"><RecommendationsTab appId={appId} /></TabsContent>
-          <TabsContent value="documents"><DocumentsTab appId={appId} /></TabsContent>
-          <TabsContent value="history"><StatusHistoryTab appId={appId} /></TabsContent>
+          <TabsContent value="completeness"><DemoDataNotice /><CompletenessTab appId={appId} /></TabsContent>
+          <TabsContent value="legal"><DemoDataNotice /><LegalAnalysisTab appId={appId} /></TabsContent>
+          <TabsContent value="classes"><DemoDataNotice /><ClassesTab appId={appId} /></TabsContent>
+          <TabsContent value="conflicts"><DemoDataNotice /><ConflictsTab appId={appId} /></TabsContent>
+          <TabsContent value="recommendations"><DemoDataNotice /><RecommendationsTab appId={appId} /></TabsContent>
+          <TabsContent value="documents"><DemoDataNotice /><DocumentsTab appId={appId} /></TabsContent>
+          <TabsContent value="history"><DemoDataNotice /><StatusHistoryTab appId={appId} /></TabsContent>
         </div>
       </Tabs>
     </div>

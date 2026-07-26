@@ -179,3 +179,93 @@ class TestCasesAreSeparatedByOwner:
 
         visible = self._ids(client, admin)
         assert {mine["id"], theirs["id"]} <= visible
+
+
+@pytest.mark.api
+class TestOnlyAdminDeletesOthersCases:
+    """Чужая работа не должна исчезать без следа у того, кто её вёл."""
+
+    def test_lawyer_cannot_delete_someone_elses_case(
+        self, client, lawyer, colleague
+    ):
+        case = _case(client, colleague, "ЧУЖОЕ ДЕЛО")
+        response = client.delete(
+            f"/api/v1/applications/{case['id']}", headers=lawyer
+        )
+        assert response.status_code == 403
+        assert "администратор" in response.json()["detail"]
+
+    def test_owner_deletes_own_case(self, client, lawyer):
+        case = _case(client, lawyer, "МОЁ ДЕЛО")
+        assert (
+            client.delete(
+                f"/api/v1/applications/{case['id']}", headers=lawyer
+            ).status_code
+            == 204
+        )
+
+    async def test_admin_deletes_any_case(
+        self, client, api_user_factory, colleague
+    ):
+        case = _case(client, colleague, "ЧУЖОЕ ДЕЛО")
+
+        await api_user_factory("admin-del@test.ru", UserRole.admin)
+        admin = login_headers(client, "admin-del@test.ru")
+
+        assert (
+            client.delete(
+                f"/api/v1/applications/{case['id']}", headers=admin
+            ).status_code
+            == 204
+        )
+
+
+@pytest.mark.api
+class TestDraftVersions:
+    """Неудачную версию черновика можно убрать."""
+
+    def _draft(self, client, headers, case_id: int) -> dict:
+        return client.post(
+            f"/api/v1/applications/{case_id}/draft", headers=headers
+        ).json()
+
+    def test_version_can_be_deleted(self, client, lawyer):
+        case = _case(client, lawyer)
+        draft = self._draft(client, lawyer, case["id"])
+
+        assert (
+            client.delete(f"/api/v1/drafts/{draft['id']}", headers=lawyer).status_code
+            == 204
+        )
+
+        listing = client.get(
+            f"/api/v1/applications/{case['id']}/drafts", headers=lawyer
+        ).json()
+        assert listing["total"] == 0
+
+    def test_exported_version_is_protected(self, client, lawyer):
+        """Файл уже ушёл наружу — след о нём должен остаться."""
+        case = _case(client, lawyer)
+        draft = self._draft(client, lawyer, case["id"])
+        client.post(f"/api/v1/drafts/{draft['id']}/approve", headers=lawyer)
+        client.get(f"/api/v1/drafts/{draft['id']}/download", headers=lawyer)
+
+        response = client.delete(f"/api/v1/drafts/{draft['id']}", headers=lawyer)
+        assert response.status_code == 409
+
+    def test_other_versions_survive(self, client, lawyer):
+        case = _case(client, lawyer)
+        first = self._draft(client, lawyer, case["id"])
+        second = self._draft(client, lawyer, case["id"])
+
+        client.delete(f"/api/v1/drafts/{first['id']}", headers=lawyer)
+        listing = client.get(
+            f"/api/v1/applications/{case['id']}/drafts", headers=lawyer
+        ).json()
+
+        assert [item["id"] for item in listing["items"]] == [second["id"]]
+
+    def test_deletion_requires_auth(self, client, lawyer):
+        case = _case(client, lawyer)
+        draft = self._draft(client, lawyer, case["id"])
+        assert client.delete(f"/api/v1/drafts/{draft['id']}").status_code == 401

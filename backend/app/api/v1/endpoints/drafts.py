@@ -217,6 +217,54 @@ async def approve_draft(
     return serialize_draft(draft)
 
 
+@router.delete(
+    "/drafts/{draft_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить версию черновика",
+)
+async def delete_draft(
+    draft_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Убрать неудачную версию черновика.
+
+    Выгруженную версию удалить нельзя: файл уже ушёл наружу, и след
+    о том, что именно было выгружено, должен остаться в деле.
+    """
+    _require(current_user, _WRITE_ROLES, "удаление черновика")
+    draft = await _load_draft(session, draft_id)
+
+    if draft.status is DraftStatus.exported:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Версия уже выгружена и не может быть удалена: сведения "
+                "о выгруженном документе должны сохраниться."
+            ),
+        )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=draft.application_id,
+            action="draft.deleted",
+            entity_type="ApplicationDraft",
+            entity_id=str(draft.id),
+            old_value_json={"version": draft.version, "status": draft.status.value},
+        )
+    )
+    await session.flush()
+    await session.delete(draft)
+
+    logger.info(
+        "Версия черновика удалена",
+        draft_id=draft_id,
+        version=draft.version,
+        user_id=current_user.id,
+    )
+
+
 @router.get("/drafts/{draft_id}/download", summary="Скачать черновик")
 async def download_draft(
     draft_id: int,

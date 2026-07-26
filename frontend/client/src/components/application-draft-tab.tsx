@@ -18,7 +18,7 @@ import { AiDisclaimer } from "@/components/ai-disclaimer";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import { Check, Download, FileSignature, Loader2 } from "lucide-react";
+import { Check, Download, FileSignature, Loader2, Trash2 } from "lucide-react";
 import { DraftFormView } from "@/components/draft-form-view";
 
 interface FilledField {
@@ -116,6 +116,30 @@ export function ApplicationDraftTab({ appId }: { appId: number }) {
     }
   };
 
+  const remove = async (draft: DraftDto) => {
+    if (
+      !window.confirm(
+        `Удалить версию ${draft.version}? Файл черновика будет удалён.`,
+      )
+    ) {
+      return;
+    }
+    setBusyId(draft.id);
+    try {
+      await api.delete(`/drafts/${draft.id}`);
+      toast({ title: `Версия ${draft.version} удалена` });
+      state.reload();
+    } catch (e) {
+      toast({
+        title: "Не удалось удалить версию",
+        description: describeError(e),
+        variant: "destructive",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const download = async (draft: DraftDto) => {
     try {
       await api.download(
@@ -180,6 +204,7 @@ export function ApplicationDraftTab({ appId }: { appId: number }) {
                   isBusy={busyId !== null}
                   onApprove={() => void approve(draft.id)}
                   onDownload={() => void download(draft)}
+                  onDelete={() => void remove(draft)}
                 />
               ))}
               <AiDisclaimer compact />
@@ -196,11 +221,13 @@ function DraftCard({
   isBusy,
   onApprove,
   onDownload,
+  onDelete,
 }: {
   draft: DraftDto;
   isBusy: boolean;
   onApprove: () => void;
   onDownload: () => void;
+  onDelete: () => void;
 }) {
   return (
     <Card data-testid={`draft-${draft.id}`}>
@@ -285,6 +312,22 @@ function DraftCard({
             <Download className="w-3.5 h-3.5 mr-1.5" />
             {draft.can_export ? "Скачать DOCX" : "Скачать (нужно утвердить)"}
           </Button>
+
+          {/* Выгруженную версию удалить нельзя: файл ушёл наружу,
+              и след о нём должен остаться в деле. */}
+          {draft.status !== "exported" && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground hover:text-destructive"
+              disabled={isBusy}
+              onClick={onDelete}
+              data-testid={`delete-draft-${draft.id}`}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+              Удалить версию
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

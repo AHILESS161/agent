@@ -144,6 +144,15 @@ from app.api.dependencies import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
+def _is_owner(app: TrademarkApplicationDraft, user: User) -> bool:
+    """Ведёт ли пользователь это дело."""
+    return user.id in {
+        app.created_by_user_id,
+        app.assigned_lawyer_id,
+        app.assigned_manager_id,
+    }
+
+
 def _visible_to(query, user: User):
     """Ограничить выборку делами, доступными пользователю.
 
@@ -253,6 +262,18 @@ async def delete_application(
     и след о ней должен остаться. Такое дело закрывают.
     """
     app = await _get_app_or_404(application_id, session)
+
+    # Поверенный распоряжается своими делами; чужое дело удалить может
+    # только администратор — иначе чужая работа исчезнет без следа
+    # у того, кто её вёл.
+    if current_user.role is not UserRole.admin and not _is_owner(app, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Дело ведёт другой специалист. Удалить чужое дело может "
+                "только администратор."
+            ),
+        )
 
     if app.status in (ApplicationStatus.submitted, ApplicationStatus.closed):
         raise HTTPException(

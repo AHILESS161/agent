@@ -126,3 +126,63 @@ class TestVerificationReport:
         summary = report.summary()
         assert summary["rejected"] == 1
         assert summary["rejected_reasons"][0]["status"] == "not_found"
+
+
+class TestReferenceQuotesAreShorter:
+    """Цитата из справочника — название товара, а не норма права.
+
+    Регрессия: предложение класса 28 для интим-игрушек отбрасывалось,
+    потому что цитата «Игры, игрушки» короче четырёх слов. Само
+    предложение было верным, а цитата — дословной.
+    """
+
+    SOURCE = (
+        "Класс 28. Игры и спортивные товары\n"
+        "Игры, игрушки; видеоигровые аппараты; гимнастические и "
+        "спортивные товары."
+    )
+
+    def test_short_quote_is_rejected_by_default(self):
+        from app.infrastructure.rag.citations import CitationStatus, verify_quote
+
+        status, _ = verify_quote("Игры, игрушки;", self.SOURCE)
+        assert status is CitationStatus.too_short
+
+    def test_short_quote_passes_for_reference(self):
+        from app.infrastructure.rag.citations import (
+            MIN_QUOTE_WORDS_REFERENCE,
+            CitationStatus,
+            verify_quote,
+        )
+
+        status, ratio = verify_quote(
+            "Игры, игрушки;", self.SOURCE, min_words=MIN_QUOTE_WORDS_REFERENCE
+        )
+        assert status is CitationStatus.verified
+        assert ratio == 1.0
+
+    def test_invented_quote_is_still_rejected(self):
+        """Смягчение порога не открывает дорогу выдуманным цитатам."""
+        from app.infrastructure.rag.citations import (
+            MIN_QUOTE_WORDS_REFERENCE,
+            CitationStatus,
+            verify_quote,
+        )
+
+        status, _ = verify_quote(
+            "Автомобили, самолёты", self.SOURCE, min_words=MIN_QUOTE_WORDS_REFERENCE
+        )
+        assert status is not CitationStatus.verified
+
+    def test_single_word_is_still_too_short(self):
+        """Одно слово ничего не подтверждает даже в справочнике."""
+        from app.infrastructure.rag.citations import (
+            MIN_QUOTE_WORDS_REFERENCE,
+            CitationStatus,
+            verify_quote,
+        )
+
+        status, _ = verify_quote(
+            "игрушки", self.SOURCE, min_words=MIN_QUOTE_WORDS_REFERENCE
+        )
+        assert status is CitationStatus.too_short

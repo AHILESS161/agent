@@ -21,13 +21,27 @@ from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.legal.rag_analyzer import _parse_json
 from app.core.logging import get_logger
-from app.infrastructure.rag.citations import verify_all
-from app.infrastructure.rag.retriever import Retriever, build_context
+from app.infrastructure.rag.citations import (
+    MIN_QUOTE_WORDS_REFERENCE,
+    verify_all,
+)
+from app.infrastructure.rag.retriever import (
+    RetrievedChunk,
+    Retriever,
+    build_context,
+)
 from app.infrastructure.rag.store import StoredChunk
 
 logger = get_logger(__name__)
 
 MAX_CONTEXT_CHUNKS = 8
+
+# Класс 35 — реклама, продвижение, услуги розничной и оптовой торговли.
+# Он нужен почти любому, кто что-то продаёт, в том числе через интернет,
+# но по запросу о самом товаре поиск его не находит: в описании класса
+# нет ни «одежды», ни «игрушек». Модель же вправе ссылаться только на
+# выданные фрагменты, поэтому этот раздел добавляется в контекст всегда.
+ALWAYS_INCLUDE_CLASSES = ("Класс 35.",)
 
 # Запас на рассуждения модели плюс сам JSON-ответ.
 MAX_RESPONSE_TOKENS = 12000
@@ -91,6 +105,25 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 ВАЖНО. От выбора класса зависит и оценка охраноспособности: обозначение
 описательно только относительно конкретных товаров. Поэтому по каждому
 классу указывай, какие именно товары или услуги к нему отнесены.
+
+ПОЛНОТА ПЕРЕЧНЯ.
+
+Лучше предложить класс лишний раз, чем упустить нужный: специалист
+уберёт ненужное сам, а недостающий класс после подачи заявки уже
+не добавить — придётся подавать новую и платить пошлину заново.
+Поэтому предлагай не только очевидный класс товара, но и смежные:
+сопутствующие товары, материалы, из которых товар сделан, и услуги,
+которыми заявитель этот товар продаёт или продвигает.
+
+Класс 35 (реклама, продвижение, услуги розничной и оптовой торговли)
+нужен почти всегда, если заявитель что-либо продаёт — в том числе
+через интернет-магазин, маркетплейс или соцсети. Сегодня так работает
+почти любой бизнес, поэтому проверяй этот класс отдельно и предлагай
+его, если в деятельности есть продажа или продвижение.
+
+Классы, в которых ты не уверен, помечай category: "borderline" —
+специалист рассмотрит их отдельно. Уверенные ставь "primary",
+сопутствующие — "secondary".
 """
 
 USER_TEMPLATE = """ДЕЯТЕЛЬНОСТЬ ЗАЯВИТЕЛЯ:
@@ -120,8 +153,32 @@ class RagNiceClassAnalyzer:
     def __init__(self, llm_provider: Any, chunks: list[StoredChunk]) -> None:
         self._llm = llm_provider
         nice_chunks = [c for c in chunks if c.source_type in self.SOURCE_TYPES]
-        self._retriever = Retriever(nice_chunks or chunks)
+        self._corpus = nice_chunks or chunks
+        self._retriever = Retriever(self._corpus)
         self._has_corpus = bool(nice_chunks)
+
+    def _with_trade_services(self, retrieved: list[Any]) -> list[Any]:
+        """Дополнить выдачу разделами, нужными почти всегда.
+
+        Пропустить класс 35 дороже, чем предложить лишний: после подачи
+        заявки класс уже не добавить — нужна новая заявка и новая пошлина.
+
+        Раздел берётся из корпуса по названию, а не поиском: слово
+        «класс» есть в каждом фрагменте справочника, и поисковый запрос
+        «Класс 35» ранжируется случайно.
+        """
+        present = " ".join(item.chunk.anchor for item in retrieved)
+
+        for marker in ALWAYS_INCLUDE_CLASSES:
+            if marker in present:
+                continue
+            chunk = next(
+                (c for c in self._corpus if marker in c.anchor), None
+            )
+            if chunk is None:
+                continue
+            retrieved.append(RetrievedChunk(chunk=chunk, score=0.0))
+        return retrieved
 
     async def analyse(self, facts: dict[str, Any]) -> ClassAnalysisOutcome:
         query = " ".join(
@@ -141,6 +198,8 @@ class RagNiceClassAnalyzer:
                 result=None,
                 reason="В справочнике МКТУ не найдено релевантных разделов",
             )
+
+        retrieved = self._with_trade_services(retrieved)
 
         context, available_sources = build_context(retrieved)
         prompt = USER_TEMPLATE.format(
@@ -186,7 +245,12 @@ class RagNiceClassAnalyzer:
         rejected: list[dict] = []
 
         for suggestion in result.suggestions:
-            report = verify_all(suggestion.citations, available_sources)
+            # Цитата из МКТУ — название товара, а не положение нормы.
+            report = verify_all(
+                suggestion.citations,
+                available_sources,
+                min_words=MIN_QUOTE_WORDS_REFERENCE,
+            )
             if report.has_any_trustworthy_source:
                 verified = {c.quote for c in report.verified}
                 suggestion.citations = [
@@ -197,7 +261,11 @@ class RagNiceClassAnalyzer:
                 rejected.append(
                     {
                         "class_number": suggestion.class_number,
-                        "reason": "нет подтверждённых цитат",
+                        "rationale": suggestion.rationale,
+                        "goods_services": suggestion.goods_services,
+                        "reason": (
+                            "цитата не найдена в справочнике дословно"
+                        ),
                     }
                 )
                 logger.info(
@@ -212,10 +280,14 @@ class RagNiceClassAnalyzer:
         }
 
         if not confirmed:
+            # Предложения показываются специалисту даже без подтверждённой
+            # цитаты: решение за ним, а молчание системы полезнее не делает.
             return ClassAnalysisOutcome(
                 result=None,
                 reason=(
-                    "Ни одно предложение класса не подтверждено справочником"
+                    "Ни одно предложение класса не подтверждено справочником. "
+                    "Предложенные варианты показаны отдельно — решение "
+                    "за специалистом."
                     if result.suggestions
                     else "Модель не предложила классов"
                 ),

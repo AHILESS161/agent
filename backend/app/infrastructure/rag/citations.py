@@ -28,6 +28,12 @@ PARTIAL_MATCH_THRESHOLD = 0.85
 # найдутся в любом тексте.
 MIN_QUOTE_WORDS = 4
 
+# Для справочников минимум смягчается. Цитата из перечня МКТУ —
+# это название товара («Игры, игрушки»), и требование в четыре слова
+# отбрасывало верные предложения. Защита от выдумывания сохраняется:
+# цитата по-прежнему обязана дословно присутствовать в источнике.
+MIN_QUOTE_WORDS_REFERENCE = 2
+
 
 class CitationStatus(str, Enum):
     verified = "verified"           # текст найден в источнике
@@ -65,10 +71,12 @@ def _words(text: str) -> list[str]:
     return _normalize(text).split()
 
 
-def verify_quote(quote: str, source_text: str) -> tuple[CitationStatus, float]:
+def verify_quote(
+    quote: str, source_text: str, min_words: int = MIN_QUOTE_WORDS
+) -> tuple[CitationStatus, float]:
     """Проверить, присутствует ли цитата в тексте источника."""
     quote_words = _words(quote)
-    if len(quote_words) < MIN_QUOTE_WORDS:
+    if len(quote_words) < min_words:
         return CitationStatus.too_short, 0.0
 
     normalized_source = _normalize(source_text)
@@ -93,6 +101,7 @@ def check_citation(
     source_id: str | None,
     available_sources: dict[str, str],
     anchor: str | None = None,
+    min_words: int = MIN_QUOTE_WORDS,
 ) -> CitationCheck:
     """Проверить одну цитату против выданных моделью фрагментов.
 
@@ -108,7 +117,9 @@ def check_citation(
             anchor=anchor,
         )
 
-    status, ratio = verify_quote(quote, available_sources[source_id])
+    status, ratio = verify_quote(
+        quote, available_sources[source_id], min_words=min_words
+    )
     return CitationCheck(
         status=status,
         source_id=source_id,
@@ -165,11 +176,15 @@ class VerificationReport:
 def verify_all(
     citations: list[dict],
     available_sources: dict[str, str],
+    min_words: int = MIN_QUOTE_WORDS,
 ) -> VerificationReport:
     """Проверить список цитат из ответа модели.
 
     Каждая цитата — словарь с ключами ``quote``, ``source_id``
     и необязательным ``anchor``.
+
+    ``min_words`` понижается для справочников: там цитата — название
+    товара, а не положение нормы.
     """
     checks = [
         check_citation(
@@ -177,6 +192,7 @@ def verify_all(
             source_id=citation.get("source_id"),
             available_sources=available_sources,
             anchor=citation.get("anchor"),
+            min_words=min_words,
         )
         for citation in citations
     ]

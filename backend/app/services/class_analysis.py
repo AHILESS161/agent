@@ -131,6 +131,9 @@ async def run_class_analysis(
             "status": "inconclusive",
             "reason": outcome.reason,
             "suggestions": [],
+            # Неподтверждённые предложения — не результат, но и не мусор:
+            # специалист вправе принять их под свою ответственность.
+            "unverified": outcome.verification.get("rejected", []),
             "verification": outcome.verification,
         }
 

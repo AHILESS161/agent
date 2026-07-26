@@ -1088,10 +1088,13 @@ class ExtractedField(Base):
     __tablename__ = "extracted_fields"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    document_id: Mapped[int] = mapped_column(
+    # Значение, внесённое специалистом вручную, документа-источника
+    # не имеет: в выписке его не было (например, адрес места
+    # жительства ИП скрыт) либо поле заведено сверх маппинга.
+    document_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("source_documents.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     application_id: Mapped[Optional[int]] = mapped_column(

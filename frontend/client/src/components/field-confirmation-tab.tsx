@@ -21,7 +21,9 @@ import {
   Loader2,
   Minus,
   Pencil,
+  Plus,
   RefreshCw,
+  Trash2,
   X,
 } from "lucide-react";
 
@@ -70,6 +72,52 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Внести значение в поле, которого нет в документах, или своё поле. */
+  const saveManual = async (
+    fieldPath: string,
+    label: string,
+    value: string,
+    isSensitive = false,
+  ) => {
+    try {
+      await api.post(`/applications/${appId}/fields`, {
+        field_path: fieldPath,
+        label,
+        value,
+        is_sensitive: isSensitive,
+      });
+      toast({
+        title: `Значение сохранено: ${label}`,
+        description: "Введено вручную и считается подтверждённым.",
+      });
+      await load();
+    } catch (e) {
+      toast({
+        title: "Не удалось сохранить значение",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    }
+  };
+
+  /** Убрать поле, заведённое специалистом. */
+  const removeField = async (fieldId: number, label: string) => {
+    setBusyFieldId(fieldId);
+    try {
+      await api.delete(`/extracted-fields/${fieldId}`);
+      toast({ title: `Поле удалено: ${label}` });
+      await load();
+    } catch (e) {
+      toast({
+        title: "Не удалось удалить поле",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setBusyFieldId(null);
+    }
+  };
 
   const act = async (
     item: ReconciliationItemDto,
@@ -362,6 +410,24 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                   </div>
                 )}
 
+                {/* Своё поле можно убрать целиком: извлечённое —
+                    только отклонить, чтобы решение осталось в истории. */}
+                {item.is_custom && fieldId != null && (
+                  <div className="pt-1">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-[11px] text-muted-foreground"
+                      disabled={isBusy}
+                      onClick={() => void removeField(fieldId, item.label)}
+                      data-testid={`delete-field-${fieldId}`}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" />
+                      Удалить поле
+                    </Button>
+                  </div>
+                )}
+
                 {/* Действия специалиста */}
                 {fieldId != null && !isEditing && (
                   <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -425,18 +491,39 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                   </div>
                 )}
 
+                {/* Поле без записи в БД: значение вводится вручную.
+                    Раньше здесь не было ничего, кроме пояснения, и
+                    заполнить такое поле было негде. */}
                 {fieldId == null && (
-                  <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground pt-1">
-                    <CircleSlash className="w-3.5 h-3.5" />
-                    Значение не извлечено из документа — заполняется вручную
-                    в карточке дела.
-                  </p>
+                  <ManualEntry
+                    label={item.label}
+                    fieldPath={item.registry_field ?? item.case_field}
+                    isSensitive={item.is_sensitive}
+                    onSave={(value) =>
+                      void saveManual(
+                        item.registry_field ?? item.case_field,
+                        item.label,
+                        value,
+                        item.is_sensitive,
+                      )
+                    }
+                  />
                 )}
               </CardContent>
             </Card>
           );
         })}
       </div>
+
+      <AddCustomField
+        onAdd={(label, value) =>
+          void saveManual(
+            `custom.${label.toLowerCase().replace(/\s+/g, "_")}`,
+            label,
+            value,
+          )
+        }
+      />
 
       {/* Поля заявления без источника в выписке */}
       {summary.not_sourced_from_registry.length > 0 && (
@@ -458,5 +545,145 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
 
       <p className="text-[11px] text-muted-foreground">{reconciliation.disclaimer}</p>
     </div>
+  );
+}
+
+/**
+ * Ввод значения в поле, которого не нашлось в документах.
+ *
+ * Такое поле не имеет записи в базе, поэтому раньше заполнить его
+ * было негде — приходилось искать другое место в системе. Значение,
+ * введённое здесь, сразу считается подтверждённым: его внёс человек.
+ */
+function ManualEntry({
+  label,
+  fieldPath,
+  isSensitive,
+  onSave,
+}: {
+  label: string;
+  fieldPath: string;
+  isSensitive: boolean;
+  onSave: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [value, setValue] = useState("");
+
+  if (!isOpen) {
+    return (
+      <div className="flex items-center gap-2 pt-1">
+        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <CircleSlash className="w-3.5 h-3.5" />
+          Значение не извлечено из документа
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px]"
+          onClick={() => setIsOpen(true)}
+          data-testid={`manual-entry-${fieldPath}`}
+        >
+          <Pencil className="w-3 h-3 mr-1" />
+          Ввести вручную
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <Input
+        autoFocus
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        placeholder={`${label}${isSensitive ? " (персональные данные)" : ""}`}
+        className="h-8 text-xs"
+        data-testid={`manual-input-${fieldPath}`}
+      />
+      <Button
+        size="sm"
+        disabled={!value.trim()}
+        onClick={() => {
+          onSave(value.trim());
+          setIsOpen(false);
+          setValue("");
+        }}
+        data-testid={`manual-save-${fieldPath}`}
+      >
+        Сохранить
+      </Button>
+      <Button size="sm" variant="ghost" onClick={() => setIsOpen(false)}>
+        Отмена
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Своё поле специалиста.
+ *
+ * Маппинг покрывает бланк заявления, но в деле бывают сведения,
+ * которых в нём нет. Такое поле помечается как добавленное вручную
+ * и в заявление не попадает — оно живёт в карточке дела.
+ */
+function AddCustomField({
+  onAdd,
+}: {
+  onAdd: (label: string, value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [value, setValue] = useState("");
+
+  if (!isOpen) {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={() => setIsOpen(true)}
+        data-testid="add-custom-field"
+      >
+        <Plus className="w-3.5 h-3.5 mr-1.5" />
+        Добавить своё поле
+      </Button>
+    );
+  }
+
+  return (
+    <Card>
+      <CardContent className="p-3 flex flex-wrap items-center gap-2">
+        <Input
+          autoFocus
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="Название поля"
+          className="h-8 text-xs w-52"
+          data-testid="custom-field-label"
+        />
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="Значение"
+          className="h-8 text-xs flex-1 min-w-[160px]"
+          data-testid="custom-field-value"
+        />
+        <Button
+          size="sm"
+          disabled={!label.trim() || !value.trim()}
+          onClick={() => {
+            onAdd(label.trim(), value.trim());
+            setIsOpen(false);
+            setLabel("");
+            setValue("");
+          }}
+          data-testid="custom-field-save"
+        >
+          Добавить
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setIsOpen(false)}>
+          Отмена
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

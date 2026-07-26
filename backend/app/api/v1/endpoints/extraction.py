@@ -61,6 +61,20 @@ _EXTRACTABLE = {
 # Схемы
 # ---------------------------------------------------------------------------
 
+class ManualFieldRequest(BaseModel):
+    """Значение, внесённое специалистом вручную.
+
+    Нужно в двух случаях: поле есть в бланке, но в документах его
+    не нашлось (адрес места жительства ИП в выписке скрыт), либо
+    специалист заводит собственное поле, которого нет в маппинге.
+    """
+
+    field_path: str = Field(min_length=1, max_length=255)
+    label: str = Field(min_length=1, max_length=255)
+    value: str = Field(min_length=1, max_length=2000)
+    is_sensitive: bool = False
+
+
 class ConfirmFieldRequest(BaseModel):
     action: ConfirmationAction
     value: str | None = Field(
@@ -309,6 +323,166 @@ async def list_extracted_fields(
 # Сверка с полями заявления
 # ---------------------------------------------------------------------------
 
+@router.post(
+    "/applications/{application_id}/fields",
+    status_code=status.HTTP_201_CREATED,
+    summary="Внести значение поля вручную",
+)
+async def add_manual_field(
+    application_id: int,
+    payload: ManualFieldRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Создать поле со значением, введённым специалистом.
+
+    Значение сразу считается подтверждённым: его ввёл человек, и
+    проверять за ним систему незачем. Источником фиксируется ручной
+    ввод, чтобы в документе было видно происхождение значения.
+
+    Повторный вызов для того же поля обновляет значение, а не плодит
+    дубликаты: в сверке одно поле — одна строка.
+    """
+    _require_write_access(current_user)
+
+    application = (
+        await session.execute(
+            select(TrademarkApplicationDraft).where(
+                TrademarkApplicationDraft.id == application_id
+            )
+        )
+    ).scalar_one_or_none()
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Дело {application_id} не найдено",
+        )
+
+    existing = (
+        await session.execute(
+            select(ExtractedField)
+            .where(
+                ExtractedField.application_id == application_id,
+                ExtractedField.field_path == payload.field_path,
+            )
+            .options(selectinload(ExtractedField.candidates))
+        )
+    ).scalar_one_or_none()
+
+    value = payload.value.strip()
+    previous = existing.normalized_value if existing else None
+
+    if existing is None:
+        existing = ExtractedField(
+            application_id=application_id,
+            document_id=None,
+            field_path=payload.field_path,
+            label=payload.label,
+            is_sensitive=payload.is_sensitive,
+            candidate_count=0,
+        )
+        # Связь заполняется явно: в async-сессии ленивая подгрузка
+        # при сериализации нового объекта невозможна.
+        existing.candidates = []
+        session.add(existing)
+
+    existing.label = payload.label
+    existing.raw_value = value
+    existing.normalized_value = value
+    existing.extraction_method = ExtractionMethod.manual
+    existing.status = FieldStatus.confirmed
+    existing.confidence = None
+    existing.pattern_id = None
+    existing.page_number = None
+    existing.validation_error = None
+    await session.flush()
+
+    session.add(
+        FieldConfirmation(
+            field_id=existing.id,
+            user_id=current_user.id,
+            action=ConfirmationAction.edit,
+            previous_value=previous,
+            new_value=value,
+            reason="Значение внесено вручную",
+        )
+    )
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application_id,
+            action="field.manual_entry",
+            entity_type="ExtractedField",
+            entity_id=str(existing.id),
+            new_value_json={
+                "field_path": payload.field_path,
+                "value": _mask(value) if payload.is_sensitive else value,
+            },
+        )
+    )
+    await session.flush()
+
+    logger.info(
+        "Значение внесено вручную",
+        application_id=application_id,
+        user_id=current_user.id,
+        field_path=payload.field_path,
+    )
+    return _serialize_field(existing)
+
+
+@router.delete(
+    "/extracted-fields/{field_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить поле из сверки",
+)
+async def delete_field(
+    field_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Убрать поле из дела.
+
+    Удаляются только значения, внесённые вручную: извлечённое из
+    документа поле — часть результата разбора, и его следует
+    отклонить, а не стирать, чтобы решение осталось в истории.
+    """
+    _require_write_access(current_user)
+
+    field = (
+        await session.execute(
+            select(ExtractedField).where(ExtractedField.id == field_id)
+        )
+    ).scalar_one_or_none()
+    if field is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Поле {field_id} не найдено"
+        )
+
+    if field.extraction_method is not ExtractionMethod.manual:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Поле извлечено из документа и не может быть удалено. "
+                "Отклоните его или оставьте пустым — решение сохранится "
+                "в истории."
+            ),
+        )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=field.application_id,
+            action="field.deleted",
+            entity_type="ExtractedField",
+            entity_id=str(field.id),
+            old_value_json={"field_path": field.field_path},
+        )
+    )
+    await session.delete(field)
+    await session.flush()
+
+
 @router.get(
     "/applications/{application_id}/field-reconciliation",
     summary="Сверка: выписка -> дело -> заявление",
@@ -395,6 +569,17 @@ async def field_reconciliation(
     )
     field_ids = {f.field_path: f.id for f in stored}
 
+    # Поля, заведённые специалистом сверх маппинга, тоже должны быть
+    # видны в сверке — иначе созданное вручную значение исчезает
+    # из интерфейса сразу после сохранения.
+    mapped_paths = {row.registry_field for row in rows if row.registry_field}
+    custom = [
+        f
+        for f in stored
+        if f.field_path not in mapped_paths
+        and f.extraction_method is ExtractionMethod.manual
+    ]
+
     return {
         "application_id": application_id,
         "summary": summary,
@@ -426,6 +611,37 @@ async def field_reconciliation(
                 "blocks_document_generation": row.blocks_document_generation,
             }
             for row in rows
+        ]
+        + [
+            {
+                "extracted_field_id": f.id,
+                "label": f.label or f.field_path,
+                "registry_field": f.field_path,
+                "case_field": f.field_path,
+                "application_field": None,
+                "status": f.status.value,
+                "registry_value": f.normalized_value,
+                "registry_raw_value": f.raw_value,
+                "case_value": None,
+                "default_value": None,
+                "confidence": None,
+                "page_number": None,
+                "pattern_id": None,
+                "extraction_method": f.extraction_method.value,
+                "source_snippet": "",
+                "required_for_application": False,
+                "critical": False,
+                "is_sensitive": f.is_sensitive,
+                "normalization_changed": False,
+                "validation_error": None,
+                "note": "Поле добавлено специалистом",
+                "candidates": [],
+                # Своё поле можно переписать или убрать целиком.
+                "available_actions": ["edit"],
+                "is_custom": True,
+                "blocks_document_generation": False,
+            }
+            for f in custom
         ],
         "disclaimer": (
             "Результаты сформированы с применением автоматической обработки "

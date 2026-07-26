@@ -200,6 +200,8 @@ export interface ReconciliationItemDto {
   note: string | null;
   candidates: FieldCandidateDto[];
   available_actions: string[];
+  /** Поле заведено специалистом, а не извлечено из документа. */
+  is_custom?: boolean;
   blocks_document_generation: boolean;
 }
 

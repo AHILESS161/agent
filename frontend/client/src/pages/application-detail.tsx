@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useCase } from "@/lib/use-cases";
+import { useApi } from "@/lib/use-api";
 import type { Application, Client } from "@shared/schema";
 import { useRoute } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -71,10 +72,7 @@ function GeneralInfoTab({
           <InfoRow label="Статус">
             <Badge className={cn("text-[10px]", STATUS_COLORS[app.status])}>{STATUS_LABELS[app.status]}</Badge>
           </InfoRow>
-          <InfoRow
-            label="Исполнитель"
-            value={app.assigneeId ? `Пользователь #${app.assigneeId}` : "Не назначен"}
-          />
+          <AssigneeRow appId={app.id} value={app.assigneeId} onSaved={onSaved} />
           <InfoRow label="Территория" value={app.territory || "—"} />
           <InfoRow label="Приоритет" value={app.priorityClaim || "Нет"} />
           <InfoRow label="Создана" value={new Date(app.createdAt).toLocaleDateString("ru-RU")} />
@@ -384,6 +382,79 @@ function EditableSelectRow({
           {Object.entries(options).map(([key, title]) => (
             <SelectItem key={key} value={key} className="text-sm">
               {title}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+/**
+ * Исполнитель по делу.
+ *
+ * Назначение определяет и видимость: специалист видит дела, которые
+ * ведёт. Поэтому список ограничен теми, кто вообще работает с делами.
+ */
+function AssigneeRow({
+  appId,
+  value,
+  onSaved,
+}: {
+  appId: number;
+  value?: number | null;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const users = useApi<{ items: { id: number; full_name: string | null; email: string; role: string; is_active: boolean }[] }>(
+    "/users?page=1&page_size=100",
+  );
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Клиенту дела не назначают, отключённым — тоже.
+  const candidates = (users.data?.items ?? []).filter(
+    (u) => u.is_active && u.role !== "client",
+  );
+
+  const assign = async (next: string) => {
+    setIsSaving(true);
+    try {
+      await api.put(`/applications/${appId}`, {
+        assigned_lawyer_id: next === "none" ? null : Number(next),
+      });
+      toast({ title: "Исполнитель назначен" });
+      onSaved();
+    } catch (e) {
+      toast({
+        title: "Не удалось назначить исполнителя",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+      <span className="text-xs font-medium text-muted-foreground sm:w-32 shrink-0">
+        Исполнитель
+      </span>
+      <Select
+        value={value ? String(value) : "none"}
+        onValueChange={(v) => void assign(v)}
+        disabled={isSaving || users.isLoading}
+      >
+        <SelectTrigger className="h-8 w-64 text-sm" data-testid="select-assignee">
+          <SelectValue placeholder="Не назначен" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none" className="text-sm">
+            Не назначен
+          </SelectItem>
+          {candidates.map((user) => (
+            <SelectItem key={user.id} value={String(user.id)} className="text-sm">
+              {user.full_name || user.email}
             </SelectItem>
           ))}
         </SelectContent>

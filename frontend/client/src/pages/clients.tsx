@@ -19,7 +19,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Search, Building2 } from "lucide-react";
+import { Search, Building2, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export function ClientsListPage() {
@@ -75,6 +78,7 @@ export function ClientsListPage() {
                   <TableHead className="hidden lg:table-cell">ИНН</TableHead>
                   <TableHead className="hidden lg:table-cell">Контакт</TableHead>
                   <TableHead className="w-20">Дел</TableHead>
+                  <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -100,12 +104,20 @@ export function ClientsListPage() {
                       {client.email || client.phone || "—"}
                     </TableCell>
                     <TableCell className="text-sm">{countFor(client.id)}</TableCell>
+                    <TableCell>
+                      <DeleteClientButton
+                        clientId={client.id}
+                        name={client.shortName || client.fullNameOrCompanyName}
+                        caseCount={countFor(client.id)}
+                        onDeleted={state.reload}
+                      />
+                    </TableCell>
                   </TableRow>
                 ))}
                 {clients.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={5}
+                      colSpan={6}
                       className="text-center text-sm text-muted-foreground py-8"
                     >
                       Ничего не найдено
@@ -238,5 +250,65 @@ function Row({
       <span className="text-muted-foreground text-xs">{label}</span>
       <span className={cn("text-right text-xs", mono && "font-mono")}>{value}</span>
     </div>
+  );
+}
+
+/**
+ * Удаление клиента.
+ *
+ * Клиента с делами сервер удалить не даст: вместе с ним пропала бы
+ * история работы по заявкам. Кнопка это показывает заранее, чтобы
+ * юрист не упирался в отказ вслепую.
+ */
+function DeleteClientButton({
+  clientId,
+  name,
+  caseCount,
+  onDeleted,
+}: {
+  clientId: number;
+  name: string;
+  caseCount: number;
+  onDeleted: () => void;
+}) {
+  const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const blocked = caseCount > 0;
+
+  const remove = async () => {
+    if (!window.confirm(`Удалить клиента «${name}»? Действие необратимо.`)) return;
+
+    setIsDeleting(true);
+    try {
+      await api.delete(`/clients/${clientId}`);
+      toast({ title: `Клиент «${name}» удалён` });
+      onDeleted();
+    } catch (e) {
+      toast({
+        title: "Не удалось удалить клиента",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-destructive disabled:opacity-30"
+      disabled={isDeleting || blocked}
+      onClick={() => void remove()}
+      data-testid={`delete-client-${clientId}`}
+      title={
+        blocked
+          ? "Сначала удалите или закройте дела этого клиента"
+          : "Удалить клиента"
+      }
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+    </Button>
   );
 }

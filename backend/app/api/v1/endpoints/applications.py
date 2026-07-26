@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,6 +31,7 @@ from app.infrastructure.database.models import (
     SubmissionStatusEvent,
     TrademarkApplicationDraft,
     User,
+    UserRole,
 )
 from app.infrastructure.database.session import get_session
 from app.schemas.applications import (
@@ -143,6 +144,24 @@ from app.api.dependencies import (  # noqa: E402
 # ---------------------------------------------------------------------------
 
 
+def _visible_to(query, user: User):
+    """Ограничить выборку делами, доступными пользователю.
+
+    Поверенный ведёт свои дела: заведённые им самим и назначенные
+    на него. Администратор видит всё — иначе он не разберётся
+    в чужой работе.
+    """
+    if user.role is UserRole.admin:
+        return query
+    return query.where(
+        or_(
+            TrademarkApplicationDraft.created_by_user_id == user.id,
+            TrademarkApplicationDraft.assigned_lawyer_id == user.id,
+            TrademarkApplicationDraft.assigned_manager_id == user.id,
+        )
+    )
+
+
 @router.get("", response_model=PaginatedResponse[ApplicationListItem])
 async def list_applications(
     page: int = Query(default=1, ge=1),
@@ -151,10 +170,16 @@ async def list_applications(
     client_id: Optional[int] = Query(default=None),
     assigned_lawyer_id: Optional[int] = Query(default=None),
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> PaginatedResponse[ApplicationListItem]:
-    """List applications with optional filters."""
+    """Список дел с фильтрами.
+
+    Поверенный видит свои дела: те, что завёл сам, и те, что на него
+    назначены. Администратору видно всё — иначе он не сможет
+    разобраться в чужой работе.
+    """
     base_q = select(TrademarkApplicationDraft)
+    base_q = _visible_to(base_q, current_user)
     if status_filter:
         base_q = base_q.where(TrademarkApplicationDraft.status == status_filter)
     if client_id is not None:
@@ -188,7 +213,9 @@ async def create_application(
     current_user: User = Depends(get_current_user),
 ) -> ApplicationResponse:
     """Create a new application draft."""
-    app = TrademarkApplicationDraft(**payload.model_dump())
+    app = TrademarkApplicationDraft(
+        **payload.model_dump(), created_by_user_id=current_user.id
+    )
     session.add(app)
     await session.flush()
     await session.refresh(app)
@@ -207,6 +234,46 @@ async def create_application(
 # ---------------------------------------------------------------------------
 # Get / Update
 # ---------------------------------------------------------------------------
+
+
+@router.delete(
+    "/{application_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить дело",
+)
+async def delete_application(
+    application_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_roles("admin", "lawyer")),
+) -> None:
+    """Удалить дело со всеми материалами.
+
+    Поданную заявку удалить нельзя: у неё есть внешние последствия,
+    и след о ней должен остаться. Такое дело закрывают.
+    """
+    app = await _get_app_or_404(application_id, session)
+
+    if app.status in (ApplicationStatus.submitted, ApplicationStatus.closed):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Поданное или закрытое дело удалить нельзя: сведения о нём "
+                "должны сохраниться. Измените статус, если дело заведено "
+                "по ошибке."
+            ),
+        )
+
+    await _create_audit(
+        session,
+        user=current_user,
+        action="application_delete",
+        application=app,
+        old_val={"mark_name": app.mark_name, "status": app.status.value},
+        ip_address=_get_client_ip(request),
+    )
+    await session.flush()
+    await session.delete(app)
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)

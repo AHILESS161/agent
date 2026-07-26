@@ -71,6 +71,8 @@ export interface Application {
   id: number;
   clientId: number;
   status: ApplicationStatus;
+  /** Срочность в работе, не конвенционный приоритет заявки. */
+  priority: CasePriority;
   markType: MarkType;
   markName: string;
   markText: string;
@@ -286,4 +288,19 @@ export const RISK_COLORS: Record<RiskLevel, string> = {
   medium: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
   high: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
   critical: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+};
+
+/** Срочность дела в работе поверенного. */
+export type CasePriority = "low" | "medium" | "high";
+
+export const PRIORITY_LABELS: Record<CasePriority, string> = {
+  low: "Низкий",
+  medium: "Средний",
+  high: "Высокий",
+};
+
+export const PRIORITY_COLORS: Record<CasePriority, string> = {
+  low: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+  medium: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  high: "bg-red-500/15 text-red-700 dark:text-red-400",
 };

@@ -17,6 +17,7 @@ interface ApplicationDto {
   assigned_lawyer_id: number | null;
   assigned_manager_id: number | null;
   status: ApplicationStatus;
+  priority?: string;
   mark_type: MarkType | null;
   mark_name: string | null;
   mark_text?: string | null;
@@ -63,6 +64,7 @@ function toApplication(dto: ApplicationDto): Application {
     id: dto.id,
     clientId: dto.client_id,
     status: dto.status,
+    priority: (dto.priority as Application["priority"]) ?? "medium",
     // mark_type на сервере необязателен, в интерфейсе нужен всегда.
     markType: (dto.mark_type ?? "other") as MarkType,
     markName: dto.mark_name ?? `Заявка №${dto.id}`,

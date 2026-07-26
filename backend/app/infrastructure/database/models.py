@@ -141,6 +141,19 @@ class TemplateType(str, enum.Enum):
     power_of_attorney = "power_of_attorney"
 
 
+class CasePriority(str, enum.Enum):
+    """Срочность дела в работе поверенного.
+
+    Не имеет отношения к приоритету заявки по статье 1495 ГК РФ:
+    то — дата, от которой считается старшинство, и живёт в поле
+    ``priority_claim``.
+    """
+
+    low = "low"
+    medium = "medium"
+    high = "high"
+
+
 class RecommendedAction(str, enum.Enum):
     proceed = "proceed"
     modify = "modify"
@@ -309,6 +322,18 @@ class TrademarkApplicationDraft(Base):
     goods_services_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     territory: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     priority_claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # Срочность в работе — не конвенционный приоритет заявки.
+    priority: Mapped[CasePriority] = mapped_column(
+        Enum(CasePriority, name="casepriority"),
+        nullable=False,
+        default=CasePriority.medium,
+        server_default=CasePriority.medium.value,
+    )
+    # Кто завёл дело. Определяет, кому оно видно: поверенные
+    # ведут свои дела и не должны мешать друг другу.
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

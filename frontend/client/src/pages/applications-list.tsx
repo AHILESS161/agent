@@ -2,14 +2,20 @@ import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useCases } from "@/lib/use-cases";
-import { STATUS_LABELS, STATUS_COLORS, MARK_TYPE_LABELS, type ApplicationStatus } from "@shared/schema";
+import {
+  STATUS_LABELS, STATUS_COLORS, MARK_TYPE_LABELS,
+  PRIORITY_LABELS, PRIORITY_COLORS,
+  type ApplicationStatus, type CasePriority,
+} from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Plus, Search, Filter, Eye, Pencil, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { Plus, Search, Filter, Eye, Pencil, Trash2, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 export default function ApplicationsListPage() {
@@ -124,6 +130,7 @@ export default function ApplicationsListPage() {
                 <TableHead className="hidden md:table-cell">Клиент</TableHead>
                 <TableHead className="hidden lg:table-cell">Тип</TableHead>
                 <TableHead>Статус</TableHead>
+                <TableHead>Приоритет</TableHead>
                 <TableHead className="hidden md:table-cell">Исполнитель</TableHead>
                 <TableHead className="hidden lg:table-cell">Обновлено</TableHead>
                 <TableHead className="w-20"></TableHead>
@@ -153,6 +160,13 @@ export default function ApplicationsListPage() {
                         {STATUS_LABELS[app.status]}
                       </Badge>
                     </TableCell>
+                    <TableCell>
+                      <PrioritySelect
+                        appId={app.id}
+                        value={app.priority}
+                        onChanged={reload}
+                      />
+                    </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {app.assigneeId ? `Пользователь #${app.assigneeId}` : "—"}
                     </TableCell>
@@ -173,6 +187,11 @@ export default function ApplicationsListPage() {
                             </Button>
                           </Link>
                         )}
+                        <DeleteCaseButton
+                          appId={app.id}
+                          markName={app.markName}
+                          onDeleted={reload}
+                        />
                       </div>
                     </TableCell>
                   </TableRow>
@@ -190,5 +209,120 @@ export default function ApplicationsListPage() {
         </div>
       </Card>
     </div>
+  );
+}
+
+/**
+ * Срочность дела: меняется прямо в списке.
+ *
+ * Это срочность в работе поверенного, а не конвенционный приоритет
+ * заявки по статье 1495 — тот определяется датой подачи.
+ */
+function PrioritySelect({
+  appId,
+  value,
+  onChanged,
+}: {
+  appId: number;
+  value: CasePriority;
+  onChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
+
+  const change = async (next: string) => {
+    setIsSaving(true);
+    try {
+      await api.put(`/applications/${appId}`, { priority: next });
+      onChanged();
+    } catch (e) {
+      toast({
+        title: "Не удалось изменить приоритет",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <Select value={value} onValueChange={(v) => void change(v)} disabled={isSaving}>
+      <SelectTrigger
+        className={cn(
+          "h-7 w-[104px] text-[11px] border-0 focus:ring-0",
+          PRIORITY_COLORS[value],
+        )}
+        data-testid={`priority-${appId}`}
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {(Object.keys(PRIORITY_LABELS) as CasePriority[]).map((key) => (
+          <SelectItem key={key} value={key} className="text-xs">
+            {PRIORITY_LABELS[key]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * Удаление дела.
+ *
+ * Требует подтверждения: вместе с делом уходят документы, извлечённые
+ * поля и результаты анализа. Поданное дело сервер удалить не даст.
+ */
+function DeleteCaseButton({
+  appId,
+  markName,
+  onDeleted,
+}: {
+  appId: number;
+  markName: string;
+  onDeleted: () => void;
+}) {
+  const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const remove = async () => {
+    const confirmed = window.confirm(
+      `Удалить дело «${markName}»?
+
+` +
+        "Вместе с ним будут удалены загруженные документы, извлечённые " +
+        "поля и результаты анализа. Действие необратимо.",
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await api.delete(`/applications/${appId}`);
+      toast({ title: `Дело «${markName}» удалено` });
+      onDeleted();
+    } catch (e) {
+      toast({
+        title: "Не удалось удалить дело",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+      disabled={isDeleting}
+      onClick={() => void remove()}
+      data-testid={`delete-app-${appId}`}
+      title="Удалить дело"
+    >
+      <Trash2 className="w-3.5 h-3.5" />
+    </Button>
   );
 }

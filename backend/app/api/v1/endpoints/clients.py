@@ -9,8 +9,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import get_current_user
-from app.infrastructure.database.models import AuditLog, Client, ClientRepresentative, User
+from app.core.security import get_current_user, require_roles
+from app.infrastructure.database.models import (
+    AuditLog,
+    Client,
+    ClientRepresentative,
+    TrademarkApplicationDraft,
+    User,
+)
 from app.infrastructure.database.session import get_session
 from app.schemas.clients import (
     ClientCreate,
@@ -148,6 +154,55 @@ async def update_client(
     await session.flush()
     await session.refresh(client)
     return ClientResponse.model_validate(client)
+
+
+@router.delete(
+    "/{client_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить клиента",
+)
+async def delete_client(
+    client_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_roles("admin", "lawyer")),
+) -> None:
+    """Удалить клиента.
+
+    Клиент с делами не удаляется: вместе с ним пропали бы заявки
+    и вся история работы по ним. Сначала нужно разобраться с делами.
+    """
+    client = await _get_client_or_404(client_id, session)
+
+    cases = (
+        await session.execute(
+            select(func.count(TrademarkApplicationDraft.id)).where(
+                TrademarkApplicationDraft.client_id == client_id
+            )
+        )
+    ).scalar_one()
+
+    if cases:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"У клиента {cases} дел(а). Удалите или закройте их, "
+                "иначе вместе с клиентом пропадёт история работы."
+            ),
+        )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            action="client_delete",
+            entity_type="Client",
+            entity_id=str(client_id),
+            old_value_json={
+                "full_name_or_company_name": client.full_name_or_company_name
+            },
+        )
+    )
+    await session.flush()
+    await session.delete(client)
 
 
 # ---------------------------------------------------------------------------

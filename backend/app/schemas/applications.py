@@ -7,7 +7,11 @@ from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.infrastructure.database.models import ApplicationStatus, MarkType
+from app.infrastructure.database.models import (
+    ApplicationStatus,
+    CasePriority,
+    MarkType,
+)
 
 
 class ApplicationCreate(BaseModel):
@@ -25,6 +29,7 @@ class ApplicationCreate(BaseModel):
     business_description: Optional[str] = None
     goods_services_raw: Optional[str] = None
     territory: Optional[str] = Field(default=None, max_length=255)
+    priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
@@ -45,6 +50,7 @@ class ApplicationUpdate(BaseModel):
     business_description: Optional[str] = None
     goods_services_raw: Optional[str] = None
     territory: Optional[str] = Field(default=None, max_length=255)
+    priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
@@ -61,6 +67,7 @@ class ApplicationResponse(BaseModel):
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
     status: ApplicationStatus
+    priority: CasePriority = CasePriority.medium
     mark_type: Optional[MarkType] = None
     mark_name: Optional[str] = None
     mark_text: Optional[str] = None
@@ -119,6 +126,7 @@ class ApplicationListItem(BaseModel):
     id: int
     client_id: int
     status: ApplicationStatus
+    priority: CasePriority = CasePriority.medium
     mark_type: Optional[MarkType] = None
     mark_name: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None

@@ -22,6 +22,7 @@ import {
   StatusHistoryTab,
 } from "@/components/case-tabs";
 import { RiskAnalysisTab } from "@/components/risk-analysis-tab";
+import { ApplicationDraftTab } from "@/components/application-draft-tab";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -35,7 +36,7 @@ import {
   Info, Shield, Layers, Crosshair, FileCheck, FileText,
   History, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
   Send, Download, Eye, Clock, ArrowRight, Gavel, Upload, ClipboardList, Loader2, AlertCircle,
-  Check, X, Minus, ClipboardCheck,
+  Check, X, Minus, ClipboardCheck, FileSignature,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -196,6 +197,7 @@ export default function ApplicationDetailPage() {
             { value: "classes", label: "Классы МКТУ", icon: Layers },
             { value: "conflicts", label: "Конфликты", icon: Crosshair },
             { value: "recommendations", label: "Рекомендации", icon: Gavel },
+            { value: "draft", label: "Черновик заявления", icon: FileSignature },
             { value: "documents", label: "Документы", icon: FileText },
             { value: "history", label: "История", icon: History },
           ].map(tab => (
@@ -225,6 +227,7 @@ export default function ApplicationDetailPage() {
           <TabsContent value="classes"><ClassesTab appId={appId} /></TabsContent>
           <TabsContent value="conflicts"><ConflictsTab appId={appId} /></TabsContent>
           <TabsContent value="recommendations"><RecommendationsTab appId={appId} /></TabsContent>
+          <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>
           <TabsContent value="documents"><DocumentPackagesTab appId={appId} /></TabsContent>
           <TabsContent value="history"><StatusHistoryTab appId={appId} /></TabsContent>
         </div>

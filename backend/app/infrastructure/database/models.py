@@ -1541,3 +1541,88 @@ class InboundAttachment(Base):
     document: Mapped[Optional["SourceDocument"]] = relationship(
         "SourceDocument", foreign_keys=[document_id]
     )
+
+
+# ===========================================================================
+# Черновик заявления
+# ---------------------------------------------------------------------------
+# Заполняется только подтверждёнными данными. Поле со статусом
+# missing / conflict / needs_review в документ не попадает: черновик
+# юридически значимого документа не должен содержать непроверенных
+# значений, даже если система в них уверена.
+# ===========================================================================
+
+class DraftStatus(str, enum.Enum):
+    draft = "draft"
+    ready_for_review = "ready_for_review"
+    approved_by_specialist = "approved_by_specialist"
+    exported = "exported"
+
+
+class ApplicationDraft(Base):
+    """Версия чернового заявления на регистрацию товарного знака."""
+
+    __tablename__ = "application_drafts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # Номер версии в рамках дела: каждая генерация сохраняется отдельно.
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    status: Mapped[DraftStatus] = mapped_column(
+        Enum(DraftStatus, name="draftstatus"),
+        nullable=False,
+        default=DraftStatus.draft,
+    )
+
+    # --- содержимое ---
+    # Значения, попавшие в документ: field_id -> значение.
+    filled_fields_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    # Поля, намеренно оставленные пустыми, с причиной.
+    skipped_fields_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    # Чего не хватает для подачи — чек-лист для специалиста.
+    checklist_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    # --- файл ---
+    file_path: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    file_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+
+    # --- прослеживаемость ---
+    template_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    template_sha256: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    schema_version: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    mapping_version: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Экспорт разрешён только после утверждения специалистом.
+    approved_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    exported_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        foreign_keys=[application_id]
+    )
+    approved_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[approved_by_user_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )

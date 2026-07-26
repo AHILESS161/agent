@@ -9,11 +9,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
-  CompletenessTab,
   RecommendationsTab,
   DocumentPackagesTab,
   StatusHistoryTab,
@@ -40,7 +43,22 @@ import {
 import { cn } from "@/lib/utils";
 
 // ========== TAB: GENERAL INFO ==========
-function GeneralInfoTab({ app, client }: { app: Application; client: Client | null }) {
+/**
+ * Общие сведения дела.
+ *
+ * Данные правятся прямо здесь: часть сведений приходит со слов
+ * клиента и уточняется по ходу работы, а отправлять специалиста
+ * за этим в другой раздел незачем.
+ */
+function GeneralInfoTab({
+  app,
+  client,
+  onSaved,
+}: {
+  app: Application;
+  client: Client | null;
+  onSaved: () => void;
+}) {
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -72,13 +90,32 @@ function GeneralInfoTab({ app, client }: { app: Application; client: Client | nu
           <CardTitle className="text-sm font-semibold">Обозначение</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <InfoRow label="Наименование" value={app.markName} />
+          <EditableRow
+            appId={app.id}
+            label="Наименование"
+            field="mark_name"
+            value={app.markName}
+            onSaved={onSaved}
+          />
           <InfoRow label="Вид" value={MARK_TYPE_LABELS[app.markType]} />
-          {app.markText && <InfoRow label="Текст" value={app.markText} />}
+          <EditableRow
+            appId={app.id}
+            label="Текст"
+            field="mark_text"
+            value={app.markText}
+            onSaved={onSaved}
+          />
           {app.colorsClaimed && <InfoRow label="Цвета" value={app.colorsClaimed} />}
           {app.transliteration && <InfoRow label="Транслитерация" value={app.transliteration} mono />}
           {app.translation && <InfoRow label="Перевод" value={app.translation} />}
-          <InfoRow label="Описание" value={app.descriptionOfMark || "—"} />
+          <EditableRow
+            appId={app.id}
+            label="Описание"
+            field="description_of_mark"
+            value={app.descriptionOfMark}
+            multiline
+            onSaved={onSaved}
+          />
         </CardContent>
       </Card>
 
@@ -103,9 +140,23 @@ function GeneralInfoTab({ app, client }: { app: Application; client: Client | nu
           <CardTitle className="text-sm font-semibold">Товары и услуги</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <InfoRow label="Бизнес-описание" value={app.businessDescription || "—"} />
+          <EditableRow
+            appId={app.id}
+            label="Чем занимается"
+            field="business_description"
+            value={app.businessDescription}
+            multiline
+            onSaved={onSaved}
+          />
           <Separator />
-          <p className="text-sm">{app.goodsServicesRaw || "Перечень пока не заполнен"}</p>
+          <EditableRow
+            appId={app.id}
+            label="Товары и услуги"
+            field="goods_services_raw"
+            value={app.goodsServicesRaw}
+            multiline
+            onSaved={onSaved}
+          />
         </CardContent>
       </Card>
     </div>
@@ -118,6 +169,111 @@ function GeneralInfoTab({ app, client }: { app: Application; client: Client | nu
 
 
 
+
+/**
+ * Строка сведений, редактируемая по месту.
+ *
+ * Сохраняет одно поле дела: точечная правка не должна затрагивать
+ * остальные значения, которые специалист не трогал.
+ */
+function EditableRow({
+  appId,
+  label,
+  field,
+  value,
+  multiline,
+  onSaved,
+}: {
+  appId: number;
+  label: string;
+  field: string;
+  value?: string | null;
+  multiline?: boolean;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
+  const [draft, setDraft] = useState(value ?? "");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const save = async () => {
+    setIsSaving(true);
+    try {
+      await api.put(`/applications/${appId}`, { [field]: draft.trim() });
+      toast({ title: `Сохранено: ${label}` });
+      setIsEditing(false);
+      onSaved();
+    } catch (e) {
+      toast({
+        title: "Не удалось сохранить",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isEditing) {
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4">
+        <span className="text-xs font-medium text-muted-foreground sm:w-32 shrink-0 pt-1.5">
+          {label}
+        </span>
+        <div className="flex-1 flex items-start gap-2">
+          {multiline ? (
+            <Textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={2}
+              className="text-sm"
+            />
+          ) : (
+            <Input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              className="h-8 text-sm"
+            />
+          )}
+          <Button size="sm" className="h-8" disabled={isSaving} onClick={() => void save()}>
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "ОК"}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8"
+            onClick={() => {
+              setIsEditing(false);
+              setDraft(value ?? "");
+            }}
+          >
+            Отмена
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 group">
+      <span className="text-xs font-medium text-muted-foreground sm:w-32 shrink-0">
+        {label}
+      </span>
+      <span className="text-sm flex-1">{value || "—"}</span>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="h-6 px-2 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={() => setIsEditing(true)}
+        data-testid={`edit-${field}`}
+      >
+        Изменить
+      </Button>
+    </div>
+  );
+}
 
 // ========== INFO ROW HELPER ==========
 function InfoRow({ label, value, mono, children }: { label: string; value?: string; mono?: boolean; children?: React.ReactNode }) {
@@ -190,7 +346,6 @@ export default function ApplicationDetailPage() {
             { value: "general", label: "Общие сведения", icon: Info },
             { value: "source-documents", label: "Исходные документы", icon: Upload },
             { value: "fields", label: "Сверка полей", icon: ClipboardList },
-            { value: "completeness", label: "Полнота данных", icon: ClipboardCheck },
             { value: "legal", label: "Правовой анализ", icon: Shield },
             { value: "recommendations", label: "Рекомендации", icon: Gavel },
             { value: "draft", label: "Черновик заявления", icon: FileSignature },
@@ -210,14 +365,15 @@ export default function ApplicationDetailPage() {
         </TabsList>
 
         <div className="mt-4">
-          <TabsContent value="general"><GeneralInfoTab app={app} client={client} /></TabsContent>
+          <TabsContent value="general">
+            <GeneralInfoTab app={app} client={client} onSaved={reload} />
+          </TabsContent>
           <TabsContent value="source-documents">
             <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
           </TabsContent>
           <TabsContent value="fields">
             <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
           </TabsContent>
-          <TabsContent value="completeness"><CompletenessTab appId={appId} /></TabsContent>
           <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
           <TabsContent value="recommendations"><RecommendationsTab appId={appId} /></TabsContent>
           <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>

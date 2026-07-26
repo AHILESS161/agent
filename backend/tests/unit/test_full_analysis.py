@@ -150,3 +150,65 @@ class TestIncompleteChecks:
         result = await _run(async_session, application)
         assert result["is_complete"] is False
         assert result["incomplete_checks"]
+
+
+class TestMemo:
+    """Итог анализа должен оставаться в деле, а не только на экране."""
+
+    async def _memo(self, session, application_id):
+        from sqlalchemy import select
+
+        from app.infrastructure.database.models import RecommendationMemo
+
+        return (
+            await session.execute(
+                select(RecommendationMemo).where(
+                    RecommendationMemo.application_id == application_id
+                )
+            )
+        ).scalar_one_or_none()
+
+    async def test_memo_is_created(self, async_session, application):
+        await _run(async_session, application)
+        memo = await self._memo(async_session, application.id)
+
+        assert memo is not None
+        assert memo.summary
+        assert memo.recommended_action is not None
+
+    async def test_memo_is_not_approved_automatically(
+        self, async_session, application
+    ):
+        """Вывод остаётся предварительным до решения специалиста."""
+        await _run(async_session, application)
+        memo = await self._memo(async_session, application.id)
+        assert memo.approved_by is None
+
+    async def test_rerun_updates_the_same_memo(self, async_session, application):
+        from sqlalchemy import func, select
+
+        from app.infrastructure.database.models import RecommendationMemo
+
+        await _run(async_session, application)
+        await _run(async_session, application)
+
+        count = (
+            await async_session.execute(
+                select(func.count(RecommendationMemo.id)).where(
+                    RecommendationMemo.application_id == application.id
+                )
+            )
+        ).scalar_one()
+        assert count == 1
+
+    async def test_incomplete_analysis_lowers_confidence(
+        self, async_session, application
+    ):
+        """Неполная проверка не может быть уверенной."""
+        application.mark_text = None
+        application.mark_name = None
+        await async_session.flush()
+
+        await _run(async_session, application)
+        memo = await self._memo(async_session, application.id)
+        assert memo.confidence is None

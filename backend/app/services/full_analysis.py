@@ -26,7 +26,10 @@ from app.core.logging import get_logger
 from app.infrastructure.database.models import (
     AnalysisKind,
     NiceClassSuggestion,
+    RecommendationMemo,
+    RecommendedAction,
     RiskAssessment,
+    RiskFinding,
     RiskLevel,
     TrademarkApplicationDraft,
 )
@@ -82,6 +85,91 @@ async def _latest(
             .limit(1)
         )
     ).scalar_one_or_none()
+
+
+# Вердикт анализа -> действие, предусмотренное меморандумом.
+_ACTION_BY_VERDICT: dict[str, RecommendedAction] = {
+    "proceed": RecommendedAction.proceed,
+    "proceed_with_caution": RecommendedAction.proceed,
+    "revise": RecommendedAction.modify,
+    "do_not_proceed": RecommendedAction.withdraw,
+    "inconclusive": RecommendedAction.further_review,
+}
+
+
+async def _save_memo(
+    session: AsyncSession,
+    *,
+    application_id: int,
+    verdict_code: str,
+    verdict_text: str,
+    overall: RiskLevel | None,
+    classes: list[int],
+    absolute: RiskAssessment,
+    relative: RiskAssessment,
+    incomplete: list[str],
+    user_id: int | None,
+) -> None:
+    """Сохранить итог анализа как меморандум по делу.
+
+    Меморандум не утверждается системой: поле ``approved_by`` остаётся
+    пустым, пока специалист не подтвердит вывод. Пересчёт анализа
+    обновляет существующий меморандум, а не плодит копии.
+    """
+    memo = (
+        await session.execute(
+            select(RecommendationMemo)
+            .where(RecommendationMemo.application_id == application_id)
+            .order_by(RecommendationMemo.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+
+    if memo is None:
+        memo = RecommendationMemo(application_id=application_id)
+        session.add(memo)
+
+    # Связь findings ленивая: в async-сессии её нельзя трогать
+    # напрямую, поэтому выводы читаются отдельным запросом.
+    def _explanations(assessment_id: int) -> Any:
+        return select(RiskFinding.explanation).where(
+            RiskFinding.assessment_id == assessment_id
+        )
+
+    absolute_risks = list(
+        (await session.execute(_explanations(absolute.id))).scalars().all()
+    )
+    relative_risks = list(
+        (await session.execute(_explanations(relative.id))).scalars().all()
+    )
+
+    memo.recommended_action = _ACTION_BY_VERDICT.get(
+        verdict_code, RecommendedAction.further_review
+    )
+    memo.summary = verdict_text
+    memo.risk_assessment = " ".join(
+        part
+        for part in (
+            f"Итоговый уровень риска: {overall.value}." if overall else None,
+            absolute.summary,
+            relative.summary,
+        )
+        if part
+    ) or None
+    memo.recommended_classes_json = classes
+    memo.key_risks_json = (absolute_risks + relative_risks)[:10]
+    memo.key_conflicts_json = relative_risks[:10]
+    memo.evidence_json = {
+        "absolute_assessment_id": absolute.id,
+        "relative_assessment_id": relative.id,
+        "incomplete_checks": incomplete,
+    }
+    # Уверенность ограничена: вывод предварительный по определению.
+    memo.confidence = None if incomplete else 0.8
+    # Решение специалиста сбрасывается: выводы пересчитаны.
+    memo.approved_by = None
+    memo.approved_at = None
+    await session.flush()
 
 
 async def run_full_analysis(
@@ -173,6 +261,22 @@ async def run_full_analysis(
     limitations: list[str] = []
     for assessment in (absolute, relative):
         limitations.extend(assessment.limitations_json or [])
+
+    # --- 5. Меморандум --------------------------------------------------
+    # Итог анализа должен оставаться в деле, а не только на экране:
+    # раздел «Рекомендации» читает именно его.
+    await _save_memo(
+        session,
+        application_id=application.id,
+        verdict_code=verdict_code,
+        verdict_text=verdict_text,
+        overall=overall,
+        classes=classes,
+        absolute=absolute,
+        relative=relative,
+        incomplete=incomplete,
+        user_id=user_id,
+    )
 
     logger.info(
         "Полный анализ выполнен",

@@ -467,6 +467,14 @@ function ClassList({
   const { toast } = useToast();
   const [busy, setBusy] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+  // Официальные названия классов: без них у строки видно только
+  // краткую формулировку модели, а что это за класс — непонятно.
+  const catalog = useApi<{ items: CatalogItem[] }>(
+    "/nice-classes/catalog?limit=45",
+  );
+  const byNumber = new Map(
+    (catalog.data?.items ?? []).map((item) => [item.class_number, item]),
+  );
 
   const fail = (e: unknown, title: string) =>
     toast({
@@ -543,7 +551,20 @@ function ClassList({
             )}
             data-testid={`class-${item.id}`}
           >
-            <Badge className="text-[10px]">Класс {item.class_number}</Badge>
+            <Badge
+              className="text-[10px] cursor-help"
+              title={describeClass(byNumber.get(item.class_number))}
+            >
+              Класс {item.class_number}
+            </Badge>
+            {byNumber.get(item.class_number) && (
+              <span
+                className="text-[11px] font-medium cursor-help"
+                title={describeClass(byNumber.get(item.class_number))}
+              >
+                {byNumber.get(item.class_number)!.title}
+              </span>
+            )}
             {approved && (
               <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px]">
                 подтверждён
@@ -626,6 +647,14 @@ function ClassList({
       )}
     </div>
   );
+}
+
+/** Полное описание класса для всплывающей подсказки. */
+function describeClass(item?: CatalogItem): string {
+  if (!item) return "Описание класса не загружено";
+  return `Класс ${item.class_number} (${item.kind}). ${item.title}.
+
+${item.description}`;
 }
 
 interface CatalogItem {

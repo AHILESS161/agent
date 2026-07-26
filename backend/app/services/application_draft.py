@@ -37,6 +37,17 @@ from app.services.class_analysis import load_class_context
 
 logger = get_logger(__name__)
 
+# Вид знака в терминах бланка: коды 550–558 и 551.
+_MARK_KIND_LABELS = {
+    "word": "словесный",
+    "figurative": "изобразительный",
+    "combined": "комбинированный",
+    "3d": "объёмный (554)",
+    "sound": "звуковой (556)",
+    "color": "цветовой (558)",
+    "other": "иной",
+}
+
 TEMPLATE_PATH = (
     Path(__file__).resolve().parents[2]
     / "resources"
@@ -183,6 +194,20 @@ async def collect_draft_content(
                 field_id="application.mark.text",
                 label="Заявляемое обозначение",
                 reason="не указано в деле",
+            )
+        )
+
+    # Вид знака отмечается в бланке галочкой, но специалисту нужно
+    # видеть выбранное значение и в перечне полей.
+    if application.mark_type:
+        content.filled.append(
+            FilledField(
+                field_id="application.mark.kind",
+                label="Вид знака",
+                value=_MARK_KIND_LABELS.get(
+                    application.mark_type.value, application.mark_type.value
+                ),
+                source="карточка дела",
             )
         )
 

@@ -95,7 +95,14 @@ function GeneralInfoTab({
             value={app.markName}
             onSaved={onSaved}
           />
-          <InfoRow label="Вид" value={MARK_TYPE_LABELS[app.markType]} />
+          <EditableSelectRow
+            appId={app.id}
+            label="Вид знака"
+            field="mark_type"
+            value={app.markType}
+            options={MARK_TYPE_LABELS}
+            onSaved={onSaved}
+          />
           <EditableRow
             appId={app.id}
             label="Текст"
@@ -319,6 +326,68 @@ function EditableRow({
       >
         Изменить
       </Button>
+    </div>
+  );
+}
+
+/**
+ * Выбор значения из списка прямо в карточке.
+ *
+ * Вид знака определяет и состав заявления, и то, нужен ли файл
+ * с изображением, — поэтому меняется здесь, а не в отдельной форме.
+ */
+function EditableSelectRow({
+  appId,
+  label,
+  field,
+  value,
+  options,
+  onSaved,
+}: {
+  appId: number;
+  label: string;
+  field: string;
+  value: string;
+  options: Record<string, string>;
+  onSaved: () => void;
+}) {
+  const { toast } = useToast();
+  const [isSaving, setIsSaving] = useState(false);
+
+  const change = async (next: string) => {
+    setIsSaving(true);
+    try {
+      await api.put(`/applications/${appId}`, { [field]: next });
+      toast({ title: `Сохранено: ${label}` });
+      onSaved();
+    } catch (e) {
+      toast({
+        title: "Не удалось сохранить",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4">
+      <span className="text-xs font-medium text-muted-foreground sm:w-32 shrink-0">
+        {label}
+      </span>
+      <Select value={value} onValueChange={(v) => void change(v)} disabled={isSaving}>
+        <SelectTrigger className="h-8 w-56 text-sm" data-testid={`select-${field}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.entries(options).map(([key, title]) => (
+            <SelectItem key={key} value={key} className="text-sm">
+              {title}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </div>
   );
 }

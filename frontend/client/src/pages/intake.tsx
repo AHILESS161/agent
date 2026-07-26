@@ -31,6 +31,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError, DOCUMENT_KIND_LABELS } from "@/lib/api";
 import { useCases } from "@/lib/use-cases";
+import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import {
   AlertCircle,
@@ -113,6 +114,7 @@ export default function IntakePage() {
 
   // Обозначение и деятельность.
   const [markName, setMarkName] = useState("");
+  const [markType, setMarkType] = useState<MarkType>("word");
   const [businessDescription, setBusinessDescription] = useState("");
   const [goodsServices, setGoodsServices] = useState("");
 
@@ -245,6 +247,7 @@ export default function IntakePage() {
             },
         mark_name: markName.trim() || null,
         mark_text: markName.trim() || null,
+        mark_type: markType,
         business_description: businessDescription.trim() || null,
         goods_services: goodsServices.trim() || null,
       });
@@ -562,7 +565,43 @@ export default function IntakePage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <Field label="Заявляемое обозначение">
+          <Field
+            label="Вид знака"
+            hint={
+              markType === "word"
+                ? "Словесный знак — только текст, без изображения."
+                : "Для знаков с изображением потребуется файл: приложите его в исходных документах дела."
+            }
+          >
+            <Select
+              value={markType}
+              onValueChange={(v) => setMarkType(v as MarkType)}
+            >
+              <SelectTrigger data-testid="select-mark-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(MARK_TYPE_LABELS) as MarkType[]).map((type) => (
+                  <SelectItem key={type} value={type}>
+                    {MARK_TYPE_LABELS[type]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field
+            label={
+              markType === "figurative"
+                ? "Название обозначения (для дела)"
+                : "Заявляемое обозначение"
+            }
+            hint={
+              markType === "figurative"
+                ? "У изобразительного знака словесной части нет — укажите рабочее название, чтобы дело было узнаваемо в списке."
+                : undefined
+            }
+          >
             <Input
               value={markName}
               onChange={(e) => setMarkName(e.target.value)}

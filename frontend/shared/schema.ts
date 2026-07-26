@@ -32,7 +32,7 @@ export type UserRole = z.infer<typeof UserRoleEnum>;
 export const ClientTypeEnum = z.enum(["company", "individual", "sole_proprietor"]);
 export type ClientType = z.infer<typeof ClientTypeEnum>;
 
-export const MarkTypeEnum = z.enum(["word", "figurative", "combined", "three_d", "sound", "color", "other"]);
+export const MarkTypeEnum = z.enum(["word", "figurative", "combined", "3d", "sound", "color", "other"]);
 export type MarkType = z.infer<typeof MarkTypeEnum>;
 
 export const RiskLevelEnum = z.enum(["low", "medium", "high", "critical"]);
@@ -270,7 +270,7 @@ export const MARK_TYPE_LABELS: Record<MarkType, string> = {
   word: "Словесный",
   figurative: "Изобразительный",
   combined: "Комбинированный",
-  three_d: "Объёмный",
+  "3d": "Объёмный",
   sound: "Звуковой",
   color: "Цветовой",
   other: "Иной",

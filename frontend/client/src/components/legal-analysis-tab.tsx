@@ -18,6 +18,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { AiDisclaimer, DemoModeBadge } from "@/components/ai-disclaimer";
 import { api, ApiError } from "@/lib/api";
@@ -31,7 +32,9 @@ import {
   Layers,
   Loader2,
   Play,
+  Plus,
   Search,
+  Trash2,
   Shield,
   ShieldAlert,
   X,
@@ -337,34 +340,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         title="Классы МКТУ"
         hint="От перечня классов зависит вывод об охраноспособности: обозначение бывает описательным для одних товаров и фантазийным для других."
       >
-        {classes.data && classes.data.suggestions.length > 0 ? (
-          <div className="space-y-1.5">
-            {classes.data.suggestions.map((item) => (
-              <div
-                key={item.id}
-                className="flex flex-wrap items-center gap-2 rounded-md border border-border px-2.5 py-1.5"
-              >
-                <Badge className="text-[10px]">Класс {item.class_number}</Badge>
-                {item.approved === true ? (
-                  <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px]">
-                    подтверждён
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[10px]">
-                    не подтверждён
-                  </Badge>
-                )}
-                <span className="text-[11px] text-muted-foreground min-w-0 flex-1">
-                  {item.class_description || item.rationale}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            Классы не определены. Они подбираются на первом шаге полного анализа.
-          </p>
-        )}
+        <ClassList appId={appId} state={classes} />
       </Section>
 
       {/* --- абсолютные основания --- */}
@@ -464,6 +440,225 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
             ))}
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Перечень классов МКТУ с решением специалиста.
+ *
+ * Класс, предложенный системой, — это предложение: пока специалист
+ * его не подтвердил, он не попадает в заявление. Поэтому решение
+ * принимается прямо здесь, а не на отдельном экране. Своего класса
+ * в предложениях может не оказаться — его можно добавить вручную.
+ */
+function ClassList({
+  appId,
+  state,
+}: {
+  appId: number;
+  state: ReturnType<typeof useApi<ClassesDto>>;
+}) {
+  const { toast } = useToast();
+  const [busy, setBusy] = useState<number | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newClass, setNewClass] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+
+  const fail = (e: unknown, title: string) =>
+    toast({
+      title,
+      description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+      variant: "destructive",
+    });
+
+  const decide = async (classId: number, approved: boolean) => {
+    setBusy(classId);
+    try {
+      await api.put(`/applications/${appId}/classes/${classId}/approve`, {
+        suggestion_id: classId,
+        approved,
+      });
+      state.reload();
+    } catch (e) {
+      fail(e, "Не удалось сохранить решение");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (classId: number) => {
+    setBusy(classId);
+    try {
+      await api.delete(`/applications/${appId}/classes/${classId}`);
+      state.reload();
+    } catch (e) {
+      fail(e, "Не удалось удалить класс");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const add = async () => {
+    const number = Number(newClass);
+    if (!Number.isInteger(number) || number < 1 || number > 45) {
+      toast({
+        title: "Неверный номер класса",
+        description: "МКТУ содержит классы с 1 по 45.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setBusy(-1);
+    try {
+      await api.post(`/applications/${appId}/classes`, {
+        class_number: number,
+        class_description: newDescription.trim() || null,
+      });
+      setNewClass("");
+      setNewDescription("");
+      setIsAdding(false);
+      state.reload();
+    } catch (e) {
+      fail(e, "Не удалось добавить класс");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const items = state.data?.suggestions ?? [];
+
+  return (
+    <div className="space-y-1.5">
+      {items.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Классы не определены. Они подбираются на первом шаге полного анализа
+          либо добавляются вручную.
+        </p>
+      )}
+
+      {items.map((item) => {
+        const approved = item.approved === true;
+        const rejected = item.approved === false;
+        return (
+          <div
+            key={item.id}
+            className={cn(
+              "flex flex-wrap items-center gap-2 rounded-md border px-2.5 py-1.5",
+              approved && "border-emerald-500/40 bg-emerald-500/5",
+              rejected && "border-red-500/40 bg-red-500/5 opacity-70",
+              !approved && !rejected && "border-border",
+            )}
+            data-testid={`class-${item.id}`}
+          >
+            <Badge className="text-[10px]">Класс {item.class_number}</Badge>
+            {approved && (
+              <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px]">
+                подтверждён
+              </Badge>
+            )}
+            {rejected && (
+              <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 text-[10px]">
+                отклонён
+              </Badge>
+            )}
+            {!approved && !rejected && (
+              <Badge variant="outline" className="text-[10px]">
+                не подтверждён
+              </Badge>
+            )}
+            <span className="text-[11px] text-muted-foreground min-w-0 flex-1">
+              {item.class_description || item.rationale}
+            </span>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                title="Подтвердить класс"
+                disabled={busy === item.id}
+                onClick={() => void decide(item.id, true)}
+                className={cn(
+                  "p-1 rounded hover:bg-emerald-500/15",
+                  approved ? "text-emerald-600" : "text-muted-foreground",
+                )}
+                data-testid={`approve-class-${item.id}`}
+              >
+                <Check className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                title="Отклонить класс"
+                disabled={busy === item.id}
+                onClick={() => void decide(item.id, false)}
+                className={cn(
+                  "p-1 rounded hover:bg-red-500/15",
+                  rejected ? "text-red-600" : "text-muted-foreground",
+                )}
+                data-testid={`reject-class-${item.id}`}
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                title="Удалить класс из дела"
+                disabled={busy === item.id}
+                onClick={() => void remove(item.id)}
+                className="p-1 rounded hover:bg-destructive/15 text-muted-foreground"
+                data-testid={`delete-class-${item.id}`}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        );
+      })}
+
+      {isAdding ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2">
+          <Input
+            value={newClass}
+            onChange={(e) => setNewClass(e.target.value)}
+            placeholder="№"
+            className="h-7 w-16 text-xs"
+            data-testid="input-new-class"
+          />
+          <Input
+            value={newDescription}
+            onChange={(e) => setNewDescription(e.target.value)}
+            placeholder="Товары и услуги этого класса"
+            className="h-7 text-xs flex-1 min-w-[180px]"
+            data-testid="input-new-class-description"
+          />
+          <Button
+            size="sm"
+            className="h-7 text-[11px]"
+            disabled={busy === -1}
+            onClick={() => void add()}
+            data-testid="save-new-class"
+          >
+            Добавить
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[11px]"
+            onClick={() => setIsAdding(false)}
+          >
+            Отмена
+          </Button>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-[11px]"
+          onClick={() => setIsAdding(true)}
+          data-testid="add-class"
+        >
+          <Plus className="w-3.5 h-3.5 mr-1" />
+          Добавить класс
+        </Button>
       )}
     </div>
   );

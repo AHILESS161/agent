@@ -232,6 +232,97 @@ class TestExportRequiresApproval:
 
 
 @pytest.mark.api
+class TestOfficialBlank:
+    """Черновик — это заполненный бланк Роспатента, а не своя форма."""
+
+    def _render(self, filled, classes=None):
+        from app.services.application_draft import (
+            DraftContent,
+            FilledField,
+            render_docx,
+        )
+
+        content = DraftContent()
+        content.filled = [
+            FilledField(field_id=fid, label=fid, value=value, source="regex")
+            for fid, value in filled.items()
+        ]
+        content.classes = classes or []
+
+        class _App:
+            id = 1
+            mark_text = "ЗВЁЗДОЧКА"
+            mark_name = "ЗВЁЗДОЧКА"
+
+        return render_docx(content, _App())
+
+    def _document(self, payload):
+        import io
+
+        import docx
+
+        return docx.Document(io.BytesIO(payload))
+
+    def test_structure_of_the_blank_is_preserved(self):
+        """Бланк остаётся бланком: та же таблица, те же строки."""
+        document = self._document(self._render({}))
+        assert len(document.tables) == 1
+        assert len(document.tables[0].rows) == 118
+
+    def test_applicant_lands_in_field_731(self):
+        payload = self._render(
+            {
+                "application.applicant.name": "ООО «ПРИМЕР»",
+                "application.applicant.address": "101000, Москва",
+            }
+        )
+        text = self._document(payload).tables[0].rows[5].cells[0].text
+        assert "ООО «ПРИМЕР»" in text
+        assert "101000, Москва" in text
+
+    def test_identifiers_land_in_their_block(self):
+        payload = self._render(
+            {
+                "application.applicant.ogrn": "1027700132195",
+                "application.applicant.inn": "7707083893",
+            }
+        )
+        text = self._document(payload).tables[0].rows[5].cells[31].text
+        assert "ОГРН: 1027700132195" in text
+        assert "ИНН: 7707083893" in text
+
+    def test_mark_lands_in_field_540(self):
+        payload = self._render({"application.mark.text": "ЗВЁЗДОЧКА"})
+        text = self._document(payload).tables[0].rows[17].cells[2].text
+        assert "ЗВЁЗДОЧКА" in text
+
+    def test_classes_fill_the_goods_table(self):
+        payload = self._render({}, classes=[("25", "Одежда; обувь")])
+        rows = self._document(payload).tables[0].rows
+        assert "25" in rows[44].cells[0].text
+        assert "Одежда" in rows[44].cells[3].text
+
+    def test_no_service_notes_inside_the_document(self):
+        """В бланке заявления не должно быть пометок про черновик и AI."""
+        payload = self._render({"application.mark.text": "ЗВЁЗДОЧКА"})
+        document = self._document(payload)
+        full = "\n".join(p.text for p in document.paragraphs)
+        full += "\n".join(
+            cell.text for row in document.tables[0].rows for cell in row.cells
+        )
+
+        for forbidden in ("ЧЕРНОВИК", " AI ", "искусственн", "автоматически"):
+            assert forbidden not in full, forbidden
+
+    def test_unconfirmed_fields_stay_empty(self):
+        """Незаполненное поле остаётся пустым, как в бумажной форме."""
+        document = self._document(self._render({}))
+        identifiers = document.tables[0].rows[5].cells[31].text
+        assert "ОГРН:" in identifiers
+        assert "1027700132195" not in identifiers
+
+
+@pytest.mark.api
 class TestChecklist:
     def test_checklist_lists_manual_steps(self, client, lawyer_auth, case_with_fields):
         """Чекбоксы бланка не определяются автоматически — это в чек-листе."""

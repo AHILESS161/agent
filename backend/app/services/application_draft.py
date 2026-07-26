@@ -69,6 +69,10 @@ class DraftContent:
     filled: list[FilledField] = field(default_factory=list)
     skipped: list[SkippedField] = field(default_factory=list)
     checklist: list[str] = field(default_factory=list)
+    # Перечень товаров для кода 511: (номер класса, наименование).
+    # Только подтверждённые специалистом классы: неподтверждённый
+    # перечень в заявление попадать не должен.
+    classes: list[tuple[str, str]] = field(default_factory=list)
 
     def value_of(self, field_id: str) -> str | None:
         for item in self.filled:
@@ -204,6 +208,9 @@ async def collect_draft_content(
                     source="подтверждено специалистом",
                 )
             )
+            content.classes.append(
+                (str(item.class_number), item.class_description or "")
+            )
     elif class_context.has_any:
         content.skipped.append(
             SkippedField(
@@ -270,65 +277,130 @@ def _template_hash() -> str | None:
     return hashlib.sha256(TEMPLATE_PATH.read_bytes()).hexdigest()
 
 
+def _find_cell(table, marker: str):
+    """Найти ячейку бланка по началу её текста.
+
+    Бланк — одна таблица 118×44 с объединёнными ячейками, поэтому
+    позиции ищутся по подписи поля, а не по фиксированным индексам:
+    так разметка переживёт мелкие правки формы.
+    """
+    normalized = marker.replace(" ", " ")
+    for row in table.rows:
+        for cell in row.cells:
+            text = cell.text.strip().replace(" ", " ")
+            if text.startswith(normalized):
+                return cell
+    return None
+
+
+def _write_into(cell, lines: list[str]) -> bool:
+    """Дописать значение в ячейку бланка под её подписью.
+
+    В бланке под каждой подписью оставлен пустой абзац — туда и
+    пишется значение. Если пустого абзаца нет, добавляется новый:
+    затирать типографский текст формы нельзя.
+    """
+    if cell is None or not lines:
+        return False
+
+    target = None
+    for paragraph in cell.paragraphs[1:]:
+        if not paragraph.text.strip():
+            target = paragraph
+            break
+    if target is None:
+        target = cell.add_paragraph()
+
+    target.add_run("\n".join(lines)).bold = True
+    return True
+
+
+def _fill_goods_table(table, classes: list[tuple[str, str]]) -> bool:
+    """Заполнить перечень товаров: класс и наименование (код 511)."""
+    header = None
+    for index, row in enumerate(table.rows):
+        if row.cells[0].text.strip() == "Класс":
+            header = index
+            break
+    if header is None:
+        return False
+
+    written = 0
+    for offset, (number, goods) in enumerate(classes, start=1):
+        position = header + offset
+        if position >= len(table.rows):
+            break
+        row = table.rows[position]
+        _write_into(row.cells[0], [number]) or row.cells[0].paragraphs[0].add_run(
+            number
+        )
+        # Наименование товаров занимает правую часть строки.
+        value_cell = row.cells[3] if len(row.cells) > 3 else None
+        if value_cell is not None:
+            _write_into(value_cell, [goods]) or value_cell.paragraphs[0].add_run(goods)
+        written += 1
+    return written > 0
+
+
 def render_docx(
     content: DraftContent, application: TrademarkApplicationDraft
 ) -> bytes:
-    """Сформировать DOCX чернового заявления.
+    """Заполнить официальный бланк заявки подтверждёнными данными.
 
-    Официальный бланк — таблица 118×44. Точное попадание в ячейки
-    требует ручной разметки каждой позиции, поэтому на этом этапе
-    формируется структурированный документ по разделам бланка
-    с кодами INID. Он пригоден для проверки специалистом и для
-    последующего переноса в официальную форму.
+    Заполняется именно бланк Роспатента (приложение к приказу
+    Минэкономразвития), а не собственная форма: документ должен быть
+    пригоден к подаче, а не пересказывать её своими словами.
+
+    В документ не добавляется никаких служебных пометок — ни о том,
+    что это черновик, ни об использовании AI. Это бланк заявления,
+    и посторонний текст в нём недопустим. Предупреждения, перечень
+    незаполненных полей и чек-лист живут в интерфейсе, а выгрузка
+    закрыта до утверждения специалистом.
+
+    Незаполненные поля остаются пустыми — ровно как в бумажной форме,
+    которую специалист дозаполняет вручную.
     """
-    document = docx.Document()
+    if not TEMPLATE_PATH.exists():
+        raise FileNotFoundError(f"Бланк заявления не найден: {TEMPLATE_PATH}")
 
-    document.add_heading("ЗАЯВКА", level=0)
-    document.add_paragraph(
-        "на государственную регистрацию товарного знака, знака обслуживания, "
-        "коллективного знака"
+    document = docx.Document(str(TEMPLATE_PATH))
+    table = document.tables[0]
+
+    values = {item.field_id: item.value for item in content.filled}
+
+    # --- (731) заявитель: наименование и адрес ---
+    applicant_block = [
+        values.get("application.applicant.name", ""),
+        values.get("application.applicant.address", ""),
+    ]
+    _write_into(
+        _find_cell(table, "(731)"), [line for line in applicant_block if line]
     )
-    warning = document.add_paragraph()
-    warning.add_run(
-        "ЧЕРНОВИК. Сформирован автоматически из подтверждённых данных дела. "
-        "Требует проверки специалистом. Не является поданной заявкой."
-    ).bold = True
 
-    document.add_paragraph(
-        f"Дело №{application.id} · сформировано "
-        f"{datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC"
+    # --- идентификаторы заявителя ---
+    identifiers: list[str] = []
+    for label, field_id in (
+        ("ОГРН", "application.applicant.ogrn"),
+        ("ИНН", "application.applicant.inn"),
+        ("КПП", "application.applicant.kpp"),
+    ):
+        value = values.get(field_id)
+        if value:
+            identifiers.append(f"{label}: {value}")
+    _write_into(_find_cell(table, "ИДЕНТИФИКАТОРЫ"), identifiers)
+
+    # --- (540) заявляемое обозначение ---
+    mark_text = values.get("application.mark.text") or (
+        application.mark_text or application.mark_name or ""
     )
+    if mark_text:
+        anchor = _find_cell(table, "(540)")
+        if anchor is not None:
+            _write_into(anchor, [mark_text])
 
-    document.add_heading("Заполненные сведения", level=1)
-    if content.filled:
-        table = document.add_table(rows=1, cols=3)
-        table.style = "Table Grid"
-        header = table.rows[0].cells
-        header[0].text = "Поле"
-        header[1].text = "Значение"
-        header[2].text = "Источник"
-        for item in content.filled:
-            row = table.add_row().cells
-            row[0].text = item.label
-            row[1].text = item.value
-            row[2].text = item.source
-    else:
-        document.add_paragraph(
-            "Подтверждённых значений нет. Подтвердите поля на вкладке "
-            "«Сверка полей»."
-        )
-
-    document.add_heading("Поля, оставленные пустыми", level=1)
-    document.add_paragraph(
-        "Эти поля не заполнены намеренно: в черновик попадают только "
-        "подтверждённые значения."
-    )
-    for item in content.skipped:
-        document.add_paragraph(f"{item.label} — {item.reason}", style="List Bullet")
-
-    document.add_heading("Что необходимо сделать перед подачей", level=1)
-    for item in content.checklist:
-        document.add_paragraph(item, style="List Bullet")
+    # --- (511) перечень товаров и услуг ---
+    if content.classes:
+        _fill_goods_table(table, content.classes)
 
     buffer = io.BytesIO()
     document.save(buffer)

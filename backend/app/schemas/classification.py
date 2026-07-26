@@ -71,6 +71,18 @@ class ClassSuggestionResponse(BaseModel):
     confidence: Optional[float] = None
 
 
+class ManualClassRequest(BaseModel):
+    """Класс, добавленный специалистом вручную.
+
+    Подбор по описанию деятельности покрывает не всё: специалист
+    вправе добавить класс, которого система не предложила.
+    """
+
+    class_number: int = Field(ge=1, le=45)
+    class_description: Optional[str] = Field(default=None, max_length=2000)
+    rationale: Optional[str] = Field(default=None, max_length=2000)
+
+
 class ClassApprovalRequest(BaseModel):
     """Payload for a lawyer to approve or reject a class suggestion."""
 

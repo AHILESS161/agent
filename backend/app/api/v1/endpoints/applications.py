@@ -44,6 +44,7 @@ from app.schemas.applications import (
 )
 from app.schemas.classification import (
     ClassApprovalRequest,
+    ManualClassRequest,
     ClassSuggestionResponse,
     NiceClassSuggestionResponse,
 )
@@ -571,6 +572,103 @@ async def get_classes(
         application_id=application_id,
         suggestions=[NiceClassSuggestionResponse.model_validate(s) for s in suggestions],
     )
+
+
+@router.post(
+    "/{application_id}/classes",
+    response_model=NiceClassSuggestionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Добавить класс МКТУ вручную",
+)
+async def add_class(
+    application_id: int,
+    payload: ManualClassRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_roles("admin", "lawyer")),
+) -> NiceClassSuggestionResponse:
+    """Добавить класс, которого система не предложила.
+
+    Класс, внесённый специалистом, сразу считается подтверждённым:
+    это его собственное решение, а не предложение для проверки.
+    """
+    app = await _get_app_or_404(application_id, session)
+
+    existing = (
+        await session.execute(
+            select(NiceClassSuggestion).where(
+                NiceClassSuggestion.application_id == application_id,
+                NiceClassSuggestion.class_number == payload.class_number,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Класс {payload.class_number} уже есть в деле",
+        )
+
+    suggestion = NiceClassSuggestion(
+        application_id=application_id,
+        class_number=payload.class_number,
+        class_description=payload.class_description,
+        rationale=payload.rationale or "Добавлен специалистом вручную",
+        approved=True,
+        approved_by=current_user.id,
+    )
+    session.add(suggestion)
+    await session.flush()
+
+    await _create_audit(
+        session,
+        user=current_user,
+        action="class_added_manually",
+        application=app,
+        new_val={"class_number": payload.class_number},
+        ip_address=_get_client_ip(request),
+    )
+    await session.flush()
+    await session.refresh(suggestion)
+    return NiceClassSuggestionResponse.model_validate(suggestion)
+
+
+@router.delete(
+    "/{application_id}/classes/{class_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить класс из дела",
+)
+async def delete_class(
+    application_id: int,
+    class_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(require_roles("admin", "lawyer")),
+) -> None:
+    """Убрать класс из перечня."""
+    suggestion = (
+        await session.execute(
+            select(NiceClassSuggestion).where(
+                NiceClassSuggestion.id == class_id,
+                NiceClassSuggestion.application_id == application_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if suggestion is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Класс не найден"
+        )
+
+    app = await _get_app_or_404(application_id, session)
+    await session.delete(suggestion)
+    await _create_audit(
+        session,
+        user=current_user,
+        action="class_deleted",
+        application=app,
+        old_val={"class_number": suggestion.class_number},
+        ip_address=_get_client_ip(request),
+    )
+    await session.flush()
 
 
 @router.put(

@@ -26,6 +26,7 @@ from app.infrastructure.database.models import (
 from app.infrastructure.database.session import get_session
 from app.services.class_analysis import run_class_analysis
 from app.services.conflict_search import run_conflict_search
+from app.services.full_analysis import run_full_analysis
 from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
     serialize_assessment,
@@ -74,6 +75,52 @@ def _loaded(query):
     return query.options(
         selectinload(RiskAssessment.findings).selectinload(RiskFinding.citations)
     )
+
+
+@router.post(
+    "/applications/{application_id}/full-analysis",
+    status_code=status.HTTP_201_CREATED,
+    summary="Полный правовой анализ: классы, абсолютные и относительные основания",
+)
+async def run_full(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Выполнить все проверки по делу в правильном порядке.
+
+    Классы МКТУ определяются первыми: охраноспособность оценивается
+    только в отношении конкретных товаров и услуг. Затем проверяются
+    абсолютные основания и конфликты, и лишь по их совокупности
+    формируется вердикт.
+    """
+    _require_write_access(current_user)
+    application = await _load_application(session, application_id)
+
+    result = await run_full_analysis(
+        session,
+        application,
+        llm_provider=_get_llm_provider(),
+        registry_provider=_get_registry_provider(),
+        user_id=current_user.id,
+    )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="full_analysis.run",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(application.id),
+            new_value_json={
+                "overall_risk": result["overall_risk"],
+                "verdict": result["verdict"],
+                "is_complete": result["is_complete"],
+            },
+        )
+    )
+    await session.flush()
+    return result
 
 
 @router.post(

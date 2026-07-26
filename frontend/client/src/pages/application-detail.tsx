@@ -14,14 +14,13 @@ import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
   CompletenessTab,
-  ClassesTab,
-  LegalAnalysisTab,
-  ConflictsTab,
   RecommendationsTab,
   DocumentPackagesTab,
   StatusHistoryTab,
 } from "@/components/case-tabs";
-import { RiskAnalysisTab } from "@/components/risk-analysis-tab";
+// Классы МКТУ, абсолютные основания и конфликты — части одной проверки,
+// поэтому живут в общей вкладке, а не в трёх разных.
+import { LegalAnalysisTab } from "@/components/legal-analysis-tab";
 import { ApplicationDraftTab } from "@/components/application-draft-tab";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
@@ -192,10 +191,7 @@ export default function ApplicationDetailPage() {
             { value: "source-documents", label: "Исходные документы", icon: Upload },
             { value: "fields", label: "Сверка полей", icon: ClipboardList },
             { value: "completeness", label: "Полнота данных", icon: ClipboardCheck },
-            { value: "risk", label: "Оценка рисков", icon: Shield },
-            { value: "legal", label: "Правовой анализ", icon: Gavel },
-            { value: "classes", label: "Классы МКТУ", icon: Layers },
-            { value: "conflicts", label: "Конфликты", icon: Crosshair },
+            { value: "legal", label: "Правовой анализ", icon: Shield },
             { value: "recommendations", label: "Рекомендации", icon: Gavel },
             { value: "draft", label: "Черновик заявления", icon: FileSignature },
             { value: "documents", label: "Документы", icon: FileText },
@@ -221,11 +217,8 @@ export default function ApplicationDetailPage() {
           <TabsContent value="fields">
             <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
           </TabsContent>
-          <TabsContent value="risk"><RiskAnalysisTab appId={appId} /></TabsContent>
           <TabsContent value="completeness"><CompletenessTab appId={appId} /></TabsContent>
           <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
-          <TabsContent value="classes"><ClassesTab appId={appId} /></TabsContent>
-          <TabsContent value="conflicts"><ConflictsTab appId={appId} /></TabsContent>
           <TabsContent value="recommendations"><RecommendationsTab appId={appId} /></TabsContent>
           <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>
           <TabsContent value="documents"><DocumentPackagesTab appId={appId} /></TabsContent>

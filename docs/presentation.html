@@ -1,0 +1,909 @@
+<title>Система подготовки заявок на товарный знак</title>
+
+<style>
+  :root {
+    /* Палитра взята из мира официальных бланков: штемпельная синь,
+       бумага с холодным отливом, чернильный тёмный. */
+    --ink: #141b26;
+    --paper: #f6f7f9;
+    --surface: #ffffff;
+    --rule: #c9d0da;
+    --muted: #5c6675;
+    --accent: #2c5aa0;
+    --accent-soft: #e6edf7;
+    --ok: #0f7b5f;
+    --warn: #a8690c;
+    --stop: #ad3b3b;
+
+    --display: "Cambria", "Georgia", "Times New Roman", serif;
+    --body: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --mono: "Consolas", ui-monospace, "SF Mono", "Courier New", monospace;
+
+    --measure: 66ch;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e7ebf1;
+      --paper: #10141b;
+      --surface: #171d26;
+      --rule: #313b49;
+      --muted: #97a1b0;
+      --accent: #7ba7e0;
+      --accent-soft: #1c2735;
+      --ok: #4cba95;
+      --warn: #d9a24a;
+      --stop: #e0736f;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #e7ebf1;
+    --paper: #10141b;
+    --surface: #171d26;
+    --rule: #313b49;
+    --muted: #97a1b0;
+    --accent: #7ba7e0;
+    --accent-soft: #1c2735;
+    --ok: #4cba95;
+    --warn: #d9a24a;
+    --stop: #e0736f;
+  }
+
+  :root[data-theme="light"] {
+    --ink: #141b26;
+    --paper: #f6f7f9;
+    --surface: #ffffff;
+    --rule: #c9d0da;
+    --muted: #5c6675;
+    --accent: #2c5aa0;
+    --accent-soft: #e6edf7;
+    --ok: #0f7b5f;
+    --warn: #a8690c;
+    --stop: #ad3b3b;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .deck {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 0 20px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* --- рамка раздела: острые углы, как в бланке --- */
+  .sheet {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 32px 34px;
+  }
+
+  .sheet--title {
+    padding: 56px 34px 44px;
+    border-width: 2px;
+    border-color: var(--ink);
+  }
+
+  /* --- шапка раздела в духе формы --- */
+  .sheet-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-bottom: 12px;
+    margin-bottom: 22px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .code {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .04em;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    padding: 1px 6px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  h1 {
+    font-family: var(--display);
+    font-size: clamp(30px, 5vw, 50px);
+    line-height: 1.12;
+    letter-spacing: -.015em;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+
+  h2 {
+    font-family: var(--display);
+    font-size: clamp(21px, 2.6vw, 27px);
+    line-height: 1.2;
+    margin: 0;
+    letter-spacing: -.01em;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 14px;
+    margin: 0 0 6px;
+    letter-spacing: .01em;
+  }
+
+  p { margin: 0 0 14px; max-width: var(--measure); }
+  p:last-child { margin-bottom: 0; }
+
+  .lede {
+    font-size: clamp(16px, 2vw, 19px);
+    color: var(--muted);
+    max-width: 60ch;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .16em;
+    color: var(--muted);
+    margin: 0 0 18px;
+  }
+
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+
+  /* --- сетки --- */
+  .grid {
+    display: grid;
+    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  }
+
+  .grid--2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+
+  .cell {
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 16px 18px;
+    background: var(--surface);
+  }
+
+  .cell--accent { border-left: 3px solid var(--accent); }
+  .cell--ok     { border-left: 3px solid var(--ok); }
+  .cell--warn   { border-left: 3px solid var(--warn); }
+  .cell--stop   { border-left: 3px solid var(--stop); }
+
+  /* --- этапы: нумерация оправдана, это реальная последовательность --- */
+  .steps {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(184px, 1fr));
+    counter-reset: step;
+  }
+
+  .step {
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    padding: 16px 16px 18px;
+    position: relative;
+    background: var(--surface);
+  }
+
+  .step::before {
+    counter-increment: step;
+    content: counter(step);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: 2px;
+    padding: 0 5px;
+    display: inline-block;
+    margin-bottom: 8px;
+  }
+
+  .step h3 { margin-bottom: 4px; }
+  .step p { font-size: 13px; color: var(--muted); margin: 0; }
+
+  /* --- показатели --- */
+  .stats {
+    display: grid;
+    gap: 1px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .stat {
+    background: var(--surface);
+    padding: 16px 18px;
+  }
+
+  .stat b {
+    display: block;
+    font-family: var(--display);
+    font-size: 30px;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+  }
+
+  .stat span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* --- таблица --- */
+  .scroll { overflow-x: auto; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 460px;
+  }
+
+  th, td {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+
+  th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+
+  td.num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  tr.win td { background: color-mix(in srgb, var(--ok) 9%, transparent); }
+
+  /* --- список правил --- */
+  ul.plain { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  ul.plain li { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; }
+  ul.plain li::before {
+    content: "";
+    width: 6px; height: 6px;
+    margin-top: 8px;
+    flex: 0 0 auto;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+  ul.plain li.no::before { background: var(--stop); }
+  ul.plain li.yes::before { background: var(--ok); }
+
+  /* --- штамп: единственная вольность, взята из мира документов --- */
+  .stamp {
+    border: 2px solid var(--stop);
+    color: var(--stop);
+    border-radius: 3px;
+    padding: 12px 18px;
+    max-width: 380px;
+    transform: rotate(-1.6deg);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .stamp b {
+    display: block;
+    font-family: var(--display);
+    font-size: 15px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .pill {
+    display: inline-block;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    letter-spacing: .02em;
+  }
+
+  .split {
+    display: grid;
+    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    align-items: start;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding-top: 8px;
+  }
+
+  /* --- появление при прокрутке --- */
+  .sheet { opacity: 0; transform: translateY(14px); transition: opacity .5s ease, transform .5s ease; }
+  .sheet.in { opacity: 1; transform: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sheet { opacity: 1; transform: none; transition: none; }
+  }
+
+  /* --- печать и сохранение в PDF --- */
+  @media print {
+    /* Появление по прокрутке иначе оставило бы непролистанные
+       разделы пустыми на бумаге. */
+    .sheet { opacity: 1 !important; transform: none !important; }
+
+    :root {
+      --paper: #ffffff;
+      --surface: #ffffff;
+      --ink: #141b26;
+      --rule: #b6bec9;
+      --muted: #4a5462;
+    }
+
+    body { background: #fff; font-size: 12pt; }
+
+    .deck { max-width: none; padding: 0; gap: 0; }
+
+    /* Каждый раздел — отдельная страница: так дека читается
+       как набор слайдов, а не как сплошная лента. */
+    .sheet {
+      break-after: page;
+      border: none;
+      padding: 0 0 24pt;
+    }
+    .sheet:last-of-type { break-after: auto; }
+
+    .sheet--title { padding-top: 0; }
+
+    /* Заголовок не должен отрываться от своего содержимого. */
+    .sheet-head, h1, h2, h3 { break-after: avoid; }
+    .cell, .step, .stat, .stamp, tr { break-inside: avoid; }
+
+    .stamp { transform: none; }
+
+    footer { break-before: avoid; }
+  }
+</style>
+
+<div class="deck">
+
+  <!-- ТИТУЛ -->
+  <section class="sheet sheet--title">
+    <p class="eyebrow">Внутренняя система · патентная практика</p>
+    <h1>Подготовка заявок на регистрацию товарного знака</h1>
+    <p class="lede">
+      Рабочее место патентного поверенного: приём документов клиента,
+      извлечение реквизитов, правовой анализ по статье 1483 ГК РФ
+      и заполнение бланка Роспатента — с обязательным подтверждением
+      каждого значения специалистом.
+    </p>
+
+    <div style="margin-top:28px" class="stats">
+      <div class="stat"><b>85</b><span>эндпоинтов API</span></div>
+      <div class="stat"><b>33</b><span>таблицы данных</span></div>
+      <div class="stat"><b>599</b><span>автотестов</span></div>
+      <div class="stat"><b>9,6&nbsp;с</b><span>полный анализ дела</span></div>
+    </div>
+  </section>
+
+  <!-- ПРИНЦИП -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Главный принцип</h2>
+      <span class="code">основание работы</span>
+    </div>
+
+    <div class="split">
+      <div>
+        <p>
+          Система не заменяет специалиста и не принимает решений за него.
+          Она делает механическую часть работы и показывает, откуда взялось
+          каждое значение, чтобы юристу оставалось проверить и решить.
+        </p>
+        <p>
+          Языковая модель применяется только там, где нужен смысловой
+          анализ. Всё, что можно посчитать правилами, считается правилами:
+          результат воспроизводим, проверяем и не зависит от настроения
+          модели.
+        </p>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr">
+        <div class="cell cell--ok">
+          <h3>Детерминированно — без модели</h3>
+          <p class="small muted" style="margin:0">
+            Извлечение реквизитов из выписок, контрольные суммы ИНН и ОГРН,
+            звуковое и графическое сходство обозначений, сборка бланка.
+          </p>
+        </div>
+        <div class="cell cell--accent">
+          <h3>Языковая модель — где иначе нельзя</h3>
+          <p class="small muted" style="margin:0">
+            Подбор классов МКТУ по описанию деятельности, оценка оснований
+            для отказа со ссылками на нормы, смысловое сходство обозначений
+            на разных языках.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ПОТОК РАБОТЫ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Как проходит дело</h2>
+      <span class="code">последовательность</span>
+    </div>
+
+    <div class="steps">
+      <div class="step">
+        <h3>Приём обращения</h3>
+        <p>Юрист прикладывает документы клиента — форма заполняется сама.</p>
+      </div>
+      <div class="step">
+        <h3>Извлечение реквизитов</h3>
+        <p>Из выписки ЕГРЮЛ или ЕГРИП по правилам, без участия модели.</p>
+      </div>
+      <div class="step">
+        <h3>Сверка полей</h3>
+        <p>Каждое значение принимается, правится или отклоняется человеком.</p>
+      </div>
+      <div class="step">
+        <h3>Правовой анализ</h3>
+        <p>Классы МКТУ, абсолютные основания, конфликты, общий вердикт.</p>
+      </div>
+      <div class="step">
+        <h3>Черновик заявления</h3>
+        <p>Официальный бланк, заполненный только подтверждёнными данными.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ИЗВЛЕЧЕНИЕ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Извлечение реквизитов</h2>
+      <span class="code">ЕГРЮЛ · ЕГРИП</span>
+    </div>
+
+    <div class="split">
+      <div>
+        <p>
+          Тип документа определяется по устойчивым заголовкам, реквизиты —
+          по подписям полей, а не «поиском цифр»: в типовой выписке десятки
+          номеров той же длины, и наивный поиск принял бы за ОГРН запись
+          о регистрации.
+        </p>
+        <p class="small muted">
+          Каждое значение хранит источник: страницу, сработавшее правило
+          и исходный текст до нормализации. Разные написания одного
+          значения считаются подтверждением, а не конфликтом.
+        </p>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr">
+        <div class="cell">
+          <h3>Юридическое лицо · ЕГРЮЛ</h3>
+          <p class="small muted" style="margin:0">
+            Наименование, ОГРН, ИНН, КПП, адрес по частям, руководитель,
+            реквизиты выписки. На приложенной выписке — 21 поле из 21.
+          </p>
+        </div>
+        <div class="cell">
+          <h3>Предприниматель · ЕГРИП</h3>
+          <p class="small muted" style="margin:0">
+            ФИО, ОГРНИП, ИНН, дата регистрации, основной ОКВЭД.
+            Адрес места жительства в выписке скрыт — вносится вручную,
+            и система об этом прямо сообщает.
+          </p>
+        </div>
+        <div class="cell cell--warn">
+          <h3>Паспорт и сканы</h3>
+          <p class="small muted" style="margin:0">
+            Без текстового слоя автоизвлечение невозможно. Форма заполняется
+            вручную — это ограничение названо, а не замаскировано.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- РЕШЕНИЕ ЧЕЛОВЕКА -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Решение принимает специалист</h2>
+      <span class="code">сверка полей</span>
+    </div>
+
+    <p>
+      Ни одно извлечённое значение не попадает в документ автоматически.
+      В сверке видно, что нашла система, откуда и с какой уверенностью,
+      а рядом — что уже есть в карточке дела.
+    </p>
+
+    <div class="grid">
+      <div class="cell cell--ok">
+        <h3>Принять</h3>
+        <p class="small muted" style="margin:0">Значение уходит в заявление.</p>
+      </div>
+      <div class="cell cell--accent">
+        <h3>Изменить</h3>
+        <p class="small muted" style="margin:0">
+          Источником становится человек — это видно в документе.
+        </p>
+      </div>
+      <div class="cell cell--stop">
+        <h3>Отклонить</h3>
+        <p class="small muted" style="margin:0">
+          Решение сохраняется в истории поля, а не стирается.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Своё поле</h3>
+        <p class="small muted" style="margin:0">
+          Если сведений нет в бланке — заводится вручную.
+        </p>
+      </div>
+    </div>
+
+    <p class="small muted" style="margin-top:18px">
+      Подтверждённое поле не пересчитывается автоматикой: иначе работа
+      человека терялась бы при каждом повторном разборе документа.
+    </p>
+  </section>
+
+  <!-- ПРАВОВОЙ АНАЛИЗ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Правовой анализ</h2>
+      <span class="code">ст. 1483 ГК РФ</span>
+    </div>
+
+    <p>
+      Проверки идут в жёстком порядке. Охраноспособность оценивается
+      не сама по себе, а в отношении конкретных товаров: одно и то же
+      обозначение бывает описательным для одних классов и фантазийным
+      для других — поэтому классы определяются первыми.
+    </p>
+
+    <div class="steps" style="margin:20px 0">
+      <div class="step">
+        <h3>Классы МКТУ</h3>
+        <p>Подбор по описанию деятельности, поиск по всем 45 классам.</p>
+      </div>
+      <div class="step">
+        <h3>Абсолютные основания</h3>
+        <p>Пункты 1–5: различительная способность, описательность, обман.</p>
+      </div>
+      <div class="step">
+        <h3>Относительные основания</h3>
+        <p>Пункт 6: сходство до степени смешения с чужими знаками.</p>
+      </div>
+      <div class="step">
+        <h3>Вердикт</h3>
+        <p>По наибольшему из рисков обоих блоков.</p>
+      </div>
+    </div>
+
+    <div class="grid grid--2">
+      <div class="cell">
+        <h3>Сходство считается по критериям п. 42 Правил № 482</h3>
+        <p class="small muted" style="margin:0">
+          Звуковое, графическое и смысловое — правилами. Отдельно —
+          совпадение значения на разных языках: «ЯБЛОКО» и «APPLE»
+          не совпадают ни звуком, ни начертанием, и эту связь находит
+          языковая модель.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Вероятность смешения — по п. 162 Пленума ВС РФ № 10</h3>
+        <p class="small muted" style="margin:0">
+          Смешение возможно и при низком сходстве обозначений, если
+          товары идентичны, и наоборот. Итог считается по совокупности,
+          а не по одному признаку.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ЦИТАТЫ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Вывод без подтверждённой ссылки отбрасывается</h2>
+      <span class="code">проверка цитат</span>
+    </div>
+
+    <div class="split">
+      <div>
+        <p>
+          Модель получает не «вспомни закон», а конкретные фрагменты
+          нормативных материалов с идентификаторами. Каждый вывод обязан
+          сослаться на выданный фрагмент, и ссылка сверяется дословно.
+        </p>
+        <p>
+          Вывод, ссылку которого не удалось подтвердить, не показывается
+          специалисту вовсе — каким бы убедительным он ни выглядел.
+          Выдуманная норма не проходит.
+        </p>
+        <p class="small muted">
+          Это защищает от того, что модель придумает норму, но не от
+          ошибок в самом корпусе: достоверность выводов не может быть
+          выше достоверности источников, поэтому база знаний требует
+          проверки юристом.
+        </p>
+      </div>
+
+      <div>
+        <div class="stats" style="grid-template-columns:1fr 1fr">
+          <div class="stat"><b>110</b><span>фрагментов базы знаний</span></div>
+          <div class="stat"><b>4</b><span>источника</span></div>
+          <div class="stat"><b>40</b><span>фрагментов закона</span></div>
+          <div class="stat"><b>16</b><span>фрагментов правил</span></div>
+        </div>
+        <p class="small muted" style="margin-top:12px">
+          ГК РФ часть IV, основания для отказа по статье 1483, Правила
+          № 482, методические материалы и обзор МКТУ. Корпуса разделены:
+          подбор классов не видит норм об отказе, и наоборот.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- БЛАНК -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Черновик на официальном бланке</h2>
+      <span class="code">форма Роспатента</span>
+    </div>
+
+    <div class="split">
+      <div>
+        <p>
+          Заполняется настоящий бланк, а не собственная форма: документ
+          должен быть пригоден к подаче, а не пересказывать её своими
+          словами. Ячейки находятся по подписям полей, типографский текст
+          формы не затирается.
+        </p>
+        <p>
+          В интерфейсе бланк показан в той же структуре — те же разделы
+          в том же порядке, коды INID в рамках слева. Пустые поля видны
+          как пустые и дозаполняются на месте.
+        </p>
+      </div>
+
+      <div>
+        <ul class="plain">
+          <li><span><b>(731)</b> заявитель — наименование и адрес</span></li>
+          <li><span>идентификаторы — ОГРН, ОГРНИП, ИНН, КПП</span></li>
+          <li><span><b>(540)</b> заявляемое обозначение</span></li>
+          <li><span><b>(511)</b> перечень товаров по классам</span></li>
+          <li class="no"><span><b>(550)</b> вид знака — только вручную, это отметка в бланке</span></li>
+          <li class="no"><span>приоритет и пошлины — заполняет специалист</span></li>
+        </ul>
+
+        <p class="small muted" style="margin-top:14px">
+          В документе нет ни слова о черновике и об использовании AI:
+          это бланк заявления, посторонний текст в нём недопустим.
+          Предупреждения живут в интерфейсе.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ГРАНИЦЫ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Границы системы</h2>
+      <span class="code">что она не делает</span>
+    </div>
+
+    <div class="split">
+      <div>
+        <ul class="plain">
+          <li class="no"><span>Не подаёт заявку в Роспатент: подача закрыта флагом и требует подтверждения.</span></li>
+          <li class="no"><span>Не утверждает выводы за специалиста — согласие фиксируется отдельно.</span></li>
+          <li class="no"><span>Не выдаёт демонстрационные данные за полный поиск по реестру.</span></li>
+          <li class="yes"><span>Прямо сообщает, какие проверки не выполнялись и почему.</span></li>
+          <li class="yes"><span>Возвращает «недостаточно подтверждённых данных», когда источника нет.</span></li>
+        </ul>
+
+        <p class="small muted" style="margin-top:16px">
+          Персональные данные маскируются в журналах, тесты работают
+          на обезличенных фикстурах, оригиналы документов не изменяются.
+        </p>
+      </div>
+
+      <div class="stamp">
+        <b>Требует проверки</b>
+        Результаты сформированы с применением AI и носят предварительный
+        информационный характер. Они требуют проверки специалистом
+        и не являются юридическим заключением.
+      </div>
+    </div>
+  </section>
+
+  <!-- МОДЕЛЬ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Выбор модели — по замеру, а не по описанию</h2>
+      <span class="code">на собственных промптах</span>
+    </div>
+
+    <p>
+      Модели сравнивались на реальной задаче системы — подборе классов
+      МКТУ с обязательным ответом по схеме.
+    </p>
+
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Модель</th>
+            <th>Время ответа</th>
+            <th>Классов подобрано</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="win">
+            <td>google/gemini-2.5-flash <span class="pill">выбрана</span></td>
+            <td class="num">4,5 с</td>
+            <td class="num">2</td>
+          </tr>
+          <tr>
+            <td>google/gemini-2.5-flash-lite</td>
+            <td class="num">2,4 с</td>
+            <td class="num">2</td>
+          </tr>
+          <tr>
+            <td>openai/gpt-5-mini</td>
+            <td class="num">38,5 с</td>
+            <td class="num">3</td>
+          </tr>
+          <tr>
+            <td>deepseek/deepseek-chat-v3.1</td>
+            <td class="num">37,0 с</td>
+            <td class="num">2</td>
+          </tr>
+          <tr>
+            <td>minimax/minimax-m3</td>
+            <td class="num">82,7 с</td>
+            <td class="num">0</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small muted" style="margin-top:14px">
+      Модели с рассуждениями оказались и медленнее, и хуже: вся сложность
+      вынесена в подбор материалов, модели остаётся аккуратно заполнить
+      структуру. На правовом анализе выбранная модель даёт вывод с двумя
+      дословно подтверждёнными цитатами.
+    </p>
+  </section>
+
+  <!-- ТЕХНИКА -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Как это устроено</h2>
+      <span class="code">технический контур</span>
+    </div>
+
+    <div class="grid">
+      <div class="cell">
+        <h3>Backend</h3>
+        <p class="small muted" style="margin:0">
+          Python, FastAPI, SQLAlchemy, миграции Alembic. Около 24 000 строк.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Frontend</h3>
+        <p class="small muted" style="margin:0">
+          React и TypeScript, около 12 000 строк. Работает на реальных
+          данных, без заглушек.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Поиск по базе знаний</h3>
+        <p class="small muted" style="margin:0">
+          BM25 на чистом Python с морфологией русского языка. Внешнее
+          векторное хранилище не требуется.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Доступ</h3>
+        <p class="small muted" style="margin:0">
+          Роли и разграничение прав, ограничение частоты запросов,
+          журнал действий по каждому решению.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ДАЛЬШЕ -->
+  <section class="sheet">
+    <div class="sheet-head">
+      <h2>Что дальше</h2>
+      <span class="code">развитие</span>
+    </div>
+
+    <div class="grid grid--2">
+      <div class="cell cell--accent">
+        <h3>Интеграция с реестром Роспатента</h3>
+        <p class="small muted" style="margin:0">
+          Сейчас поиск конфликтов работает на демонстрационном наборе,
+          и это явно помечено. Подключение настоящего источника снимет
+          главное ограничение выводов.
+        </p>
+      </div>
+      <div class="cell cell--accent">
+        <h3>Обучающаяся база практики</h3>
+        <p class="small muted" style="margin:0">
+          Накопление поданных заявок, решений по ним и причин отказа,
+          чтобы оценка опиралась на практику, а не только на нормы.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Распознавание сканов</h3>
+        <p class="small muted" style="margin:0">
+          Позволит принимать паспорта и документы без текстового слоя.
+        </p>
+      </div>
+      <div class="cell">
+        <h3>Проверка корпуса юристом</h3>
+        <p class="small muted" style="margin:0">
+          Достоверность выводов ограничена достоверностью источников —
+          база знаний должна быть выверена специалистом.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Внутренний инструмент патентной практики · демонстрационный стенд
+  </footer>
+</div>
+
+<script>
+  // Плавное появление разделов при прокрутке.
+  (function () {
+    var sheets = document.querySelectorAll(".sheet");
+    var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (reduced || !("IntersectionObserver" in window)) {
+      sheets.forEach(function (el) { el.classList.add("in"); });
+      return;
+    }
+
+    var seen = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("in");
+          seen.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: "0px 0px -40px 0px", threshold: 0.05 });
+
+    sheets.forEach(function (el) { seen.observe(el); });
+  })();
+</script>

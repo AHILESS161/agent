@@ -58,6 +58,7 @@ class UserResponse(BaseModel):
     id: int
     email: str
     full_name: Optional[str] = None
+    preferred_name: Optional[str] = None
     role: UserRole
     is_active: bool
     created_at: datetime
@@ -69,3 +70,18 @@ class PasswordChange(BaseModel):
 
     current_password: str
     new_password: str = Field(min_length=8)
+
+
+class ProfileUpdate(BaseModel):
+    """Правка собственного профиля.
+
+    Роль и адрес почты здесь не меняются: это вопрос доступа,
+    а не личных настроек.
+    """
+
+    full_name: Optional[str] = Field(default=None, max_length=255)
+    preferred_name: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description="Как обращаться к пользователю",
+    )

@@ -62,15 +62,21 @@ class InboundPayload:
         if self.external_event_id:
             return f"{self.source.value}:{self.external_event_id}"
 
+        # В ключ входит всё содержимое события, а не только сопроводительное
+        # письмо. Иначе два разных дела с пустыми полями «от кого» и «текст
+        # обращения» дают одинаковый ключ, и второе дело считается повтором
+        # первого — пользователя возвращает на чужую заявку.
         material = json.dumps(
             {
                 "source": self.source.value,
                 "sender": self.sender,
                 "subject": self.subject,
                 "body": (self.body_text or "")[:2000],
+                "payload": self.raw_payload,
             },
             ensure_ascii=False,
             sort_keys=True,
+            default=str,
         )
         digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:32]
         return f"{self.source.value}:{digest}"

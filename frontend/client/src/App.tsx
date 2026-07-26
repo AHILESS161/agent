@@ -14,6 +14,7 @@ import ApplicationsListPage from "@/pages/applications-list";
 import ApplicationDetailPage from "@/pages/application-detail";
 import NewApplicationPage from "@/pages/new-application";
 import IntakePage from "@/pages/intake";
+import ProfilePage from "@/pages/profile";
 import { ClientsListPage, ClientDetailPage } from "@/pages/clients";
 import NotificationsPage from "@/pages/notifications";
 import AuditPage from "@/pages/audit";
@@ -28,6 +29,7 @@ function AuthenticatedRoutes() {
       <Switch>
         <Route path="/dashboard" component={DashboardPage} />
         <Route path="/intake" component={IntakePage} />
+        <Route path="/profile" component={ProfilePage} />
         <Route path="/applications/new" component={NewApplicationPage} />
         <Route path="/applications/:id" component={ApplicationDetailPage} />
         <Route path="/applications" component={ApplicationsListPage} />

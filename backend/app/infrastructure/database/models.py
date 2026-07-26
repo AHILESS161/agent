@@ -191,6 +191,10 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Как обращаться к человеку. ФИО хранится как «Фамилия Имя
+    # Отчество», и приветствие по первому слову выходит по фамилии —
+    # так к людям не обращаются.
+    preferred_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="userrole"), nullable=False, default=UserRole.client
     )

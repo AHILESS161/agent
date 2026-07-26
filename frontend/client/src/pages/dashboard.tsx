@@ -66,6 +66,16 @@ const STATUS_GROUPS: { label: string; statuses: ApplicationStatus[]; color: stri
   },
 ];
 
+function displayName(user: { fullName: string; preferredName?: string | null } | null): string {
+  if (!user) return "";
+  const preferred = user.preferredName?.trim();
+  if (preferred) return preferred;
+
+  const parts = user.fullName.trim().split(/\s+/);
+  // «Фамилия Имя Отчество» → имя; одно слово или адрес почты — как есть.
+  return parts.length >= 2 ? parts[1] : parts[0];
+}
+
 function greeting(): string {
   const hour = new Date().getHours();
   if (hour < 6) return "Доброй ночи";
@@ -79,7 +89,10 @@ export default function DashboardPage() {
   const cases = useCases();
   const notifications = useApi<NotificationsDto>("/notifications?page=1&page_size=5");
 
-  const shortName = user?.fullName.split(" ")[0] ?? "";
+  // ФИО хранится как «Фамилия Имя Отчество», поэтому первое слово —
+  // это фамилия, и приветствие по нему звучит казённо. Берём имя,
+  // а если человек задал в профиле, как к нему обращаться, — его.
+  const shortName = displayName(user);
 
   return (
     <div className="space-y-4" data-testid="dashboard-page">

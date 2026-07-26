@@ -19,7 +19,14 @@ from app.core.security import (
 )
 from app.infrastructure.database.models import User, UserRole
 from app.infrastructure.database.session import get_session
-from app.schemas.auth import LoginRequest, PasswordChange, TokenResponse, UserCreate, UserResponse
+from app.schemas.auth import (
+    LoginRequest,
+    PasswordChange,
+    ProfileUpdate,
+    TokenResponse,
+    UserCreate,
+    UserResponse,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -135,6 +142,26 @@ async def register(
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(get_current_user)) -> UserResponse:
     """Return the authenticated user's profile."""
+    return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    payload: ProfileUpdate,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserResponse:
+    """Изменить собственный профиль.
+
+    Меняются только личные настройки: как зовут и как обращаться.
+    Роль и почта — вопрос доступа, их назначает администратор.
+    """
+    data = payload.model_dump(exclude_unset=True)
+    for field, value in data.items():
+        setattr(current_user, field, (value or "").strip() or None)
+
+    await session.flush()
+    await session.refresh(current_user)
     return UserResponse.model_validate(current_user)
 
 

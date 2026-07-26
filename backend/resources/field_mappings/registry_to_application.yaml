@@ -129,8 +129,87 @@ mappings:
       В выписке ЕГРИП адрес места жительства скрыт. Вносится вручную
       по документу, удостоверяющему личность, или со слов заявителя.
 
+  # ======================================================================
+  # Физическое лицо / самозанятый
+  # ======================================================================
+  # Источника в реестрах нет: сведения берутся из документа,
+  # удостоверяющего личность. Автоизвлечение из скана требует
+  # распознавания текста, поэтому поля заполняются вручную —
+  # это ограничение названо явно, а не скрыто отсутствием строк.
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.full_name
+    application_field: application.applicant.name
+    application_field_label: (731) Заявитель — наименование / ФИО
+    label: ФИО заявителя
+    required_for_application: true
+    critical: true
+    sensitive: true
+    note: Указывается полностью, как в паспорте.
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.inn
+    application_field: application.applicant.inn
+    application_field_label: Идентификаторы заявителя — ИНН
+    label: ИНН
+    required_for_application: false
+    critical: false
+    note: У физического лица ИНН состоит из 12 цифр.
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.passport.series_number
+    application_field: null
+    label: Паспорт — серия и номер
+    required_for_application: false
+    critical: false
+    sensitive: true
+    note: >-
+      Отдельного поля в бланке нет. Хранится в карточке дела и
+      используется для проверки личности заявителя.
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.passport.issued_by
+    application_field: null
+    label: Паспорт — кем выдан
+    required_for_application: false
+    critical: false
+    sensitive: true
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.passport.issued_at
+    application_field: null
+    label: Паспорт — дата выдачи
+    required_for_application: false
+    critical: false
+    sensitive: true
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.passport.department_code
+    application_field: null
+    label: Паспорт — код подразделения
+    required_for_application: false
+    critical: false
+    sensitive: true
+
+  - registry_field: null
+    applies_to: [individual]
+    case_field: case.applicant.legal_address
+    application_field: application.applicant.address
+    application_field_label: (731) Заявитель — адрес
+    label: Адрес регистрации
+    required_for_application: true
+    critical: true
+    sensitive: true
+    note: Адрес места жительства по документу, удостоверяющему личность.
+
   # --- Руководитель -------------------------------------------------------
   - registry_field: registry.legal_entity.director.last_name
+    applies_to: [company]
     case_field: case.applicant.director.last_name
     application_field: null
     label: Фамилия руководителя
@@ -142,6 +221,7 @@ mappings:
       подписант указывается в конце заявления.
 
   - registry_field: registry.legal_entity.director.first_name
+    applies_to: [company]
     case_field: case.applicant.director.first_name
     application_field: null
     label: Имя руководителя
@@ -150,6 +230,7 @@ mappings:
     sensitive: true
 
   - registry_field: registry.legal_entity.director.middle_name
+    applies_to: [company]
     case_field: case.applicant.director.middle_name
     application_field: null
     label: Отчество руководителя
@@ -158,6 +239,7 @@ mappings:
     sensitive: true
 
   - registry_field: registry.legal_entity.director.position
+    applies_to: [company]
     case_field: case.applicant.director.position
     application_field: null
     label: Должность руководителя

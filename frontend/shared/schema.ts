@@ -47,6 +47,8 @@ export interface User {
   id: number;
   email: string;
   fullName: string;
+  /** Как обращаться к человеку. */
+  preferredName?: string | null;
   role: UserRole;
   isActive: boolean;
 }

@@ -122,6 +122,9 @@ export default function IntakePage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [caseId, setCaseId] = useState<number | null>(null);
+  // Ключ идемпотентности на одно заполнение формы: повторный клик
+  // не создаст дубль, а следующее дело получит новый ключ.
+  const [submissionKey] = useState(() => crypto.randomUUID());
 
   const clients = Object.values(cases.data?.clientsById ?? {});
 
@@ -226,6 +229,7 @@ export default function IntakePage() {
         created_case_id: number | null;
         target_case_id: number | null;
       }>("/inbound/events", {
+        idempotency_key: submissionKey,
         sender: sender || null,
         body_text: bodyText || null,
         create_case: true,

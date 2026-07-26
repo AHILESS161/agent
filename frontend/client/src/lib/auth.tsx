@@ -21,6 +21,8 @@ interface AuthContextType {
   /** Возвращает текст ошибки или null при успехе. */
   login: (email: string, password: string) => Promise<string | null>;
   logout: () => void;
+  /** Перечитать профиль после правки настроек. */
+  refreshProfile: () => Promise<void>;
   isAuthenticated: boolean;
   /** Идёт восстановление сессии из сохранённого токена. */
   isLoading: boolean;
@@ -38,6 +40,7 @@ interface UserResponseDto {
   id: number;
   email: string;
   full_name: string | null;
+  preferred_name: string | null;
   role: User["role"];
   is_active: boolean;
 }
@@ -49,6 +52,7 @@ function toUser(dto: UserResponseDto): User {
     // full_name на сервере необязателен; подставляем email, чтобы
     // интерфейс не падал на пустом имени.
     fullName: dto.full_name || dto.email,
+    preferredName: dto.preferred_name,
     role: dto.role,
     isActive: dto.is_active,
   };
@@ -61,6 +65,8 @@ async function fetchProfile(): Promise<User> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(!!getToken());
+
+  const refreshProfile = async () => setUser(await fetchProfile());
 
   const logout = useCallback(() => {
     clearToken();
@@ -120,7 +126,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, login, logout, isAuthenticated: !!user, isLoading }}
+      value={{ user, login, logout, refreshProfile, isAuthenticated: !!user, isLoading }}
     >
       {children}
     </AuthContext.Provider>

@@ -188,6 +188,13 @@ function TopBar() {
               </Badge>
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setLocation("/profile")}
+              data-testid="profile-button"
+            >
+              <User className="w-4 h-4 mr-2" />
+              Профиль
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={logout} data-testid="logout-button">
               <LogOut className="w-4 h-4 mr-2" />
               Выйти
@@ -208,6 +215,7 @@ const breadcrumbMap: Record<string, string> = {
   "/notifications": "Уведомления",
   "/audit": "Журнал аудита",
   "/admin": "Администрирование",
+  "/profile": "Профиль",
 };
 
 function Breadcrumbs() {

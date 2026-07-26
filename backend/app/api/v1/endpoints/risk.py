@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.api.dependencies import _get_llm_provider
+from app.api.dependencies import _get_llm_provider, _get_registry_provider
 from app.core.logging import get_logger
 from app.core.security import get_current_user
 from app.infrastructure.database.models import (
+    AnalysisKind,
     AuditLog,
     ReviewerDecision,
     RiskAssessment,
@@ -24,6 +25,7 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.database.session import get_session
 from app.services.class_analysis import run_class_analysis
+from app.services.conflict_search import run_conflict_search
 from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
     serialize_assessment,
@@ -166,6 +168,123 @@ async def suggest_classes(
     )
     await session.flush()
     return result
+
+
+@router.post(
+    "/applications/{application_id}/conflict-search",
+    status_code=status.HTTP_201_CREATED,
+    summary="Поиск конфликтующих обозначений (относительные основания)",
+)
+async def run_conflicts(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Проверка по пункту 6 статьи 1483 ГК РФ.
+
+    Сходство обозначений оценивается детерминированно по критериям
+    пункта 42 Правил № 482, вероятность смешения — по пункту 162
+    постановления Пленума ВС РФ № 10. Режим поиска (реальный или
+    демонстрационный) фиксируется в оценке.
+    """
+    _require_write_access(current_user)
+    application = await _load_application(session, application_id)
+
+    assessment = await run_conflict_search(
+        session,
+        application,
+        registry_provider=_get_registry_provider(),
+        user_id=current_user.id,
+    )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="conflict_search.run",
+            entity_type="RiskAssessment",
+            entity_id=str(assessment.id),
+            new_value_json={
+                "overall_risk": (
+                    assessment.overall_risk.value if assessment.overall_risk else None
+                ),
+                "search_mode": assessment.search_mode.value,
+            },
+        )
+    )
+    await session.flush()
+
+    loaded = (
+        await session.execute(
+            _loaded(select(RiskAssessment).where(RiskAssessment.id == assessment.id))
+        )
+    ).scalar_one()
+    return serialize_assessment(loaded)
+
+
+@router.get(
+    "/applications/{application_id}/risk-report",
+    summary="Сводный отчёт о рисках по обоим основаниям",
+)
+async def risk_report(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Собрать последние оценки по абсолютным и относительным основаниям.
+
+    Итоговый уровень — наибольший из двух: наличие любого серьёзного
+    основания определяет риск в целом.
+    """
+    application = await _load_application(session, application_id)
+
+    sections: dict[str, Any] = {}
+    for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
+        latest = (
+            await session.execute(
+                _loaded(
+                    select(RiskAssessment)
+                    .where(
+                        RiskAssessment.application_id == application_id,
+                        RiskAssessment.analysis_kind == kind,
+                    )
+                    .order_by(RiskAssessment.id.desc())
+                    .limit(1)
+                )
+            )
+        ).scalar_one_or_none()
+        sections[kind.value] = serialize_assessment(latest) if latest else None
+
+    order = ["low", "medium", "high", "critical"]
+    levels = [
+        section["overall_risk"]
+        for section in sections.values()
+        if section and section.get("overall_risk")
+    ]
+    overall = max(levels, key=order.index) if levels else None
+
+    limitations: list[str] = []
+    for section in sections.values():
+        if section:
+            limitations.extend(section.get("limitations", []))
+
+    missing_sections = [name for name, section in sections.items() if section is None]
+
+    return {
+        "application_id": application_id,
+        "mark": application.mark_text or application.mark_name,
+        "overall_risk": overall,
+        "sections": sections,
+        "missing_sections": missing_sections,
+        "limitations": limitations,
+        "is_complete": not missing_sections,
+        "requires_specialist_review": True,
+        "disclaimer": (
+            "Результаты сформированы с применением AI и носят предварительный "
+            "информационный характер. Они требуют проверки специалистом. "
+            "Отчёт не является юридическим заключением."
+        ),
+    }
 
 
 @router.get(

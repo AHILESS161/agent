@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { AsyncSection, ErrorState, LoadingState } from "@/components/async-states";
+import { AsyncSection } from "@/components/async-states";
 import { AiDisclaimer, DemoModeBadge } from "@/components/ai-disclaimer";
 import { api, ApiError } from "@/lib/api";
 import {
@@ -33,7 +33,7 @@ import {
   Download,
   Loader2,
   Sparkles,
-  X,
+  Search,
 } from "lucide-react";
 
 const RISK_STYLES: Record<string, string> = {
@@ -373,25 +373,66 @@ function SummaryCard({ title, text }: { title: string; text: string }) {
 // ---------------------------------------------------------------------------
 
 export function ConflictsTab({ appId }: { appId: number }) {
+  const { toast } = useToast();
   const state = useApi<ConflictsDto>(`/applications/${appId}/conflicts`);
+  const [isSearching, setIsSearching] = useState(false);
+
+  const search = async () => {
+    setIsSearching(true);
+    try {
+      const result = await api.post<{
+        overall_risk: string | null;
+        summary: string | null;
+        findings: unknown[];
+      }>(`/applications/${appId}/conflict-search`);
+      toast({
+        title: "Поиск выполнен",
+        description: result.summary ?? `Найдено совпадений: ${result.findings.length}`,
+      });
+      state.reload();
+    } catch (e) {
+      toast({
+        title: "Поиск не выполнен",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const header = (
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <DemoModeBadge label="Ограниченный demo-поиск" />
+        <p className="text-[11px] text-muted-foreground max-w-md">
+          Проверка по п. 6 ст. 1483 ГК РФ. Сходство оценивается по критериям
+          п. 42 Правил № 482: звуковое, графическое, смысловое — и однородность
+          товаров.
+        </p>
+      </div>
+      <Button size="sm" disabled={isSearching} onClick={() => void search()}>
+        {isSearching ? (
+          <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+        ) : (
+          <Search className="w-3.5 h-3.5 mr-1.5" />
+        )}
+        Искать конфликты
+      </Button>
+    </div>
+  );
 
   return (
+    <div className="space-y-3">
+      {header}
     <AsyncSection
       state={state}
       loadingLabel="Загрузка результатов поиска…"
       emptyTitle="Поиск конфликтов не проводился"
-      emptyHint="Поиск по реестру товарных знаков ещё не запускался по этому делу."
+      emptyHint="Нажмите «Искать конфликты», чтобы проверить обозначение по доступному источнику."
     >
       {(data) => (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <DemoModeBadge label="Ограниченный demo-поиск" />
-            <p className="text-[11px] text-muted-foreground">
-              Поиск выполняется по демонстрационному набору данных, а не по
-              полному реестру Роспатента.
-            </p>
-          </div>
-
           {data.job && (
             <Card>
               <CardContent className="p-3 text-xs flex flex-wrap gap-x-4 gap-y-1">
@@ -439,7 +480,8 @@ export function ConflictsTab({ appId }: { appId: number }) {
           )}
         </div>
       )}
-    </AsyncSection>
+      </AsyncSection>
+    </div>
   );
 }
 

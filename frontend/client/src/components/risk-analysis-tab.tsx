@@ -172,6 +172,7 @@ export function RiskAnalysisTab({ appId }: { appId: number }) {
     <div className="space-y-3" data-testid="risk-analysis-tab">
       {header}
       <AiDisclaimer />
+      <RiskReportSummary appId={appId} />
 
       <Card>
         <CardContent className="p-3 space-y-2">
@@ -349,5 +350,91 @@ export function RiskAnalysisTab({ appId }: { appId: number }) {
         </Card>
       )}
     </div>
+  );
+}
+
+
+/**
+ * Сводка по обоим основаниям.
+ *
+ * Итоговый риск — наибольший из абсолютных и относительных оснований:
+ * наличие любого серьёзного основания определяет риск в целом.
+ * Непроведённые проверки перечисляются явно, чтобы отчёт не выглядел
+ * полным, когда он неполон.
+ */
+function RiskReportSummary({ appId }: { appId: number }) {
+  const state = useApi<{
+    overall_risk: string | null;
+    is_complete: boolean;
+    missing_sections: string[];
+    sections: Record<string, { overall_risk: string | null; findings: unknown[] } | null>;
+  }>(`/applications/${appId}/risk-report`);
+
+  if (state.isLoading || state.error || !state.data) return null;
+
+  const report = state.data;
+  const SECTION_LABELS: Record<string, string> = {
+    absolute_grounds: "Абсолютные основания (п. 1–4)",
+    relative_grounds: "Относительные основания (п. 6)",
+  };
+
+  return (
+    <Card className="border-primary/30">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-semibold">Сводная оценка</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs">Итоговый риск по делу:</span>
+          {report.overall_risk ? (
+            <Badge className={cn("text-[10px]", RISK_STYLES[report.overall_risk])}>
+              {RISK_LABELS[report.overall_risk] ?? report.overall_risk}
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="text-[10px]">
+              не определён
+            </Badge>
+          )}
+          {!report.is_complete && (
+            <Badge variant="outline" className="text-[10px]">
+              проверка неполная
+            </Badge>
+          )}
+        </div>
+
+        {Object.entries(report.sections).map(([key, section]) => (
+          <div key={key} className="flex items-center justify-between text-xs">
+            <span>{SECTION_LABELS[key] ?? key}</span>
+            {section ? (
+              <span className="flex items-center gap-2">
+                <Badge
+                  className={cn(
+                    "text-[10px]",
+                    RISK_STYLES[section.overall_risk ?? "low"],
+                  )}
+                >
+                  {RISK_LABELS[section.overall_risk ?? ""] ?? "—"}
+                </Badge>
+                <span className="text-muted-foreground">
+                  выводов: {section.findings.length}
+                </span>
+              </span>
+            ) : (
+              <span className="text-muted-foreground">не проводились</span>
+            )}
+          </div>
+        ))}
+
+        {report.missing_sections.length > 0 && (
+          <p className="text-[11px] text-muted-foreground">
+            Не выполнено:{" "}
+            {report.missing_sections
+              .map((key) => SECTION_LABELS[key] ?? key)
+              .join(", ")}
+            . Итоговая оценка предварительна.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }

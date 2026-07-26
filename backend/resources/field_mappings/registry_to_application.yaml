@@ -9,14 +9,23 @@
 # Маппинг лишь показывает специалисту, откуда что возьмётся; перенос
 # происходит только после подтверждения.
 # ---------------------------------------------------------------------------
-version: 1
-description: Выписка ЕГРЮЛ -> дело -> заявка на регистрацию товарного знака
-applies_to_document_kind: egrul_extract
+version: 2
+description: Выписка ЕГРЮЛ/ЕГРИП -> дело -> заявка на регистрацию товарного знака
+applies_to_document_kind: [egrul_extract, egrip_extract]
 application_schema_version: "1.0.0"
 
+# Каждый маппинг может ограничиваться типом заявителя через applies_to
+# (company / sole_proprietor / individual). Строки без applies_to
+# применимы ко всем типам. У юрлица и ИП разные реестровые поля,
+# поэтому лишние строки чужого типа скрываются, а не показываются
+# пустыми.
 mappings:
+  # ======================================================================
+  # Юридическое лицо (выписка ЕГРЮЛ)
+  # ======================================================================
   # --- Наименование заявителя --------------------------------------------
   - registry_field: registry.legal_entity.full_name
+    applies_to: [company]
     case_field: case.applicant.full_name
     application_field: application.applicant.name
     label: Полное наименование заявителя
@@ -25,6 +34,7 @@ mappings:
     critical: true
 
   - registry_field: registry.legal_entity.short_name
+    applies_to: [company]
     case_field: case.applicant.short_name
     application_field: null
     label: Сокращённое наименование
@@ -34,6 +44,7 @@ mappings:
 
   # --- Идентификаторы -----------------------------------------------------
   - registry_field: registry.legal_entity.inn
+    applies_to: [company]
     case_field: case.applicant.inn
     application_field: application.applicant.inn
     label: ИНН
@@ -41,6 +52,7 @@ mappings:
     critical: true
 
   - registry_field: registry.legal_entity.ogrn
+    applies_to: [company]
     case_field: case.applicant.ogrn
     application_field: application.applicant.ogrn
     label: ОГРН
@@ -48,6 +60,7 @@ mappings:
     critical: true
 
   - registry_field: registry.legal_entity.kpp
+    applies_to: [company]
     case_field: case.applicant.kpp
     application_field: application.applicant.kpp
     label: КПП
@@ -56,6 +69,7 @@ mappings:
 
   # --- Адрес --------------------------------------------------------------
   - registry_field: registry.legal_entity.address.full
+    applies_to: [company]
     case_field: case.applicant.legal_address
     application_field: application.applicant.address
     label: Адрес места нахождения
@@ -64,6 +78,47 @@ mappings:
     # Адрес собирается из компонентов таблицы, поэтому подтверждение
     # обязательно даже при успешном извлечении всех частей.
     always_needs_review: true
+
+  # ======================================================================
+  # Индивидуальный предприниматель (выписка ЕГРИП)
+  # ======================================================================
+  - registry_field: registry.sole_proprietor.full_name
+    applies_to: [sole_proprietor]
+    case_field: case.applicant.full_name
+    application_field: application.applicant.name
+    label: ФИО индивидуального предпринимателя
+    required_for_application: true
+    critical: true
+    sensitive: true
+
+  - registry_field: registry.sole_proprietor.inn
+    applies_to: [sole_proprietor]
+    case_field: case.applicant.inn
+    application_field: application.applicant.inn
+    label: ИНН
+    required_for_application: true
+    critical: true
+
+  - registry_field: registry.sole_proprietor.ogrnip
+    applies_to: [sole_proprietor]
+    case_field: case.applicant.ogrn
+    application_field: application.applicant.ogrn
+    label: ОГРНИП
+    required_for_application: true
+    critical: true
+
+  # Адрес места жительства ИП в публичной выписке ЕГРИП не раскрывается —
+  # источника из документа нет, поле заполняется специалистом вручную.
+  - registry_field: null
+    applies_to: [sole_proprietor]
+    case_field: case.applicant.legal_address
+    application_field: application.applicant.address
+    label: Адрес заявителя
+    required_for_application: true
+    critical: true
+    note: >-
+      В выписке ЕГРИП адрес места жительства скрыт. Вносится вручную
+      по документу, удостоверяющему личность, или со слов заявителя.
 
   # --- Руководитель -------------------------------------------------------
   - registry_field: registry.legal_entity.director.last_name

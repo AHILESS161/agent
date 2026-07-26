@@ -22,7 +22,12 @@ docker compose up --build
 ```bash
 docker compose exec api alembic upgrade head
 docker compose exec api python -m app.seed.init_db
+docker compose exec api python -m scripts.ingest_knowledge
 ```
+
+Шаг `ingest_knowledge` обязателен: правовой анализ читает базу знаний
+из БД, а не из файлов. Без индексации анализ по статье 1483 вернёт
+«Недостаточно подтверждённых данных для вывода.»
 
 ### Без Docker
 
@@ -34,6 +39,7 @@ python -m venv ../venv
 ../venv/Scripts/python -m pip install -r requirements.txt
 ../venv/Scripts/python -m alembic upgrade head
 ../venv/Scripts/python -m app.seed.init_db
+../venv/Scripts/python -m scripts.ingest_knowledge
 ../venv/Scripts/python -m uvicorn app.main:app --reload --port 8000
 ```
 

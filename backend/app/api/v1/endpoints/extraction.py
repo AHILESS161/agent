@@ -52,6 +52,7 @@ _WRITE_ROLES = {UserRole.admin, UserRole.lawyer, UserRole.manager}
 # Типы документов, для которых есть детерминированные паттерны.
 _EXTRACTABLE = {
     DocumentKind.egrul_extract: "egrul",
+    DocumentKind.egrip_extract: "egrip",
     DocumentKind.unknown_registry_extract: "egrul",
 }
 
@@ -386,7 +387,12 @@ async def field_reconciliation(
     }
     case_values = {k: v for k, v in case_values.items() if v}
 
-    rows, summary = build_reconciliation(domain, case_values)
+    client_type = (
+        application.client.type.value if application.client else None
+    )
+    rows, summary = build_reconciliation(
+        domain, case_values, client_type=client_type
+    )
     field_ids = {f.field_path: f.id for f in stored}
 
     return {

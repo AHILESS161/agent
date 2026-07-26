@@ -19,14 +19,18 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from app.agents.intake.application_pdf_parser import ApplicationPdfParserAgent
 from app.api.dependencies import _get_llm_provider, _get_prompt_registry
 from app.core.security import get_current_user
-from app.infrastructure.database.models import User
+from app.document_processing.classifier import classify_document
+from app.document_processing.extractors import extract_registry_fields
+from app.infrastructure.database.models import DocumentKind, User
 from app.services import file_storage
 from app.schemas.intake import (
     ParseApplicationFromTextRequest,
     ParsedApplicationResponse,
 )
 from app.services.document_text_extractor import (
+    NoTextLayerError,
     UnsupportedDocumentType,
+    extract_pages_from_bytes,
     extract_text_from_bytes,
 )
 
@@ -35,6 +39,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/intake", tags=["intake"])
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
+# Тип документа -> какой набор паттернов извлечения применять.
+_PREFILL_PATTERNS: dict[DocumentKind, str] = {
+    DocumentKind.egrul_extract: "egrul",
+    DocumentKind.egrip_extract: "egrip",
+    DocumentKind.unknown_registry_extract: "egrul",
+}
+
+# Тип документа -> предлагаемый тип клиента для формы приёма.
+_CLIENT_TYPE_BY_KIND: dict[DocumentKind, str] = {
+    DocumentKind.egrul_extract: "company",
+    DocumentKind.egrip_extract: "sole_proprietor",
+}
+
+# Куда в форме приёма ложится каждое извлечённое поле. Одно и то же
+# поле формы («ИНН», «ОГРН/ОГРНИП») заполняется из разных реестровых
+# полей в зависимости от типа документа.
+_FORM_TARGET: dict[str, str] = {
+    "registry.legal_entity.full_name": "name",
+    "registry.legal_entity.short_name": "short_name",
+    "registry.legal_entity.inn": "inn",
+    "registry.legal_entity.ogrn": "ogrn",
+    "registry.legal_entity.kpp": "kpp",
+    "registry.legal_entity.address.full": "address",
+    "registry.sole_proprietor.full_name": "name",
+    "registry.sole_proprietor.inn": "inn",
+    "registry.sole_proprietor.ogrnip": "ogrn",
+    "registry.sole_proprietor.main_activity": "business_activity",
+}
 
 
 async def _run_parser(raw_text: str, use_llm: bool) -> ParsedApplicationResponse:
@@ -119,6 +152,133 @@ async def parse_application(
         time.perf_counter() - t0,
     )
     return response
+
+
+@router.post(
+    "/prefill-registrant",
+    status_code=status.HTTP_200_OK,
+    summary="Извлечь данные заявителя из выписки для предзаполнения формы приёма",
+)
+async def prefill_registrant(
+    file: UploadFile = File(..., description="Выписка ЕГРЮЛ или ЕГРИП (PDF/DOCX/TXT)"),
+    _current_user: User = Depends(get_current_user),
+) -> dict:
+    """Разобрать выписку и вернуть предложения для формы приёма.
+
+    Ничего не сохраняет и не создаёт: разбор идёт в памяти,
+    извлечённые значения не логируются. Тип документа и все значения
+    требуют проверки специалистом — форма их лишь предзаполняет,
+    решение остаётся за юристом. Сам документ прикрепляется к делу
+    отдельно, при его создании.
+
+    Извлечение детерминированное (regex по подписям полей), без LLM.
+    """
+    if not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Не указано имя файла"
+        )
+
+    content = await file.read()
+    try:
+        file_storage.validate_upload(content, file.filename)
+    except file_storage.FileValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+
+    # --- текст ---
+    try:
+        pages = extract_pages_from_bytes(content, file.filename)
+    except (NoTextLayerError, UnsupportedDocumentType) as exc:
+        # Скан без текстового слоя — реальный и частый случай. Это не
+        # ошибка сервера: форму просто заполняют вручную.
+        return {
+            "document_kind": None,
+            "client_type": None,
+            "prefill": {},
+            "fields": [],
+            "warning": (
+                "В документе нет текстового слоя (возможно, это скан или фото). "
+                "Автозаполнение недоступно — заполните поля вручную."
+            ),
+            "notice": _PREFILL_NOTICE,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("prefill: не удалось разобрать файл: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Не удалось разобрать файл (возможно, он повреждён): {exc}",
+        ) from exc
+
+    full_text = "\n".join(p.text for p in pages)
+    classification = classify_document(full_text)
+    pattern_set = _PREFILL_PATTERNS.get(classification.kind)
+
+    if pattern_set is None:
+        # Тип не распознан или для него нет правил (доверенность,
+        # изображение, паспорт-скан и т. п.). Форму заполняют вручную.
+        return {
+            "document_kind": classification.kind.value,
+            "kind_confidence": classification.confidence,
+            "client_type": _CLIENT_TYPE_BY_KIND.get(classification.kind),
+            "prefill": {},
+            "fields": [],
+            "warning": (
+                "Тип документа не распознан как выписка ЕГРЮЛ/ЕГРИП — "
+                "автозаполнение недоступно. Проверьте документ и заполните "
+                "форму вручную."
+            ),
+            "notice": _PREFILL_NOTICE,
+        }
+
+    paged = [(p.page_number, p.text) for p in pages]
+    results = extract_registry_fields(paged, pattern_set)
+
+    prefill: dict[str, str] = {}
+    fields: list[dict] = []
+    for result in results:
+        value = result.normalized_value or result.value
+        if not value or result.validation_error:
+            continue
+        target = _FORM_TARGET.get(result.field_id)
+        fields.append(
+            {
+                "field_id": result.field_id,
+                "label": result.label,
+                "value": value,
+                "confidence": result.confidence,
+                "is_sensitive": result.is_sensitive,
+                "form_target": target,
+                "page_number": result.page_number,
+            }
+        )
+        # В форму кладём первое непустое значение на каждое целевое поле.
+        if target and target not in prefill:
+            prefill[target] = value
+
+    logger.info(
+        "prefill-registrant: kind=%s pattern=%s fields=%d",
+        classification.kind.value,
+        pattern_set,
+        len(fields),
+    )
+
+    return {
+        "document_kind": classification.kind.value,
+        "kind_confidence": classification.confidence,
+        "client_type": _CLIENT_TYPE_BY_KIND.get(classification.kind),
+        "prefill": prefill,
+        "fields": fields,
+        "warning": None,
+        "notice": _PREFILL_NOTICE,
+    }
+
+
+_PREFILL_NOTICE = (
+    "Данные извлечены автоматически и требуют проверки специалистом. "
+    "Ни одно значение не подтверждено. Проверьте их по документу перед "
+    "созданием дела."
+)
 
 
 @router.post(

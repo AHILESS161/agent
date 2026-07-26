@@ -110,13 +110,23 @@ class FieldMappingEngine:
         self,
         extracted: Iterable[ExtractedFieldResult],
         case_values: dict[str, str] | None = None,
+        client_type: str | None = None,
     ) -> list[MappingRow]:
-        """Сопоставить извлечённые поля с полями дела и заявления."""
+        """Сопоставить извлечённые поля с полями дела и заявления.
+
+        ``client_type`` (company/sole_proprietor/individual) отбирает
+        применимые строки: у юрлица и ИП разные реестровые поля, и
+        показывать заявителю-ИП пустые строки ЕГРЮЛ (и наоборот) —
+        значит выдавать неполноту за пропуск.
+        """
         by_field_id = {result.field_id: result for result in extracted}
         case_values = case_values or {}
         rows: list[MappingRow] = []
 
         for spec in self.config.get("mappings", []):
+            applies_to = spec.get("applies_to")
+            if client_type and applies_to and client_type not in applies_to:
+                continue
             rows.append(self._build_row(spec, by_field_id, case_values))
         return rows
 
@@ -243,8 +253,9 @@ def build_reconciliation(
     extracted: Iterable[ExtractedFieldResult],
     case_values: dict[str, str] | None = None,
     mapping_name: str = "registry_to_application",
+    client_type: str | None = None,
 ) -> tuple[list[MappingRow], dict[str, Any]]:
     """Удобная обёртка: извлечённые поля -> (таблица сверки, сводка)."""
     engine = FieldMappingEngine(mapping_name)
-    rows = engine.build(extracted, case_values)
+    rows = engine.build(extracted, case_values, client_type=client_type)
     return rows, engine.summarise(rows)

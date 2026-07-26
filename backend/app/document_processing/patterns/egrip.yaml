@@ -1,0 +1,157 @@
+# ---------------------------------------------------------------------------
+# Паттерны извлечения реквизитов из выписки ЕГРИП (индивидуальный
+# предприниматель).
+#
+# Структура выписки такая же табличная, как у ЕГРЮЛ:
+#     <№ строки> <Наименование показателя> <Значение показателя>
+# но набор полей другой и есть особенности:
+#   - адрес места жительства ИП в публичной выписке НЕ раскрывается
+#     (приводится только регистрирующий орган) — для заявления адрес
+#     заявителя вносится вручную;
+#   - ОГРНИП — 15 цифр (в шапке печатается вразрядку, в таблице слитно);
+#   - ИНН предпринимателя — 12 цифр (у физлица), а не 10;
+#   - номер выписки начинается с «ИЭ», а не «ЮЭ».
+#
+# ВАЖНО: все паттерны привязаны к подписи поля. В выписке множество
+# 15-значных номеров ГРН, которые иначе будут приняты за ОГРНИП.
+#
+# Выверено на реальном образце выписки; в тестах — обезличенные данные.
+# Файл версионируется; изменение схемы требует поднятия version.
+# ---------------------------------------------------------------------------
+version: 1
+document_kind: egrip_extract
+description: Выписка из Единого государственного реестра индивидуальных предпринимателей
+
+# Разделы документа: одинаковые подписи полей («Дата регистрации»,
+# «Регистрационный номер») встречаются и у самого ИП, и в сведениях
+# о страхователе в ПФР/ФСС.
+sections:
+  registration:
+    start: 'Сведения о регистрации индивидуального предпринимателя'
+    end: 'Сведения о регистрирующем органе'
+  tax:
+    start: 'Сведения об учете в налоговом органе'
+    end: 'Сведения о регистрации в качестве страхователя'
+  main_activity:
+    start: 'Сведения об основном виде деятельности'
+    end: 'Сведения о дополнительных видах деятельности|Сведения о записях'
+
+fields:
+  # --- ФИО предпринимателя (наименование заявителя) -----------------------
+  # В заявлении на ТЗ заявитель-ИП указывается своим ФИО. Полное ФИО
+  # берётся из шапки выписки — там оно приведено одной строкой.
+  - field_id: registry.sole_proprietor.full_name
+    label: ФИО индивидуального предпринимателя
+    required: true
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrip_full_name_header
+        regex: 'индивидуальном предпринимателе\s+([\s\S]+?)\s+фамилия,\s+имя'
+        confidence: 0.9
+
+  - field_id: registry.sole_proprietor.last_name
+    label: Фамилия
+    required: false
+    sensitive: true
+    normalizer: person_name
+    patterns:
+      # Фамилия/Имя/Отчество идут тремя строками подряд без номеров,
+      # поэтому захват ограничивается концом строки, а не {ROW_END}:
+      # иначе значение «съедает» соседние подписи «Имя»/«Отчество».
+      - pattern_id: egrip_last_name_row
+        regex: '(?m)^\s*\d+\s+Фамилия\s+(.+?)\s*$'
+        confidence: 0.9
+
+  - field_id: registry.sole_proprietor.first_name
+    label: Имя
+    required: false
+    sensitive: true
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrip_first_name_row
+        regex: '(?m)^\s*Имя\s+(.+?)\s*$'
+        confidence: 0.85
+
+  - field_id: registry.sole_proprietor.middle_name
+    label: Отчество
+    required: false
+    sensitive: true
+    normalizer: person_name
+    patterns:
+      - pattern_id: egrip_middle_name_row
+        regex: '(?m)^\s*Отчество\s+(.+?)\s*$'
+        confidence: 0.85
+
+  # --- Идентификаторы -----------------------------------------------------
+  - field_id: registry.sole_proprietor.ogrnip
+    label: ОГРНИП
+    required: true
+    normalizer: ogrn
+    validator: ogrnip
+    patterns:
+      # Строка таблицы «8 ОГРНИП 323028000074230» — 15 цифр слитно.
+      - pattern_id: egrip_ogrnip_row
+        regex: '(?m)^\s*\d+\s+ОГРНИП\s+(\d{15})(?!\d)'
+        confidence: 0.95
+      # Колонтитул страницы «… ОГРНИП 323028000074230 Страница N из M».
+      # Даёт то же значение и служит подтверждением, а не конфликтом.
+      - pattern_id: egrip_ogrnip_footer
+        regex: 'ОГРНИП\s+(\d{15})(?!\d)\s+Страница'
+        confidence: 0.75
+
+  - field_id: registry.sole_proprietor.inn
+    label: ИНН
+    required: true
+    section: tax
+    normalizer: inn
+    validator: inn_individual
+    patterns:
+      # «13 Идентификационный номер 161102375788» — 12 цифр у физлица.
+      - pattern_id: egrip_inn_row
+        regex: 'Идентификационный номер\s+(\d{12})(?!\d)'
+        confidence: 0.9
+
+  # --- Регистрация --------------------------------------------------------
+  - field_id: registry.sole_proprietor.registration_date
+    label: Дата регистрации
+    required: false
+    section: registration
+    normalizer: date
+    validator: date
+    patterns:
+      - pattern_id: egrip_registration_date_row
+        regex: '(?m)^\s*\d+\s+Дата регистрации\s+(\d{2}\.\d{2}\.\d{4})'
+        confidence: 0.9
+
+  # --- Основной вид деятельности ------------------------------------------
+  # Не идёт в заявление напрямую, но описывает деятельность заявителя —
+  # система использует его как подсказку при подборе классов МКТУ.
+  - field_id: registry.sole_proprietor.main_activity
+    label: Основной вид деятельности (ОКВЭД)
+    required: false
+    section: main_activity
+    normalizer: whitespace
+    patterns:
+      - pattern_id: egrip_main_activity_row
+        regex: '(?m)^\s*\d+\s+Код и наименование вида деятельности\s+([\s\S]+?){ROW_END}'
+        confidence: 0.85
+
+  # --- Реквизиты самой выписки -------------------------------------------
+  - field_id: registry.extract.number
+    label: Номер выписки
+    required: false
+    normalizer: no_whitespace
+    patterns:
+      - pattern_id: egrip_extract_number
+        regex: '№\s*(ИЭ[\d\-\s]+?\d)\s*(?=\n|дата|$)'
+        confidence: 0.85
+
+  - field_id: registry.extract.issue_date
+    label: Дата формирования выписки
+    required: false
+    normalizer: date
+    validator: date
+    patterns:
+      - pattern_id: egrip_extract_date
+        regex: '(?m)^\s*(\d{2}\.\d{2}\.\d{4})\s+№\s*ИЭ'
+        confidence: 0.9

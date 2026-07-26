@@ -25,9 +25,14 @@ def extracted():
     return extract_registry_fields(EGRUL_PAGES)
 
 
+# Выписка ЕГРЮЛ — заявитель-юрлицо. Сверка теперь типозависима:
+# у юрлица и ИП разные реестровые поля, поэтому тип передаётся всегда.
+COMPANY = "company"
+
+
 @pytest.fixture(scope="module")
 def rows(extracted):
-    result, _ = build_reconciliation(extracted)
+    result, _ = build_reconciliation(extracted, client_type=COMPANY)
     return {r.case_field: r for r in result}
 
 
@@ -39,7 +44,9 @@ class TestMappingConfiguration:
 
     def test_declares_target_document_kind(self):
         engine = FieldMappingEngine()
-        assert engine.config["applies_to_document_kind"] == "egrul_extract"
+        kinds = engine.config["applies_to_document_kind"]
+        assert "egrul_extract" in kinds
+        assert "egrip_extract" in kinds
 
     def test_unmapped_application_fields_are_declared_explicitly(self):
         """Отсутствие источника должно быть видимым, а не выглядеть
@@ -123,7 +130,9 @@ class TestSpecialistActions:
 
     def test_missing_value_cannot_be_accepted(self):
         """Принимать нечего, если значение не найдено."""
-        result, _ = build_reconciliation(extract_registry_fields([(1, "пусто")]))
+        result, _ = build_reconciliation(
+            extract_registry_fields([(1, "пусто")]), client_type=COMPANY
+        )
         rows = {r.case_field: r for r in result}
         actions = rows["case.applicant.full_name"].available_actions
         assert ACTION_ACCEPT not in actions
@@ -134,7 +143,9 @@ class TestConflictBetweenRegistryAndCase:
     def test_differing_case_value_produces_conflict(self, extracted):
         """Значение в карточке дела расходится с выпиской."""
         result, _ = build_reconciliation(
-            extracted, case_values={"case.applicant.inn": "9999999999"}
+            extracted,
+            case_values={"case.applicant.inn": "9999999999"},
+            client_type=COMPANY,
         )
         rows = {r.case_field: r for r in result}
         row = rows["case.applicant.inn"]
@@ -146,7 +157,9 @@ class TestConflictBetweenRegistryAndCase:
 
     def test_identical_case_value_is_not_a_conflict(self, extracted):
         result, _ = build_reconciliation(
-            extracted, case_values={"case.applicant.inn": EXPECTED["inn"]}
+            extracted,
+            case_values={"case.applicant.inn": EXPECTED["inn"]},
+            client_type=COMPANY,
         )
         rows = {r.case_field: r for r in result}
         assert rows["case.applicant.inn"].status is not FieldStatus.conflict
@@ -168,7 +181,7 @@ class TestHumanInTheLoop:
         assert row.status is FieldStatus.needs_review
 
     def test_unconfirmed_required_field_blocks_draft_generation(self, extracted):
-        _, summary = build_reconciliation(extracted)
+        _, summary = build_reconciliation(extracted, client_type=COMPANY)
         assert summary["can_generate_draft"] is False
         assert summary["blocking_document_generation"]
 
@@ -201,7 +214,9 @@ class TestSpecialistDecisionIsFinal:
     def test_confirmed_field_stays_confirmed_despite_case_mismatch(self):
         confirmed = self._confirmed_field("registry.legal_entity.inn", "7707083893")
         result, _ = build_reconciliation(
-            [confirmed], case_values={"case.applicant.inn": "9999999999"}
+            [confirmed],
+            case_values={"case.applicant.inn": "9999999999"},
+            client_type=COMPANY,
         )
         row = {r.case_field: r for r in result}["case.applicant.inn"]
         assert row.status is FieldStatus.confirmed
@@ -210,7 +225,7 @@ class TestSpecialistDecisionIsFinal:
         confirmed = self._confirmed_field(
             "registry.legal_entity.address.full", "101000, Москва"
         )
-        result, _ = build_reconciliation([confirmed])
+        result, _ = build_reconciliation([confirmed], client_type=COMPANY)
         row = {r.case_field: r for r in result}["case.applicant.legal_address"]
         assert row.status is FieldStatus.confirmed
 
@@ -218,7 +233,7 @@ class TestSpecialistDecisionIsFinal:
         confirmed = self._confirmed_field(
             "registry.legal_entity.address.full", "101000, Москва"
         )
-        result, _ = build_reconciliation([confirmed])
+        result, _ = build_reconciliation([confirmed], client_type=COMPANY)
         row = {r.case_field: r for r in result}["case.applicant.legal_address"]
         assert row.blocks_document_generation is False
 
@@ -233,7 +248,9 @@ class TestSpecialistDecisionIsFinal:
             normalized_value="7707083893",
         )
         result, _ = build_reconciliation(
-            [rejected], case_values={"case.applicant.inn": "9999999999"}
+            [rejected],
+            case_values={"case.applicant.inn": "9999999999"},
+            client_type=COMPANY,
         )
         row = {r.case_field: r for r in result}["case.applicant.inn"]
         assert row.status is FieldStatus.rejected
@@ -241,17 +258,17 @@ class TestSpecialistDecisionIsFinal:
 
 class TestSummary:
     def test_summary_reports_versions(self, extracted):
-        _, summary = build_reconciliation(extracted)
+        _, summary = build_reconciliation(extracted, client_type=COMPANY)
         assert summary["mapping_version"] >= 1
         assert summary["application_schema_version"]
 
     def test_summary_counts_match_rows(self, extracted):
-        result, summary = build_reconciliation(extracted)
+        result, summary = build_reconciliation(extracted, client_type=COMPANY)
         assert summary["total"] == len(result)
         assert sum(summary["by_status"].values()) == len(result)
 
     def test_summary_lists_blocking_fields_by_label(self, extracted):
-        _, summary = build_reconciliation(extracted)
+        _, summary = build_reconciliation(extracted, client_type=COMPANY)
         for label in summary["blocking_document_generation"]:
             assert isinstance(label, str) and label
 

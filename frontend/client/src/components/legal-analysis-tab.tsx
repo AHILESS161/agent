@@ -29,6 +29,7 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  Gavel,
   Layers,
   Loader2,
   Play,
@@ -417,6 +418,9 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         )}
       </Section>
 
+      {/* --- итоговое заключение --- */}
+      <MemoSection appId={appId} />
+
       {/* --- ограничения --- */}
       {((verdict?.limitations?.length ?? 0) > 0 ||
         (absolute?.limitations?.length ?? 0) > 0 ||
@@ -747,6 +751,87 @@ function ClassPicker({
         })}
       </div>
     </div>
+  );
+}
+
+/**
+ * Итоговое заключение по делу.
+ *
+ * Раньше жило отдельной вкладкой «Рекомендации», хотя это результат
+ * того же анализа: смотреть вывод отдельно от оснований, на которых
+ * он построен, неудобно и опасно.
+ */
+function MemoSection({ appId }: { appId: number }) {
+  const state = useApi<{
+    summary: string | null;
+    risk_assessment: string | null;
+    recommended_action: string | null;
+    recommended_classes_json: number[] | null;
+    key_risks_json: string[] | null;
+    confidence: number | null;
+    approved_by: number | null;
+  }>(`/applications/${appId}/recommendation`);
+
+  const memo = state.data;
+  if (!memo) return null;
+
+  const ACTIONS: Record<string, string> = {
+    proceed: "Подавать заявку",
+    modify: "Доработать обозначение или перечень",
+    withdraw: "Не подавать в текущем виде",
+    further_review: "Требуется дополнительная проверка",
+  };
+
+  return (
+    <Section
+      icon={Gavel}
+      title="Итоговое заключение"
+      hint="Собрано по результатам проверок. Требует подтверждения специалистом."
+    >
+      <div className="space-y-2">
+        {memo.recommended_action && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium">Рекомендуемое действие:</span>
+            <Badge className="text-[10px]">
+              {ACTIONS[memo.recommended_action] ?? memo.recommended_action}
+            </Badge>
+            {memo.confidence == null && (
+              <span className="text-[10px] text-muted-foreground">
+                уверенность не определена: проверки выполнены не полностью
+              </span>
+            )}
+          </div>
+        )}
+
+        {memo.summary && <p className="text-xs leading-relaxed">{memo.summary}</p>}
+
+        {memo.risk_assessment && (
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            {memo.risk_assessment}
+          </p>
+        )}
+
+        {(memo.recommended_classes_json?.length ?? 0) > 0 && (
+          <p className="text-[11px]">
+            <span className="text-muted-foreground">Классы:</span>{" "}
+            {memo.recommended_classes_json!.join(", ")}
+          </p>
+        )}
+
+        {(memo.key_risks_json?.length ?? 0) > 0 && (
+          <details className="text-[11px]">
+            <summary className="cursor-pointer text-muted-foreground">
+              Ключевые риски ({memo.key_risks_json!.length})
+            </summary>
+            <ul className="mt-1 space-y-0.5 pl-3">
+              {memo.key_risks_json!.map((risk, index) => (
+                <li key={index}>• {risk}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+    </Section>
   );
 }
 

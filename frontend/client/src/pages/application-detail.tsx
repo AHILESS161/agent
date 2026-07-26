@@ -17,7 +17,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
-  RecommendationsTab,
   DocumentPackagesTab,
   StatusHistoryTab,
 } from "@/components/case-tabs";
@@ -125,12 +124,57 @@ function GeneralInfoTab({
             <CardTitle className="text-sm font-semibold">Клиент</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <InfoRow label="Наименование" value={client.fullNameOrCompanyName} />
+            <EditableRow
+              clientId={client.id}
+              label="Наименование"
+              field="full_name_or_company_name"
+              value={client.fullNameOrCompanyName}
+              onSaved={onSaved}
+            />
             <InfoRow label="Тип" value={CLIENT_TYPE_LABELS[client.type]} />
-            <InfoRow label="Контакт" value={client.contactPerson} />
-            <InfoRow label="Email" value={client.email} />
-            <InfoRow label="Телефон" value={client.phone} />
-            <InfoRow label="ИНН" value={client.inn} mono />
+            <EditableRow
+              clientId={client.id}
+              label="Контакт"
+              field="contact_person"
+              value={client.contactPerson}
+              onSaved={onSaved}
+            />
+            <EditableRow
+              clientId={client.id}
+              label="Email"
+              field="email"
+              value={client.email}
+              onSaved={onSaved}
+            />
+            <EditableRow
+              clientId={client.id}
+              label="Телефон"
+              field="phone"
+              value={client.phone}
+              onSaved={onSaved}
+            />
+            <EditableRow
+              clientId={client.id}
+              label="ИНН"
+              field="inn"
+              value={client.inn}
+              onSaved={onSaved}
+            />
+            <EditableRow
+              clientId={client.id}
+              label="ОГРН / ОГРНИП"
+              field="ogrn_or_ogrnip"
+              value={client.ogrnOrOgrnip}
+              onSaved={onSaved}
+            />
+            <EditableRow
+              clientId={client.id}
+              label="Адрес"
+              field="address"
+              value={client.address}
+              multiline
+              onSaved={onSaved}
+            />
           </CardContent>
         </Card>
       )}
@@ -178,13 +222,16 @@ function GeneralInfoTab({
  */
 function EditableRow({
   appId,
+  clientId,
   label,
   field,
   value,
   multiline,
   onSaved,
 }: {
-  appId: number;
+  appId?: number;
+  /** Если задан — правится карточка клиента, а не дела. */
+  clientId?: number;
   label: string;
   field: string;
   value?: string | null;
@@ -199,7 +246,9 @@ function EditableRow({
   const save = async () => {
     setIsSaving(true);
     try {
-      await api.put(`/applications/${appId}`, { [field]: draft.trim() });
+      const path =
+        clientId != null ? `/clients/${clientId}` : `/applications/${appId}`;
+      await api.put(path, { [field]: draft.trim() });
       toast({ title: `Сохранено: ${label}` });
       setIsEditing(false);
       onSaved();
@@ -257,7 +306,7 @@ function EditableRow({
   }
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4 group">
+    <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-4">
       <span className="text-xs font-medium text-muted-foreground sm:w-32 shrink-0">
         {label}
       </span>
@@ -265,7 +314,7 @@ function EditableRow({
       <Button
         size="sm"
         variant="ghost"
-        className="h-6 px-2 text-[11px] opacity-0 group-hover:opacity-100 transition-opacity"
+        className="h-6 px-2 text-[11px] text-muted-foreground shrink-0"
         onClick={() => setIsEditing(true)}
         data-testid={`edit-${field}`}
       >
@@ -347,7 +396,6 @@ export default function ApplicationDetailPage() {
             { value: "source-documents", label: "Исходные документы", icon: Upload },
             { value: "fields", label: "Сверка полей", icon: ClipboardList },
             { value: "legal", label: "Правовой анализ", icon: Shield },
-            { value: "recommendations", label: "Рекомендации", icon: Gavel },
             { value: "draft", label: "Черновик заявления", icon: FileSignature },
             { value: "documents", label: "Документы", icon: FileText },
             { value: "history", label: "История", icon: History },
@@ -375,7 +423,6 @@ export default function ApplicationDetailPage() {
             <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
           </TabsContent>
           <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
-          <TabsContent value="recommendations"><RecommendationsTab appId={appId} /></TabsContent>
           <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>
           <TabsContent value="documents"><DocumentPackagesTab appId={appId} /></TabsContent>
           <TabsContent value="history"><StatusHistoryTab appId={appId} /></TabsContent>

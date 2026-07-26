@@ -21,7 +21,12 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.database.session import get_session
 from app.services import file_storage
-from app.services.application_draft import create_draft, serialize_draft
+from app.services.application_draft import (
+    collect_draft_content,
+    create_draft,
+    serialize_draft,
+)
+from app.services.blank_layout import build_form
 
 logger = get_logger(__name__)
 
@@ -109,6 +114,26 @@ async def generate_draft(
     )
     await session.flush()
     return serialize_draft(draft)
+
+
+@router.get(
+    "/applications/{application_id}/draft-form",
+    summary="Бланк заявления с подставленными значениями",
+)
+async def draft_form(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Показать заявление в структуре официального бланка.
+
+    Разделы и коды INID те же, что в форме Роспатента: специалист
+    видит документ таким, каким он уйдёт в ведомство, и может
+    заполнить недостающее прямо здесь.
+    """
+    application = await _load_application(session, application_id)
+    content = await collect_draft_content(session, application)
+    return {"application_id": application_id, **build_form(content)}
 
 
 @router.get(

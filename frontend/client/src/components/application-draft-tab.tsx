@@ -19,6 +19,7 @@ import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import { Check, Download, FileSignature, Loader2 } from "lucide-react";
+import { DraftFormView } from "@/components/draft-form-view";
 
 interface FilledField {
   field_id: string;
@@ -154,6 +155,10 @@ export function ApplicationDraftTab({ appId }: { appId: number }) {
           Сформировать черновик
         </Button>
       </div>
+
+      {/* Сам бланк: специалист видит заявление в структуре формы
+          Роспатента и дозаполняет поля прямо здесь. */}
+      <DraftFormView appId={appId} />
 
       <AsyncSection
         state={state}

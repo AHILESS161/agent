@@ -1,0 +1,177 @@
+# ---------------------------------------------------------------------------
+# Разметка бланка заявки на регистрацию товарного знака.
+#
+# Повторяет структуру официальной формы (приложение к приказу
+# Минэкономразвития) — тот же порядок разделов и те же коды INID.
+# Используется для интерактивного просмотра бланка в интерфейсе:
+# специалист видит форму такой, какой она уйдёт в Роспатент.
+#
+# ``anchor`` — начало текста ячейки в DOCX, куда пишется значение.
+# Он же связывает разметку с заполнением файла, чтобы интерфейс
+# и документ не разошлись.
+#
+# ``source`` — идентификатор поля заявления. Значение подставляется
+# только из подтверждённых данных дела; всё остальное специалист
+# заполняет сам.
+#
+# ``fill: manual`` означает, что автоматического источника нет
+# в принципе: чекбоксы вида знака, приоритет, пошлина. Такие поля
+# всегда заполняются вручную — это следует из формы, а не из
+# ограничений системы.
+# ---------------------------------------------------------------------------
+version: 1
+title: ЗАЯВКА на государственную регистрацию товарного знака, знака обслуживания, коллективного знака
+
+sections:
+  - id: office
+    title: Заполняется Роспатентом
+    readonly: true
+    fields:
+      - inid: "210"
+        label: Регистрационный номер
+        fill: office
+      - inid: null
+        label: Дата поступления
+        fill: office
+
+  - id: correspondence
+    title: Адрес для переписки
+    fields:
+      - inid: "750"
+        label: Адрес для переписки с Роспатентом
+        anchor: "(750)"
+        source: application.correspondence_address
+        fill: manual
+        hint: >-
+          Почтовый адрес или адрес электронной почты, ФИО адресата.
+          Может отличаться от адреса заявителя.
+      - inid: null
+        label: Телефон
+        source: application.contact.phone
+        fill: manual
+      - inid: null
+        label: E-mail
+        source: application.contact.email
+        fill: manual
+
+  - id: applicant
+    title: Заявитель
+    fields:
+      - inid: "731"
+        label: Наименование юридического лица или ФИО
+        anchor: "(731)"
+        source: application.applicant.name
+        multiline: true
+      - inid: "731"
+        label: Адрес
+        anchor: "(731)"
+        source: application.applicant.address
+        multiline: true
+      - inid: null
+        label: ОГРН / ОГРНИП
+        anchor: "ИДЕНТИФИКАТОРЫ"
+        source: application.applicant.ogrn
+      - inid: null
+        label: ИНН
+        anchor: "ИДЕНТИФИКАТОРЫ"
+        source: application.applicant.inn
+      - inid: null
+        label: КПП
+        anchor: "ИДЕНТИФИКАТОРЫ"
+        source: application.applicant.kpp
+      - inid: null
+        label: Код страны (ВОИС ST.3)
+        source: application.applicant.country_code
+
+  - id: representative
+    title: Представитель заявителя
+    fields:
+      - inid: "740"
+        label: Представитель (патентный поверенный или иное лицо)
+        anchor: "(740)"
+        source: application.representative.name
+        fill: manual
+        hint: Представителя назначает заявитель. Требуется доверенность.
+
+  - id: mark
+    title: Заявляемое обозначение
+    fields:
+      - inid: "540"
+        label: Заявляемое обозначение
+        anchor: "(540)"
+        source: application.mark.text
+        multiline: true
+      - inid: "571"
+        label: Описание заявляемого обозначения
+        source: application.mark.description
+        multiline: true
+        fill: manual
+      - inid: "591"
+        label: Цвет или цветовое сочетание
+        source: application.mark.colors
+        fill: manual
+      - inid: "550"
+        label: Вид знака
+        source: application.mark.kind
+        fill: checkbox
+        hint: >-
+          Отмечается галочкой в бланке: объёмный (554), голографический
+          (555), звуковой (556), обонятельный (557), цветовой (558),
+          коллективный (551). Определяется только специалистом.
+      - inid: "526"
+        label: Неохраняемые элементы
+        source: application.mark.disclaimer
+        fill: manual
+        hint: Элементы, на которые не испрашивается исключительное право.
+
+  - id: goods
+    title: Перечень товаров и услуг
+    fields:
+      - inid: "511"
+        label: Классы МКТУ и наименования товаров
+        anchor: "(511)"
+        source: application.goods_services
+        fill: classes
+
+  - id: priority
+    title: Приоритет
+    fields:
+      - inid: "320"
+        label: Конвенционный приоритет — дата первой заявки
+        source: application.priority.convention_date
+        fill: manual
+      - inid: "330"
+        label: Код страны подачи первой заявки
+        source: application.priority.country_code
+        fill: manual
+      - inid: "310"
+        label: Номер первой заявки
+        source: application.priority.first_number
+        fill: manual
+      - inid: "230"
+        label: Выставочный приоритет — дата начала показа
+        source: application.priority.exhibition_date
+        fill: manual
+      - inid: "641"
+        label: Приоритет выделенной заявки
+        source: application.priority.divisional
+        fill: manual
+      - inid: "151"
+        label: Номер международной регистрации
+        source: application.priority.international_number
+        fill: manual
+
+  - id: certificate
+    title: Свидетельство и пошлины
+    fields:
+      - inid: null
+        label: Выдать свидетельство на бумажном носителе
+        source: application.certificate.paper
+        fill: checkbox
+      - inid: null
+        label: Сведения об уплате пошлины
+        source: application.fees
+        fill: manual
+        hint: >-
+          Размер и порядок уплаты пошлин определяются Положением
+          о пошлинах; в системе не рассчитываются.

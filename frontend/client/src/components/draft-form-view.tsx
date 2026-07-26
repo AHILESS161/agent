@@ -1,21 +1,20 @@
 /**
- * Интерактивный бланк заявления.
+ * Бланк заявления — единственное место работы с полями.
  *
- * Повторяет структуру официальной формы Роспатента: те же разделы
- * в том же порядке, те же коды INID в рамках слева. Специалист видит
- * документ таким, каким он уйдёт в ведомство, и заполняет недостающее
- * прямо здесь, не переключаясь между вкладками.
+ * Раньше сверка полей и черновик были разными вкладками, хотя правили
+ * одни и те же значения: одна показывала, что извлечено из документов,
+ * другая — что попадёт в заявление. Теперь это один экран в структуре
+ * официальной формы, где у каждого поля видно и значение, и откуда оно
+ * взялось, и что с ним делать.
  *
- * Цвет здесь тоже несёт смысл: заполненное поле выделено, пустое
- * обязательное — заметно, а то, что вносится только вручную
- * (вид знака, приоритет, пошлина), помечено отдельно, чтобы это
- * не выглядело недоработкой системы.
+ * Цвет и пометки несут смысл: зелёное — подтверждено и уйдёт в бланк,
+ * красное — обязательное поле, без которого заявление не подать,
+ * серое — необязательное и пустое.
  */
 
 import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -23,7 +22,23 @@ import { AsyncSection } from "@/components/async-states";
 import { api, ApiError } from "@/lib/api";
 import { useApi } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
-import { Check, Pencil, Info } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  Eye,
+  EyeOff,
+  Info,
+  Pencil,
+  Trash2,
+  X,
+} from "lucide-react";
+
+interface Candidate {
+  raw_value: string;
+  normalized_value: string | null;
+  page_number: number | null;
+  validation_passed: boolean | null;
+}
 
 interface FormField {
   inid: string | null;
@@ -35,6 +50,17 @@ interface FormField {
   multiline: boolean;
   is_filled: boolean;
   editable: boolean;
+  status: string | null;
+  required: boolean;
+  needs_attention: boolean;
+  origin: string | null;
+  page_number: number | null;
+  is_sensitive: boolean;
+  validation_error: string | null;
+  extracted_field_id: number | null;
+  field_path: string | null;
+  candidates: Candidate[];
+  actions: string[];
 }
 
 interface FormSection {
@@ -51,6 +77,10 @@ interface DraftFormDto {
   sections: FormSection[];
   filled_count: number;
   total_count: number;
+  required_count: number;
+  required_done: number;
+  blocking: string[];
+  can_generate: boolean;
   notice: string;
 }
 
@@ -61,30 +91,79 @@ const FILL_LABELS: Record<string, string> = {
   classes: "из перечня классов",
 };
 
+const STATUS_LABELS: Record<string, string> = {
+  confirmed: "подтверждено",
+  matched: "найдено, не подтверждено",
+  conflict: "несколько значений",
+  needs_review: "требует проверки",
+  missing: "не найдено",
+  rejected: "отклонено",
+  left_empty: "оставлено пустым",
+};
+
 export function DraftFormView({ appId }: { appId: number }) {
   const { toast } = useToast();
   const state = useApi<DraftFormDto>(`/applications/${appId}/draft-form`);
-  const [saving, setSaving] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
+  const fail = (e: unknown, title: string) =>
+    toast({
+      title,
+      description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+      variant: "destructive",
+    });
+
+  /** Сохранить значение: годится и для правки, и для пустого поля. */
   const save = async (field: FormField, value: string) => {
-    if (!field.source) return;
-    setSaving(field.source);
+    if (!field.field_path && !field.source) return;
+    setBusy(field.label);
     try {
       await api.post(`/applications/${appId}/fields`, {
-        field_path: field.source,
+        field_path: field.field_path ?? field.source,
         label: field.label,
         value,
+        is_sensitive: field.is_sensitive,
       });
       toast({ title: `Сохранено: ${field.label}` });
       state.reload();
     } catch (e) {
-      toast({
-        title: "Не удалось сохранить",
-        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
-        variant: "destructive",
-      });
+      fail(e, "Не удалось сохранить");
     } finally {
-      setSaving(null);
+      setBusy(null);
+    }
+  };
+
+  /** Принять найденное значение или выбрать один из вариантов. */
+  const confirm = async (field: FormField, candidateIndex?: number) => {
+    if (field.extracted_field_id == null) return;
+    setBusy(field.label);
+    try {
+      await api.post(`/extracted-fields/${field.extracted_field_id}/confirm`, {
+        action: "accept",
+        ...(candidateIndex != null
+          ? { value: field.candidates[candidateIndex].normalized_value }
+          : {}),
+      });
+      toast({ title: `Подтверждено: ${field.label}` });
+      state.reload();
+    } catch (e) {
+      fail(e, "Не удалось подтвердить");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const clear = async (field: FormField) => {
+    if (field.extracted_field_id == null) return;
+    setBusy(field.label);
+    try {
+      await api.delete(`/extracted-fields/${field.extracted_field_id}`);
+      toast({ title: `Очищено: ${field.label}` });
+      state.reload();
+    } catch (e) {
+      fail(e, "Не удалось очистить поле");
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -96,21 +175,63 @@ export function DraftFormView({ appId }: { appId: number }) {
     >
       {(data) => (
         <div className="space-y-3">
-          {/* Шапка как в бланке */}
+          {/* Шапка бланка со сводкой готовности */}
           <div className="rounded-lg border-2 border-foreground/70 bg-background">
             <div className="border-b-2 border-foreground/70 px-4 py-3 text-center">
               <p className="text-sm font-bold uppercase tracking-wide">
                 {data.title}
               </p>
             </div>
-            <div className="px-4 py-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-              <span>
-                Заполнено полей: {data.filled_count} из {data.total_count}
-              </span>
-              <span className="flex items-center gap-1">
-                <Info className="w-3 h-3" />
+
+            <div className="px-4 py-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  className={cn(
+                    "text-[11px]",
+                    data.can_generate
+                      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                      : "bg-red-500/15 text-red-700 dark:text-red-400",
+                  )}
+                >
+                  {data.can_generate
+                    ? "Обязательные поля заполнены"
+                    : `Не хватает обязательных: ${data.blocking.length}`}
+                </Badge>
+                <span className="text-[11px] text-muted-foreground">
+                  обязательных {data.required_done} из {data.required_count} ·
+                  всего заполнено {data.filled_count} из {data.total_count}
+                </span>
+              </div>
+
+              {/* Полоса готовности по обязательным полям. */}
+              <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full transition-all",
+                    data.can_generate ? "bg-emerald-500" : "bg-amber-500",
+                  )}
+                  style={{
+                    width: `${
+                      data.required_count
+                        ? (data.required_done / data.required_count) * 100
+                        : 100
+                    }%`,
+                  }}
+                />
+              </div>
+
+              {data.blocking.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  <AlertCircle className="w-3 h-3 inline mr-1 text-red-600" />
+                  Без этих полей заявление подавать нельзя:{" "}
+                  {data.blocking.join(", ")}
+                </p>
+              )}
+
+              <p className="text-[10px] text-muted-foreground flex items-start gap-1">
+                <Info className="w-3 h-3 mt-0.5 shrink-0" />
                 {data.notice}
-              </span>
+              </p>
             </div>
           </div>
 
@@ -133,8 +254,10 @@ export function DraftFormView({ appId }: { appId: number }) {
                   <FormRow
                     key={`${section.id}-${index}`}
                     field={field}
-                    isSaving={saving === field.source}
+                    isBusy={busy === field.label}
                     onSave={(value) => void save(field, value)}
+                    onConfirm={(i) => void confirm(field, i)}
+                    onClear={() => void clear(field)}
                   />
                 ))}
               </div>
@@ -148,23 +271,40 @@ export function DraftFormView({ appId }: { appId: number }) {
 
 function FormRow({
   field,
-  isSaving,
+  isBusy,
   onSave,
+  onConfirm,
+  onClear,
 }: {
   field: FormField;
-  isSaving: boolean;
+  isBusy: boolean;
   onSave: (value: string) => void;
+  onConfirm: (candidateIndex?: number) => void;
+  onClear: () => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(field.value ?? "");
+  const [revealed, setRevealed] = useState(false);
 
   const canEdit = field.editable && field.fill !== "classes";
+  const confirmed = field.status === "confirmed";
+  const canConfirm =
+    field.extracted_field_id != null && !confirmed && field.is_filled;
+
+  // Персональные данные по умолчанию скрыты.
+  const shown =
+    field.is_sensitive && !revealed && field.value
+      ? `${field.value[0]}${"*".repeat(Math.max(field.value.length - 2, 1))}${
+          field.value.length > 1 ? field.value[field.value.length - 1] : ""
+        }`
+      : field.value;
 
   return (
     <div
       className={cn(
         "flex items-start gap-3 px-3 py-2",
-        field.is_filled && "bg-emerald-500/5",
+        confirmed && "bg-emerald-500/5",
+        field.needs_attention && "bg-red-500/5",
       )}
       data-testid={`form-field-${field.source ?? field.label}`}
     >
@@ -182,13 +322,37 @@ function FormRow({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium">{field.label}</span>
+
+          {field.required && (
+            <Badge
+              className={cn(
+                "text-[10px]",
+                confirmed
+                  ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+                  : "bg-red-500/15 text-red-700 dark:text-red-400",
+              )}
+            >
+              обязательное
+            </Badge>
+          )}
+
+          {confirmed && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-700 dark:text-emerald-400">
+              <Check className="w-3 h-3" />
+              подтверждено
+            </span>
+          )}
+
+          {!confirmed && field.status && field.status !== "missing" && (
+            <span className="text-[10px] text-amber-700 dark:text-amber-500">
+              {STATUS_LABELS[field.status] ?? field.status}
+            </span>
+          )}
+
           {field.fill !== "auto" && (
             <span className="text-[10px] text-muted-foreground">
               {FILL_LABELS[field.fill] ?? field.fill}
             </span>
-          )}
-          {field.is_filled && (
-            <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
           )}
         </div>
 
@@ -213,7 +377,7 @@ function FormRow({
             <Button
               size="sm"
               className="h-8 text-[11px] shrink-0"
-              disabled={isSaving || !draft.trim()}
+              disabled={isBusy || !draft.trim()}
               onClick={() => {
                 onSave(draft.trim());
                 setIsEditing(false);
@@ -240,29 +404,118 @@ function FormRow({
                 "text-xs flex-1 min-h-[1.2rem] rounded border border-dashed px-2 py-1",
                 field.is_filled
                   ? "border-transparent"
-                  : "border-border text-muted-foreground",
+                  : field.required
+                    ? "border-red-500/40 text-red-700 dark:text-red-400"
+                    : "border-border text-muted-foreground",
               )}
             >
-              {field.value ?? "не заполнено"}
+              {shown ?? (field.required ? "не заполнено — требуется" : "не заполнено")}
             </p>
+
+            {field.is_sensitive && field.value && (
+              <button
+                type="button"
+                className="p-1 text-muted-foreground hover:text-foreground shrink-0"
+                onClick={() => setRevealed((v) => !v)}
+                title={revealed ? "Скрыть" : "Показать"}
+              >
+                {revealed ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+
+            {canConfirm && (
+              <Button
+                size="sm"
+                className="h-7 text-[11px] shrink-0 bg-emerald-600 hover:bg-emerald-700 text-white"
+                disabled={isBusy}
+                onClick={() => onConfirm()}
+                data-testid={`confirm-${field.source}`}
+              >
+                <Check className="w-3 h-3 mr-1" />
+                Принять
+              </Button>
+            )}
+
             {canEdit && (
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-7 text-[11px] shrink-0"
+                disabled={isBusy}
                 onClick={() => setIsEditing(true)}
-                data-testid={`edit-${field.source ?? field.label}`}
+                data-testid={`edit-${field.source}`}
               >
                 <Pencil className="w-3 h-3 mr-1" />
                 {field.is_filled ? "Изменить" : "Заполнить"}
               </Button>
             )}
+
+            {field.extracted_field_id != null && field.origin === "введено вручную" && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 w-7 p-0 shrink-0 text-muted-foreground hover:text-destructive"
+                disabled={isBusy}
+                onClick={onClear}
+                title="Очистить поле"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
           </div>
         )}
 
-        {field.hint && (
-          <p className="text-[10px] text-muted-foreground">{field.hint}</p>
+        {/* Несколько несовпадающих значений — выбирает специалист. */}
+        {field.candidates.length > 1 && !confirmed && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 space-y-1">
+            <p className="text-[10px] font-medium">
+              В документе найдено несколько значений — выберите верное:
+            </p>
+            {field.candidates.map((candidate, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <span className="text-[11px] font-mono flex-1">
+                  {candidate.normalized_value ?? candidate.raw_value}
+                  {candidate.page_number ? ` · стр. ${candidate.page_number}` : ""}
+                  {candidate.validation_passed === false
+                    ? " · не прошло проверку"
+                    : ""}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[10px]"
+                  disabled={isBusy}
+                  onClick={() => onConfirm(index)}
+                >
+                  Выбрать
+                </Button>
+              </div>
+            ))}
+          </div>
         )}
+
+        {field.validation_error && (
+          <p className="text-[10px] text-amber-700 dark:text-amber-500 flex items-start gap-1">
+            <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+            {field.validation_error}
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {field.origin && (
+            <span className="text-[10px] text-muted-foreground">
+              источник: {field.origin}
+              {field.page_number ? `, стр. ${field.page_number}` : ""}
+            </span>
+          )}
+          {field.hint && (
+            <span className="text-[10px] text-muted-foreground">{field.hint}</span>
+          )}
+        </div>
       </div>
     </div>
   );

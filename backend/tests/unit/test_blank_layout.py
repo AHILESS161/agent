@@ -118,3 +118,57 @@ class TestFillModes:
         mark = next(s for s in form["sections"] if s["id"] == "mark")
         kind = next(f for f in mark["fields"] if f["inid"] == "550")
         assert kind["hint"]
+
+
+class TestFieldsDependOnApplicantType:
+    """У юрлица, предпринимателя и физлица разные поля.
+
+    Сверка полей больше не отдельная вкладка, поэтому набор полей
+    в бланке должен покрывать все сведения по каждому типу — иначе
+    их негде будет заполнить.
+    """
+
+    def _form(self, client_type: str):
+        from app.document_processing.mappers import build_reconciliation
+
+        rows, _ = build_reconciliation([], client_type=client_type)
+        return build_form(DraftContent(), rows, client_type=client_type)
+
+    def _labels(self, client_type: str) -> set[str]:
+        form = self._form(client_type)
+        return {
+            field["label"]
+            for section in form["sections"]
+            for field in section["fields"]
+        }
+
+    def test_company_has_ogrn_and_kpp(self):
+        labels = self._labels("company")
+        assert "ОГРН" in labels
+        assert "КПП" in labels
+
+    def test_sole_proprietor_has_ogrnip(self):
+        assert "ОГРНИП" in self._labels("sole_proprietor")
+
+    def test_individual_has_passport(self):
+        """Паспортные поля в бланк не переносятся, но заполнять их надо."""
+        labels = self._labels("individual")
+        assert any("Паспорт" in label for label in labels)
+
+    def test_individual_has_no_company_fields(self):
+        labels = self._labels("individual")
+        assert "ОГРН" not in labels
+        assert "КПП" not in labels
+
+    def test_sole_proprietor_has_no_director(self):
+        assert not any(
+            "руководител" in label.lower()
+            for label in self._labels("sole_proprietor")
+        )
+
+    def test_required_fields_are_counted(self):
+        """Специалист должен видеть, сколько обязательных не закрыто."""
+        form = self._form("company")
+        assert form["required_count"] > 0
+        assert form["can_generate"] is False
+        assert form["blocking"]

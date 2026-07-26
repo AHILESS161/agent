@@ -15,7 +15,6 @@ import { useToast } from "@/hooks/use-toast";
 import { api, ApiError } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
-import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
   DocumentPackagesTab,
   StatusHistoryTab,
@@ -394,9 +393,8 @@ export default function ApplicationDetailPage() {
           {[
             { value: "general", label: "Общие сведения", icon: Info },
             { value: "source-documents", label: "Исходные документы", icon: Upload },
-            { value: "fields", label: "Сверка полей", icon: ClipboardList },
             { value: "legal", label: "Правовой анализ", icon: Shield },
-            { value: "draft", label: "Черновик заявления", icon: FileSignature },
+            { value: "draft", label: "Заявление", icon: FileSignature },
             { value: "documents", label: "Документы", icon: FileText },
             { value: "history", label: "История", icon: History },
           ].map(tab => (
@@ -418,9 +416,6 @@ export default function ApplicationDetailPage() {
           </TabsContent>
           <TabsContent value="source-documents">
             <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
-          </TabsContent>
-          <TabsContent value="fields">
-            <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
           </TabsContent>
           <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
           <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>

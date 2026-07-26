@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
 from app.core.security import get_current_user
@@ -27,6 +28,7 @@ from app.services.application_draft import (
     serialize_draft,
 )
 from app.services.blank_layout import build_form
+from app.services.reconciliation import load_reconciliation
 
 logger = get_logger(__name__)
 
@@ -47,15 +49,17 @@ def _require(user: User, roles: set[UserRole], action: str) -> None:
 
 
 async def _load_application(
-    session: AsyncSession, application_id: int
+    session: AsyncSession, application_id: int, with_client: bool = False
 ) -> TrademarkApplicationDraft:
-    application = (
-        await session.execute(
-            select(TrademarkApplicationDraft).where(
-                TrademarkApplicationDraft.id == application_id
-            )
-        )
-    ).scalar_one_or_none()
+    query = select(TrademarkApplicationDraft).where(
+        TrademarkApplicationDraft.id == application_id
+    )
+    if with_client:
+        # Тип заявителя определяет набор полей бланка; в async-сессии
+        # связь нужно загрузить явно.
+        query = query.options(selectinload(TrademarkApplicationDraft.client))
+
+    application = (await session.execute(query)).scalar_one_or_none()
     if application is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -131,9 +135,23 @@ async def draft_form(
     видит документ таким, каким он уйдёт в ведомство, и может
     заполнить недостающее прямо здесь.
     """
-    application = await _load_application(session, application_id)
+    application = await _load_application(session, application_id, with_client=True)
     content = await collect_draft_content(session, application)
-    return {"application_id": application_id, **build_form(content)}
+    rows, field_ids = await load_reconciliation(session, application_id)
+
+    client_type = (
+        application.client.type.value if application.client else None
+    )
+    form = build_form(content, rows, client_type=client_type)
+    # Идентификаторы нужны, чтобы принимать и править значения прямо
+    # в бланке — отдельная вкладка сверки для этого больше не нужна.
+    for section in form["sections"]:
+        for field in section["fields"]:
+            path = field.get("field_path")
+            if path:
+                field["extracted_field_id"] = field_ids.get(path)
+
+    return {"application_id": application_id, **form}
 
 
 @router.get(

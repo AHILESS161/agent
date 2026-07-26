@@ -27,6 +27,7 @@ from app.infrastructure.database.session import get_session
 from app.services.class_analysis import run_class_analysis
 from app.services.conflict_search import run_conflict_search
 from app.services.full_analysis import run_full_analysis
+from app.services.nice_catalog import search as nice_catalog_search
 from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
     serialize_assessment,
@@ -75,6 +76,25 @@ def _loaded(query):
     return query.options(
         selectinload(RiskAssessment.findings).selectinload(RiskFinding.citations)
     )
+
+
+@router.get(
+    "/nice-classes/catalog",
+    summary="Справочник классов МКТУ с поиском",
+)
+async def nice_class_catalog(
+    q: str = "",
+    limit: int = 20,
+    _current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Найти класс МКТУ по названию, составу или номеру.
+
+    Нужен, чтобы выбирать класс по смыслу («одежда», «кофе»), а не
+    вводить номер по памяти. Выборка справочная и детерминированная —
+    языковая модель здесь не участвует.
+    """
+    found = nice_catalog_search(q, limit=max(1, min(limit, 45)))
+    return {"query": q, "items": [item.as_dict() for item in found]}
 
 
 @router.post(

@@ -14,7 +14,7 @@
  * видно, что уже отработано.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -463,8 +463,6 @@ function ClassList({
   const { toast } = useToast();
   const [busy, setBusy] = useState<number | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [newClass, setNewClass] = useState("");
-  const [newDescription, setNewDescription] = useState("");
 
   const fail = (e: unknown, title: string) =>
     toast({
@@ -500,24 +498,13 @@ function ClassList({
     }
   };
 
-  const add = async () => {
-    const number = Number(newClass);
-    if (!Number.isInteger(number) || number < 1 || number > 45) {
-      toast({
-        title: "Неверный номер класса",
-        description: "МКТУ содержит классы с 1 по 45.",
-        variant: "destructive",
-      });
-      return;
-    }
+  const add = async (number: number, description: string) => {
     setBusy(-1);
     try {
       await api.post(`/applications/${appId}/classes`, {
         class_number: number,
-        class_description: newDescription.trim() || null,
+        class_description: description || null,
       });
-      setNewClass("");
-      setNewDescription("");
       setIsAdding(false);
       state.reload();
     } catch (e) {
@@ -615,39 +602,12 @@ function ClassList({
       })}
 
       {isAdding ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed border-border px-2.5 py-2">
-          <Input
-            value={newClass}
-            onChange={(e) => setNewClass(e.target.value)}
-            placeholder="№"
-            className="h-7 w-16 text-xs"
-            data-testid="input-new-class"
-          />
-          <Input
-            value={newDescription}
-            onChange={(e) => setNewDescription(e.target.value)}
-            placeholder="Товары и услуги этого класса"
-            className="h-7 text-xs flex-1 min-w-[180px]"
-            data-testid="input-new-class-description"
-          />
-          <Button
-            size="sm"
-            className="h-7 text-[11px]"
-            disabled={busy === -1}
-            onClick={() => void add()}
-            data-testid="save-new-class"
-          >
-            Добавить
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 text-[11px]"
-            onClick={() => setIsAdding(false)}
-          >
-            Отмена
-          </Button>
-        </div>
+        <ClassPicker
+          taken={items.map((i) => i.class_number)}
+          isBusy={busy === -1}
+          onCancel={() => setIsAdding(false)}
+          onPick={(number, description) => void add(number, description)}
+        />
       ) : (
         <Button
           size="sm"
@@ -660,6 +620,132 @@ function ClassList({
           Добавить класс
         </Button>
       )}
+    </div>
+  );
+}
+
+interface CatalogItem {
+  class_number: number;
+  title: string;
+  description: string;
+  kind: string;
+}
+
+/**
+ * Поиск класса МКТУ по смыслу.
+ *
+ * Держать в голове номера всех 45 классов невозможно, поэтому класс
+ * ищется словами — «одежда», «кофе», «разработка ПО». Номер тоже
+ * работает: специалист, который его помнит, не должен искать вслепую.
+ * Уже добавленные классы показываются, но выбрать их нельзя.
+ */
+function ClassPicker({
+  taken,
+  isBusy,
+  onPick,
+  onCancel,
+}: {
+  taken: number[];
+  isBusy: boolean;
+  onPick: (number: number, description: string) => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [items, setItems] = useState<CatalogItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Запрос идёт с задержкой: справочник маленький, но дёргать API
+  // на каждую букву незачем.
+  useEffect(() => {
+    let cancelled = false;
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      api
+        .get<{ items: CatalogItem[] }>(
+          `/nice-classes/catalog?q=${encodeURIComponent(query)}&limit=8`,
+        )
+        .then((data) => {
+          if (!cancelled) setItems(data.items);
+        })
+        .catch(() => {
+          if (!cancelled) setItems([]);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearching(false);
+        });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
+
+  return (
+    <div className="rounded-md border border-dashed border-border p-2 space-y-2">
+      <div className="flex items-center gap-2">
+        <Search className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+        <Input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Найти класс: одежда, кофе, разработка ПО, 25…"
+          className="h-7 text-xs"
+          data-testid="class-search"
+        />
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-[11px] shrink-0"
+          onClick={onCancel}
+        >
+          Отмена
+        </Button>
+      </div>
+
+      <div className="max-h-64 overflow-y-auto space-y-1">
+        {isSearching && items.length === 0 && (
+          <p className="text-[11px] text-muted-foreground px-1">Поиск…</p>
+        )}
+        {!isSearching && items.length === 0 && (
+          <p className="text-[11px] text-muted-foreground px-1">
+            Ничего не найдено. Попробуйте другое слово или номер класса.
+          </p>
+        )}
+        {items.map((item) => {
+          const already = taken.includes(item.class_number);
+          return (
+            <button
+              key={item.class_number}
+              type="button"
+              disabled={already || isBusy}
+              onClick={() => onPick(item.class_number, item.description)}
+              className={cn(
+                "w-full text-left rounded-md border px-2.5 py-1.5 transition-colors",
+                already
+                  ? "border-border opacity-50 cursor-not-allowed"
+                  : "border-border hover:border-primary hover:bg-primary/5",
+              )}
+              data-testid={`pick-class-${item.class_number}`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="text-[10px]">Класс {item.class_number}</Badge>
+                <span className="text-xs font-medium">{item.title}</span>
+                <span className="text-[10px] text-muted-foreground">
+                  {item.kind}
+                </span>
+                {already && (
+                  <span className="text-[10px] text-muted-foreground ml-auto">
+                    уже добавлен
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                {item.description}
+              </p>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

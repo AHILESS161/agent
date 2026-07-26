@@ -377,6 +377,134 @@ def _build_rag_analysis_response(full_text: str) -> str | None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Смысловая проверка обозначений
+# ---------------------------------------------------------------------------
+# Офлайн-замена языковой модели для пункта 42 Правил № 482. Работает
+# по короткому словарю: это стенд для разработки и тестов, а не подмена
+# семантического анализа. Настоящая модель понимает произвольные слова,
+# здесь же покрыты только перечисленные пары.
+
+_MOCK_MEANINGS: dict[str, tuple[str, str]] = {
+    # обозначение -> (понятие, значение)
+    "яблоко": ("apple", "плод яблони"),
+    "apple": ("apple", "the fruit of the apple tree"),
+    "звезда": ("star", "небесное тело"),
+    "star": ("star", "a celestial body"),
+    "медведь": ("bear", "крупный хищный зверь"),
+    "bear": ("bear", "a large mammal"),
+    "солнце": ("sun", "центральная звезда системы"),
+    "sun": ("sun", "the star at the centre of the system"),
+    "sole": ("sun", "солнце (итал.)"),
+    "радуга": ("rainbow", "оптическое явление"),
+    "rainbow": ("rainbow", "an optical phenomenon"),
+    "груша": ("pear", "плод груши"),
+    "pear": ("pear", "the fruit of the pear tree"),
+}
+
+# Понятия одной предметной области: близкие, но не тождественные.
+_MOCK_RELATED: list[frozenset[str]] = [
+    frozenset({"apple", "pear"}),
+    frozenset({"sun", "star"}),
+]
+
+_MARK_RE = re.compile(r"Обозначение\s+([12]):\s*(.+)")
+_SINGLE_MARK_RE = re.compile(r"Обозначение:\s*(.+)")
+
+
+def _build_variants_response(full_text: str) -> str | None:
+    """Перевод обозначения для расширения поискового запроса."""
+    if "Определи значение и перевод" not in full_text:
+        return None
+
+    match = _SINGLE_MARK_RE.search(full_text)
+    if not match:
+        return None
+
+    mark = match.group(1).strip()
+    entry = _MOCK_MEANINGS.get(mark.lower())
+    if entry is None:
+        return json.dumps(
+            {"has_meaning": False, "meaning": "", "translations": []},
+            ensure_ascii=False,
+        )
+
+    concept, meaning = entry
+    # Переводом считается любое другое написание того же понятия.
+    translations = [
+        word.upper()
+        for word, (other_concept, _) in _MOCK_MEANINGS.items()
+        if other_concept == concept and word != mark.lower()
+    ]
+    return json.dumps(
+        {
+            "has_meaning": True,
+            "meaning": meaning,
+            "translations": translations[:3],
+        },
+        ensure_ascii=False,
+    )
+
+
+def _build_semantic_response(full_text: str) -> str | None:
+    """Заключение о смысловой связи двух обозначений."""
+    if "Определи смысловую связь" not in full_text:
+        return None
+
+    marks = {number: value.strip() for number, value in _MARK_RE.findall(full_text)}
+    left, right = marks.get("1", ""), marks.get("2", "")
+    if not left or not right:
+        return None
+
+    left_key, right_key = left.strip().lower(), right.strip().lower()
+    left_entry = _MOCK_MEANINGS.get(left_key)
+    right_entry = _MOCK_MEANINGS.get(right_key)
+
+    def answer(relation: str, rationale: str) -> str:
+        return json.dumps(
+            {
+                "relation": relation,
+                "left_meaning": left_entry[1] if left_entry else "",
+                "right_meaning": right_entry[1] if right_entry else "",
+                "rationale": rationale,
+            },
+            ensure_ascii=False,
+        )
+
+    if left_entry and right_entry:
+        left_concept, right_concept = left_entry[0], right_entry[0]
+        if left_concept == right_concept:
+            return answer(
+                "translation",
+                f"Оба обозначения означают одно понятие: {left_concept}.",
+            )
+        if frozenset({left_concept, right_concept}) in _MOCK_RELATED:
+            return answer(
+                "related_concept",
+                f"Понятия «{left_concept}» и «{right_concept}» относятся "
+                "к одной области, но не тождественны.",
+            )
+        return answer(
+            "unrelated",
+            f"Понятия «{left_concept}» и «{right_concept}» не совпадают.",
+        )
+
+    # Транслитерация распознаётся без словаря: та же лексема,
+    # записанная другим алфавитом.
+    from app.document_processing.similarity import _to_phonetic
+
+    if _to_phonetic(left) and _to_phonetic(left) == _to_phonetic(right):
+        return answer(
+            "transliteration",
+            "Обозначения совпадают при записи разными алфавитами.",
+        )
+
+    return answer(
+        "unrelated",
+        "Словарное значение хотя бы одного обозначения не установлено.",
+    )
+
+
 def _detect_topic(messages: list[LLMMessage]) -> str:
     """Detect which topic the messages relate to based on keyword matching."""
     full_text = " ".join(m.content.lower() for m in messages)
@@ -421,11 +549,16 @@ class MockLLMProvider(BaseLLMProvider):
         t0 = time.time()
         full_text = " ".join(m.content for m in messages)
 
-        # RAG-запросы распознаются по разделу ИСТОЧНИКИ. Схема ответа
-        # у подбора классов и оценки оснований разная, поэтому сначала
-        # проверяется более узкий случай — подбор классов.
-        content = None
-        if "ДЕЯТЕЛЬНОСТЬ ЗАЯВИТЕЛЯ" in full_text or "классы МКТУ" in full_text:
+        # Смысловая проверка распознаётся первой: у неё собственная схема
+        # ответа и нет раздела ИСТОЧНИКИ, по которому опознаются RAG-запросы.
+        # Схема ответа у подбора классов и оценки оснований разная, поэтому
+        # дальше проверяется более узкий случай — подбор классов.
+        content = _build_variants_response(full_text)
+        if content is None:
+            content = _build_semantic_response(full_text)
+        if content is None and (
+            "ДЕЯТЕЛЬНОСТЬ ЗАЯВИТЕЛЯ" in full_text or "классы МКТУ" in full_text
+        ):
             content = _build_rag_class_response(full_text)
         if content is None:
             content = _build_rag_analysis_response(full_text)

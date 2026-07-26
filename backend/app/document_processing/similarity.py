@@ -6,8 +6,14 @@
 
 Расчёт детерминированный. Это сознательный выбор: сходство обозначений
 считается по формализованным признакам, а не «на усмотрение модели»,
-поэтому результат воспроизводим и его можно проверить. LLM здесь
-не нужен.
+поэтому результат воспроизводим и его можно проверить.
+
+Единственное исключение — смысловое сходство обозначений на разных
+языках: «совпадение значения обозначений в разных языках» из пункта 42
+формализовать нечем, и его оценивает языковая модель (см.
+``agents.legal.semantic_similarity``). Её ответ подаётся сюда через
+``with_semantic`` и может только повысить смысловую оценку: при отказе
+модели остаётся расчёт по правилам.
 
 Итоговая оценка следует правилу Пленума: смешение возможно и при низком
 сходстве обозначений, если товары идентичны, и наоборот.
@@ -54,6 +60,16 @@ class SimilarityLevel(str, Enum):
 def _normalize(text: str) -> str:
     text = (text or "").lower().replace("ё", "е")
     return re.sub(r"[^\w\s]", " ", text).strip()
+
+
+def transliterate(text: str) -> str:
+    """Записать кириллическое обозначение латиницей.
+
+    Без фонетических упрощений: результат используется как поисковый
+    запрос к реестру, где важно точное написание, а не звучание.
+    """
+    lowered = (text or "").lower().replace("ё", "е")
+    return "".join(_TRANSLIT.get(char, char) for char in lowered)
 
 
 def _to_phonetic(text: str) -> str:
@@ -202,12 +218,17 @@ class SimilarityAssessment:
     level: SimilarityLevel
     confusion_likely: bool
     reasons: list[str] = field(default_factory=list)
+    # Чем получена смысловая оценка: правилами или языковой моделью.
+    # Специалист должен видеть разницу — у этих источников разная цена
+    # ошибки и разная проверяемость.
+    semantic_source: str = "rules"
 
     def as_dict(self) -> dict:
         return {
             "phonetic": round(self.phonetic, 3),
             "visual": round(self.visual, 3),
             "semantic": round(self.semantic, 3),
+            "semantic_source": self.semantic_source,
             "goods": round(self.goods, 3),
             "mark_similarity": round(self.mark_similarity, 3),
             "overall": round(self.overall, 3),
@@ -237,7 +258,38 @@ def assess(
     goods = goods_similarity(
         applicant_classes, conflicting_classes, applicant_goods, conflicting_goods
     )
+    return _combine(phonetic, visual, semantic, goods, semantic_source="rules")
 
+
+def with_semantic(
+    assessment: SimilarityAssessment, semantic_score: float
+) -> SimilarityAssessment:
+    """Пересчитать оценку с учётом смыслового сходства от языковой модели.
+
+    Оценка модели может только повысить смысловое сходство: если она
+    ниже рассчитанной правилами, возвращается исходное заключение.
+    Так отказ, ошибка или осторожный ответ модели никогда не ослабляют
+    вывод, полученный детерминированно.
+    """
+    if semantic_score <= assessment.semantic:
+        return assessment
+    return _combine(
+        assessment.phonetic,
+        assessment.visual,
+        semantic_score,
+        assessment.goods,
+        semantic_source="llm",
+    )
+
+
+def _combine(
+    phonetic: float,
+    visual: float,
+    semantic: float,
+    goods: float,
+    semantic_source: str,
+) -> SimilarityAssessment:
+    """Свести признаки в итоговую оценку по правилу пункта 162."""
     # Сходство обозначения определяется наиболее выраженным признаком:
     # достаточно совпадения по одному критерию из трёх.
     mark_similarity = max(phonetic, visual, semantic)
@@ -248,7 +300,8 @@ def assess(
     if visual >= 0.75:
         reasons.append(f"высокое графическое сходство ({visual:.2f})")
     if semantic >= 0.7:
-        reasons.append(f"смысловое сходство ({semantic:.2f})")
+        source = " по оценке языковой модели" if semantic_source == "llm" else ""
+        reasons.append(f"смысловое сходство ({semantic:.2f}){source}")
     if goods >= 0.6:
         reasons.append(f"однородные товары и услуги ({goods:.2f})")
 
@@ -275,4 +328,5 @@ def assess(
         level=_level(overall),
         confusion_likely=confusion_likely,
         reasons=reasons,
+        semantic_source=semantic_source,
     )

@@ -7,6 +7,12 @@
 а не языковой моделью: критерии формализованы в пункте 42 Правил № 482,
 и расчёт по ним воспроизводим и проверяем.
 
+Исключение — смысловое сходство обозначений на разных языках. Пункт 42
+прямо относит к нему «совпадение значения обозначений в разных языках»,
+а правилами это не считается: «ЯБЛОКО» и «APPLE» не совпадают ни звуком,
+ни начертанием. Здесь вызывается языковая модель — но только для пар,
+где её ответ способен изменить вывод, и только на повышение оценки.
+
 Режим поиска обязательно фиксируется в оценке: сейчас доступен только
 ограниченный демонстрационный набор данных, и выдавать его за полный
 поиск по реестру недопустимо.
@@ -33,7 +39,14 @@ from app.infrastructure.database.models import (
     SearchMode,
     TrademarkApplicationDraft,
 )
-from app.document_processing.similarity import assess
+from app.agents.legal.query_variants import QueryVariantGenerator
+from app.agents.legal.semantic_similarity import (
+    SemanticSimilarityAnalyzer,
+    SemanticVerdict,
+    describe,
+    needs_semantic_check,
+)
+from app.document_processing.similarity import assess, with_semantic
 from app.infrastructure.providers.base import SearchQuery
 from app.infrastructure.rag.store import knowledge_base_version
 from app.services.class_analysis import load_class_context
@@ -45,6 +58,12 @@ MAX_RESULTS = 50
 
 # Порог, ниже которого совпадение не сохраняется как конфликт.
 MIN_SIMILARITY = 0.3
+
+# Потолок на число обращений к модели за один поиск. Смысловая проверка
+# идёт по парам, и без ограничения большая выдача обошлась бы дорого;
+# пары берутся в порядке убывания однородности товаров — там смысловое
+# совпадение опаснее всего.
+MAX_SEMANTIC_CHECKS = 12
 
 
 def _search_mode() -> SearchMode:
@@ -63,13 +82,64 @@ def _risk_level(similarity: float, confusion_likely: bool) -> RiskLevel:
     return RiskLevel.low
 
 
+async def _apply_semantic_layer(
+    scored: list[tuple[Any, Any]],
+    mark_text: str,
+    llm_provider: Any,
+    goods_known: bool,
+) -> tuple[list[tuple[Any, Any]], dict[str, SemanticVerdict]]:
+    """Уточнить смысловое сходство языковой моделью там, где это решает.
+
+    Возвращает пересчитанные оценки и заключения модели по тем парам,
+    где связь действительно найдена. Без провайдера модели ничего
+    не меняется: детерминированный расчёт остаётся как есть.
+    """
+    verdicts: dict[str, SemanticVerdict] = {}
+    if llm_provider is None:
+        return scored, verdicts
+
+    candidates = [
+        index
+        for index, (record, similarity) in enumerate(scored)
+        if needs_semantic_check(
+            similarity, mark_text, record.mark_text or "", goods_known=goods_known
+        )
+    ]
+    # Однородность товаров важнее: там смысловое совпадение опаснее.
+    candidates.sort(key=lambda index: scored[index][1].goods, reverse=True)
+    if len(candidates) > MAX_SEMANTIC_CHECKS:
+        logger.info(
+            "Смысловая проверка ограничена лимитом",
+            candidates=len(candidates),
+            limit=MAX_SEMANTIC_CHECKS,
+        )
+        candidates = candidates[:MAX_SEMANTIC_CHECKS]
+
+    analyzer = SemanticSimilarityAnalyzer(llm_provider)
+    updated = list(scored)
+    for index in candidates:
+        record, similarity = updated[index]
+        verdict = await analyzer.analyze(mark_text, record.mark_text or "")
+        if not verdict.is_meaningful:
+            continue
+        updated[index] = (record, with_semantic(similarity, verdict.score))
+        verdicts[record.record_id] = verdict
+
+    return updated, verdicts
+
+
 async def run_conflict_search(
     session: AsyncSession,
     application: TrademarkApplicationDraft,
     registry_provider: Any,
     user_id: int | None = None,
+    llm_provider: Any = None,
 ) -> RiskAssessment:
-    """Выполнить поиск конфликтов и сохранить оценку рисков."""
+    """Выполнить поиск конфликтов и сохранить оценку рисков.
+
+    ``llm_provider`` нужен только для смысловой проверки обозначений
+    на разных языках. Без него поиск работает полностью на правилах.
+    """
     mark_text = (application.mark_text or application.mark_name or "").strip()
     class_context = await load_class_context(session, application.id)
     classes = class_context.as_numbers()
@@ -80,7 +150,8 @@ async def run_conflict_search(
         application_id=application.id,
         analysis_kind=AnalysisKind.relative_grounds,
         knowledge_base_version=kb_version,
-        # Сходство считается правилами, а не моделью.
+        # Ставится в True, только если смысловая проверка действительно
+        # вызывала модель и та нашла связь.
         llm_used=False,
         model_name=None,
         search_mode=mode,
@@ -116,19 +187,37 @@ async def run_conflict_search(
     await session.flush()
 
     # --- поиск ---
+    # Реестр ищет по написанию, поэтому знак-перевод не найдётся
+    # по исходному обозначению. Запрос расширяется транслитерацией
+    # (по правилам) и переводом (языковой моделью).
+    variants = await QueryVariantGenerator(llm_provider).build(mark_text)
+    job.search_strategy_json = {
+        **(job.search_strategy_json or {}),
+        "query_variants": [
+            {"text": variant.text, "kind": variant.kind} for variant in variants
+        ],
+    }
+
     records: dict[str, Any] = {}
+    found_by: dict[str, str] = {}
     try:
-        for search_type in ("exact", "fuzzy", "phonetic"):
-            query = SearchQuery(
-                mark_text=mark_text,
-                mark_type=application.mark_type.value if application.mark_type else None,
-                classes=classes or None,
-                search_type=search_type,
-                max_results=MAX_RESULTS,
-            )
-            for record in await registry_provider.search_marks(query):
-                # Один знак может найтись несколькими видами поиска.
-                records.setdefault(record.record_id, record)
+        for variant in variants:
+            for search_type in ("exact", "fuzzy", "phonetic"):
+                query = SearchQuery(
+                    mark_text=variant.text,
+                    mark_type=(
+                        application.mark_type.value if application.mark_type else None
+                    ),
+                    classes=classes or None,
+                    search_type=search_type,
+                    max_results=MAX_RESULTS,
+                )
+                for record in await registry_provider.search_marks(query):
+                    # Один знак может найтись несколькими видами поиска
+                    # и по нескольким вариантам запроса.
+                    if record.record_id not in records:
+                        records[record.record_id] = record
+                        found_by[record.record_id] = variant.kind
     except Exception as exc:  # noqa: BLE001
         job.status = SearchJobStatus.failed
         job.error_message = str(exc)
@@ -142,16 +231,41 @@ async def run_conflict_search(
         return assessment
 
     # --- оценка сходства ---
-    conflicts: list[tuple[Any, Any]] = []
-    for record in records.values():
-        similarity = assess(
-            applicant_mark=mark_text,
-            conflicting_mark=record.mark_text,
-            applicant_classes=classes,
-            conflicting_classes=record.classes,
-            applicant_goods=application.goods_services_raw or "",
-            conflicting_goods=" ".join(str(c) for c in record.classes),
+    scored: list[tuple[Any, Any]] = [
+        (
+            record,
+            assess(
+                applicant_mark=mark_text,
+                conflicting_mark=record.mark_text,
+                applicant_classes=classes,
+                conflicting_classes=record.classes,
+                applicant_goods=application.goods_services_raw or "",
+                conflicting_goods=" ".join(str(c) for c in record.classes),
+            ),
         )
+        for record in records.values()
+    ]
+
+    # Смысловая проверка выполняется ДО отсечения по порогу: пара
+    # «ЯБЛОКО» / «APPLE» не проходит порог по звуку и начертанию,
+    # и без этого шага была бы отброшена до того, как её увидела модель.
+    scored, semantic_verdicts = await _apply_semantic_layer(
+        scored, mark_text, llm_provider, goods_known=bool(classes)
+    )
+    translated = [variant for variant in variants if variant.kind == "translation"]
+    if semantic_verdicts or translated:
+        assessment.llm_used = True
+        assessment.model_name = next(
+            (
+                verdict.model_name
+                for verdict in semantic_verdicts.values()
+                if verdict.model_name
+            ),
+            getattr(llm_provider, "MODEL_NAME", None),
+        )
+
+    conflicts: list[tuple[Any, Any]] = []
+    for record, similarity in scored:
         if similarity.overall < MIN_SIMILARITY:
             continue
 
@@ -199,6 +313,25 @@ async def run_conflict_search(
             "Классы МКТУ не подтверждены специалистом. Оценка однородности "
             "может измениться после уточнения перечня."
         )
+    if semantic_verdicts:
+        limitations.append(
+            "Смысловое сходство части обозначений определено языковой "
+            "моделью, а не расчётом по правилам. Значения слов и вывод "
+            "о совпадении понятий требуют проверки специалистом."
+        )
+    if translated:
+        limitations.append(
+            "Поиск дополнительно выполнен по переводу обозначения ("
+            + ", ".join(f"«{variant.text}»" for variant in translated)
+            + "). Перевод предложен языковой моделью; если он неточен, "
+            "часть переводных знаков могла остаться ненайденной."
+        )
+    elif llm_provider is None:
+        limitations.append(
+            "Смысловое сходство обозначений на разных языках "
+            "(пункт 42 Правил № 482) не проверялось и поиск по переводу "
+            "не выполнялся: языковая модель недоступна."
+        )
 
     missing: list[str] = []
     if not classes:
@@ -212,7 +345,12 @@ async def run_conflict_search(
     assessment.verification_json = {
         "records_examined": len(records),
         "conflicts_found": len(conflicts),
-        "method": "deterministic_similarity",
+        "method": (
+            "deterministic_similarity + llm_semantic"
+            if semantic_verdicts
+            else "deterministic_similarity"
+        ),
+        "semantic_checks": len(semantic_verdicts),
         "criteria": "п.42 Правил № 482; п.162 Пленума ВС РФ № 10",
     }
 
@@ -248,6 +386,10 @@ async def run_conflict_search(
         if similarity.reasons:
             explanation += " Основания: " + "; ".join(similarity.reasons) + "."
 
+        verdict = semantic_verdicts.get(record.record_id)
+        if verdict is not None:
+            explanation += " " + describe(verdict, mark_text, record.mark_text or "")
+
         session.add(
             RiskFinding(
                 assessment_id=assessment.id,
@@ -274,7 +416,13 @@ async def run_conflict_search(
                 verification_json={
                     "source": "registry_record",
                     "record_id": record.record_id,
+                    "found_by": found_by.get(record.record_id, "original"),
                     "similarity": similarity.as_dict(),
+                    **(
+                        {"semantic_verdict": verdict.as_dict()}
+                        if verdict is not None
+                        else {}
+                    ),
                 },
             )
         )
@@ -286,6 +434,7 @@ async def run_conflict_search(
         assessment_id=assessment.id,
         examined=len(records),
         conflicts=len(conflicts),
+        semantic_checks=len(semantic_verdicts),
         mode=mode.value,
     )
     return assessment

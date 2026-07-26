@@ -647,6 +647,20 @@ _DATASET: list[dict[str, Any]] = [
         "registration_date": "2004-11-08",
         "image_url": None,
     },
+    # ── Демонстрация перевода ────────────────────────────────────────────────
+    # Знак-перевод: показывает, что поиск по одному лишь написанию
+    # «ЯБЛОКО» его не найдёт, а расширение запроса переводом — найдёт.
+    {
+        "record_id": "RU0015001",
+        "mark_text": "APPLE",
+        "mark_type": "словесное",
+        "owner": "Apple Inc.",
+        "classes": [25, 9],
+        "status": "registered",
+        "filing_date": "2005-05-05",
+        "registration_date": "2006-07-07",
+        "image_url": None,
+    },
 ]
 
 # Build quick lookup
@@ -785,6 +799,28 @@ def _score_record(record: dict, query: SearchQuery) -> float:
     return 0.0
 
 
+# Вид знака в наборе данных записан по-русски, а система оперирует
+# значениями перечисления MarkType. Без приведения к общему словарю
+# фильтр отбрасывал вообще все записи, и поиск конфликтов молча
+# возвращал пустой результат.
+_MARK_TYPE_ALIASES: dict[str, str] = {
+    "словесное": "word",
+    "изобразительное": "figurative",
+    "комбинированное": "combined",
+    "объёмное": "3d",
+    "объемное": "3d",
+    "звуковое": "sound",
+    "цветовое": "color",
+}
+
+
+def _canonical_mark_type(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    return _MARK_TYPE_ALIASES.get(normalized, normalized)
+
+
 def _filter_by_classes(record: dict, classes: list[int] | None) -> bool:
     if not classes:
         return True
@@ -866,7 +902,9 @@ class MockFipsProvider:
                 continue
             if not _filter_by_classes(record, query.classes):
                 continue
-            if query.mark_type and record["mark_type"] != query.mark_type:
+            if query.mark_type and _canonical_mark_type(
+                record["mark_type"]
+            ) != _canonical_mark_type(query.mark_type):
                 continue
 
             score = _score_record(record, query)

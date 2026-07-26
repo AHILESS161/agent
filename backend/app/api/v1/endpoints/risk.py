@@ -186,6 +186,10 @@ async def run_conflicts(
     пункта 42 Правил № 482, вероятность смешения — по пункту 162
     постановления Пленума ВС РФ № 10. Режим поиска (реальный или
     демонстрационный) фиксируется в оценке.
+
+    Языковая модель привлекается только к смысловому сходству
+    обозначений на разных языках — критерию, который правилами
+    не считается.
     """
     _require_write_access(current_user)
     application = await _load_application(session, application_id)
@@ -195,6 +199,7 @@ async def run_conflicts(
         application,
         registry_provider=_get_registry_provider(),
         user_id=current_user.id,
+        llm_provider=_get_llm_provider(),
     )
 
     session.add(

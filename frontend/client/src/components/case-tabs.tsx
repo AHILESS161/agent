@@ -443,6 +443,8 @@ export function ConflictsTab({ appId }: { appId: number }) {
             </Card>
           )}
 
+          <ConflictFindings appId={appId} />
+
           {!data.results || data.results.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Совпадений не найдено.
@@ -483,6 +485,78 @@ export function ConflictsTab({ appId }: { appId: number }) {
       </AsyncSection>
     </div>
   );
+}
+
+/**
+ * Выводы по относительным основаниям.
+ *
+ * Список найденных записей реестра сам по себе ничего не объясняет:
+ * специалисту нужно знать, по какому критерию пункта 42 обозначения
+ * признаны сходными и чем это обосновано. Отдельно помечается вывод,
+ * в котором смысловое сходство определила языковая модель, — у него
+ * другая природа и другая цена ошибки.
+ */
+function ConflictFindings({ appId }: { appId: number }) {
+  const state = useApi<{
+    sections: Record<
+      string,
+      { findings: ConflictFindingDto[]; provenance?: { llm_used?: boolean } } | null
+    >;
+  }>(`/applications/${appId}/risk-report`);
+
+  const section = state.data?.sections?.relative_grounds;
+  const findings = section?.findings ?? [];
+  if (findings.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      {findings.map((finding) => {
+        const verdict = finding.verification?.semantic_verdict;
+        return (
+          <Card key={finding.id}>
+            <CardContent className="p-3 space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className={cn("text-[10px]", RISK_STYLES[finding.level])}>
+                  {RISK_LABELS[finding.level] ?? finding.level}
+                </Badge>
+                {finding.legal_basis && (
+                  <span className="text-[11px] font-mono">
+                    {finding.legal_basis}
+                  </span>
+                )}
+                {verdict?.llm_used && (
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-amber-500/50"
+                  >
+                    смысл определён моделью
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs leading-relaxed">{finding.explanation}</p>
+              {finding.recommended_action && (
+                <p className="text-[11px] text-muted-foreground">
+                  Рекомендация: {finding.recommended_action}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
+      <AiDisclaimer compact />
+    </div>
+  );
+}
+
+interface ConflictFindingDto {
+  id: number;
+  level: string;
+  legal_basis: string | null;
+  explanation: string;
+  recommended_action: string | null;
+  verification?: {
+    semantic_verdict?: { llm_used?: boolean; relation_label?: string };
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -312,8 +312,14 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
 
                   <div>
                     <p className="text-muted-foreground text-[11px]">Поле заявления</p>
-                    <p className="font-mono break-all text-[11px]">
-                      {item.application_field ?? "не переносится в бланк"}
+                    {/* Показывается имя поля бланка с кодом INID:
+                        технический путь специалисту ничего не говорит.
+                        Сам путь остаётся во всплывающей подсказке. */}
+                    <p className="text-[11px]" title={item.application_field ?? undefined}>
+                      {item.application_field_label ??
+                        (item.application_field
+                          ? "поле бланка"
+                          : "не переносится в бланк")}
                     </p>
                   </div>
                 </div>
@@ -412,7 +418,7 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
 
                 {/* Своё поле можно убрать целиком: извлечённое —
                     только отклонить, чтобы решение осталось в истории. */}
-                {item.is_custom && fieldId != null && (
+                {fieldId != null && item.extraction_method === "manual" && (
                   <div className="pt-1">
                     <Button
                       size="sm"

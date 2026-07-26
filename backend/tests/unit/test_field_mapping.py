@@ -281,3 +281,22 @@ class TestPrivacy:
     def test_company_identifiers_are_not_sensitive(self, rows):
         for suffix in ("inn", "ogrn", "kpp"):
             assert rows[f"case.applicant.{suffix}"].is_sensitive is False
+
+
+class TestApplicationFieldLabels:
+    """Технический путь поля специалисту ничего не говорит."""
+
+    def test_mapped_rows_carry_human_label(self, rows):
+        row = rows["case.applicant.full_name"]
+        assert row.application_field == "application.applicant.name"
+        assert row.application_field_label
+        assert "731" in row.application_field_label
+
+    def test_every_application_field_has_a_label(self, rows):
+        for row in rows.values():
+            if row.application_field:
+                assert row.application_field_label, row.application_field
+
+    def test_rows_without_application_field_need_no_label(self, rows):
+        row = rows["case.applicant.short_name"]
+        assert row.application_field is None

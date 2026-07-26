@@ -48,6 +48,10 @@ class MappingRow:
     application_field: str | None
     status: FieldStatus
 
+    # Человекочитаемое имя поля бланка: технический путь
+    # специалисту ничего не говорит.
+    application_field_label: str | None = None
+
     registry_value: str | None = None
     registry_raw_value: str | None = None
     case_value: str | None = None
@@ -146,6 +150,7 @@ class FieldMappingEngine:
             registry_field=registry_field,
             case_field=case_field,
             application_field=spec.get("application_field"),
+            application_field_label=spec.get("application_field_label"),
             status=FieldStatus.missing,
             case_value=case_value,
             default_value=spec.get("default_value"),

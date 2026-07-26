@@ -28,6 +28,7 @@ mappings:
     applies_to: [company]
     case_field: case.applicant.full_name
     application_field: application.applicant.name
+    application_field_label: (731) Заявитель — наименование / ФИО
     label: Полное наименование заявителя
     required_for_application: true
     # Наименование юрлица в заявлении должно совпадать со сведениями ЕГРЮЛ.
@@ -47,6 +48,7 @@ mappings:
     applies_to: [company]
     case_field: case.applicant.inn
     application_field: application.applicant.inn
+    application_field_label: Идентификаторы заявителя — ИНН
     label: ИНН
     required_for_application: true
     critical: true
@@ -55,6 +57,7 @@ mappings:
     applies_to: [company]
     case_field: case.applicant.ogrn
     application_field: application.applicant.ogrn
+    application_field_label: Идентификаторы заявителя — ОГРН / ОГРНИП
     label: ОГРН
     required_for_application: true
     critical: true
@@ -63,6 +66,7 @@ mappings:
     applies_to: [company]
     case_field: case.applicant.kpp
     application_field: application.applicant.kpp
+    application_field_label: Идентификаторы заявителя — КПП
     label: КПП
     required_for_application: false
     critical: false
@@ -72,6 +76,7 @@ mappings:
     applies_to: [company]
     case_field: case.applicant.legal_address
     application_field: application.applicant.address
+    application_field_label: (731) Заявитель — адрес
     label: Адрес места нахождения
     required_for_application: true
     critical: true
@@ -86,6 +91,7 @@ mappings:
     applies_to: [sole_proprietor]
     case_field: case.applicant.full_name
     application_field: application.applicant.name
+    application_field_label: (731) Заявитель — наименование / ФИО
     label: ФИО индивидуального предпринимателя
     required_for_application: true
     critical: true
@@ -95,6 +101,7 @@ mappings:
     applies_to: [sole_proprietor]
     case_field: case.applicant.inn
     application_field: application.applicant.inn
+    application_field_label: Идентификаторы заявителя — ИНН
     label: ИНН
     required_for_application: true
     critical: true
@@ -103,6 +110,7 @@ mappings:
     applies_to: [sole_proprietor]
     case_field: case.applicant.ogrn
     application_field: application.applicant.ogrn
+    application_field_label: Идентификаторы заявителя — ОГРН / ОГРНИП
     label: ОГРНИП
     required_for_application: true
     critical: true
@@ -113,6 +121,7 @@ mappings:
     applies_to: [sole_proprietor]
     case_field: case.applicant.legal_address
     application_field: application.applicant.address
+    application_field_label: (731) Заявитель — адрес
     label: Адрес заявителя
     required_for_application: true
     critical: true
@@ -161,6 +170,7 @@ mappings:
   - registry_field: null
     case_field: case.applicant.country_code
     application_field: application.applicant.country_code
+    application_field_label: (731) Код страны заявителя
     label: Код страны (ВОИС ST.3)
     required_for_application: false
     critical: false

@@ -182,6 +182,8 @@ export interface ReconciliationItemDto {
   registry_field: string | null;
   case_field: string;
   application_field: string | null;
+  /** Человекочитаемое имя поля бланка с кодом INID. */
+  application_field_label?: string | null;
   status: string;
   registry_value: string | null;
   registry_raw_value: string | null;

@@ -12,6 +12,7 @@ from app.api.v1.endpoints.clients import router as clients_router
 from app.api.v1.endpoints.documents import router as documents_router
 from app.api.v1.endpoints.extraction import router as extraction_router
 from app.api.v1.endpoints.health import router as health_router
+from app.api.v1.endpoints.inbound import router as inbound_router
 from app.api.v1.endpoints.intake import router as intake_router
 from app.api.v1.endpoints.mvp import router as mvp_router
 from app.api.v1.endpoints.notifications import router as notifications_router
@@ -22,6 +23,7 @@ api_router = APIRouter(prefix="/api/v1")
 
 api_router.include_router(health_router)
 api_router.include_router(intake_router)
+api_router.include_router(inbound_router)
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(clients_router)

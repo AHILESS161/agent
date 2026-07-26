@@ -18,7 +18,7 @@ import {
 import {
   LayoutDashboard, FileText, Users, Bell, ClipboardList,
   Settings, ChevronLeft, ChevronRight, Moon, Sun, LogOut,
-  Shield, PanelLeftClose, PanelLeft, User,
+  Shield, PanelLeftClose, PanelLeft, User, Inbox,
 } from "lucide-react";
 
 // SVG Logo
@@ -55,6 +55,7 @@ interface NavItem {
 function getNavItems(unreadCount: number): NavItem[] {
   return [
     { label: "Дашборд", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "lawyer", "manager", "client"] },
+  { label: "Приём обращения", href: "/intake", icon: Inbox, roles: ["admin", "lawyer", "manager"] },
     { label: "Заявки", href: "/applications", icon: FileText, roles: ["admin", "lawyer", "manager", "client"] },
     { label: "Клиенты", href: "/clients", icon: Users, roles: ["admin", "lawyer", "manager"] },
     { label: "Уведомления", href: "/notifications", icon: Bell, roles: ["admin", "lawyer", "manager", "client"], badge: unreadCount },

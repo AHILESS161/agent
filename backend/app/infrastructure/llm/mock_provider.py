@@ -223,6 +223,83 @@ _CANNED_STRUCTURED: dict[str, Any] = {
 }
 
 
+def _build_rag_class_response(full_text: str) -> str | None:
+    """Ответ для подбора классов МКТУ.
+
+    Отличается от анализа оснований схемой. Номер класса берётся
+    из заголовка найденного фрагмента справочника, а цитата — из его
+    текста: заготовка не прошла бы проверку, потому что её нет в базе.
+    """
+    blocks = re.findall(
+        r"\[source_id:\s*(kb-\d+)\]\s*\[([^\]]*)\]\s*\n(.+?)(?=\n\n---\n\n|\Z)",
+        full_text,
+        re.DOTALL,
+    )
+    if not blocks:
+        return None
+
+    suggestions = []
+    for source_id, header, content in blocks:
+        match = re.search(r"Класс\s+(\d{1,2})\b", header) or re.search(
+            r"Класс\s+(\d{1,2})\b", content
+        )
+        if not match:
+            continue
+        number = int(match.group(1))
+        if not 1 <= number <= 45:
+            continue
+
+        body = "\n".join(content.strip().splitlines()[1:]) or content
+        sentences = [s.strip() for s in re.split(r"(?<=[.;])\s+", body.strip()) if s.strip()]
+        quote = next(
+            (s for s in sentences if len(s.split()) >= 6),
+            " ".join(body.split())[:200],
+        )
+        suggestions.append(
+            {
+                "class_number": number,
+                "rationale": (
+                    "Класс соответствует описанию деятельности заявителя "
+                    "по справочнику МКТУ. Подбор демонстрационный."
+                ),
+                "category": "primary" if len(suggestions) < 2 else "secondary",
+                "goods_services": [],
+                "confidence": 0.6,
+                "citations": [
+                    {
+                        "source_id": source_id,
+                        "quote": " ".join(quote.split())[:280],
+                        "anchor": header.split("—")[-1].strip(),
+                    }
+                ],
+            }
+        )
+        if len(suggestions) >= 3:
+            break
+
+    if not suggestions:
+        return None
+
+    return json.dumps(
+        {
+            "suggestions": suggestions,
+            "summary": (
+                "Демонстрационный подбор классов по справочнику МКТУ. "
+                "Требуется подтверждение специалистом."
+            ),
+            "unclassified": [],
+            "limitations": [
+                "Ответ сформирован демонстрационным провайдером "
+                "(LLM_PROVIDER=mock), а не реальной языковой моделью",
+                "Справочник МКТУ в базе знаний — краткая сводка классов, "
+                "а не полная номенклатура",
+            ],
+            "requires_specialist_review": True,
+        },
+        ensure_ascii=False,
+    )
+
+
 def _build_rag_analysis_response(full_text: str) -> str | None:
     """Ответ для RAG-анализа абсолютных оснований.
 
@@ -344,9 +421,14 @@ class MockLLMProvider(BaseLLMProvider):
         t0 = time.time()
         full_text = " ".join(m.content for m in messages)
 
-        # RAG-анализ распознаётся по разделу ИСТОЧНИКИ в промпте:
-        # для него нужен ответ в схеме AnalysisResult с настоящей цитатой.
-        content = _build_rag_analysis_response(full_text)
+        # RAG-запросы распознаются по разделу ИСТОЧНИКИ. Схема ответа
+        # у подбора классов и оценки оснований разная, поэтому сначала
+        # проверяется более узкий случай — подбор классов.
+        content = None
+        if "ДЕЯТЕЛЬНОСТЬ ЗАЯВИТЕЛЯ" in full_text or "классы МКТУ" in full_text:
+            content = _build_rag_class_response(full_text)
+        if content is None:
+            content = _build_rag_analysis_response(full_text)
         if content is None:
             topic = _detect_topic(messages)
             structured = _CANNED_STRUCTURED.get(topic, _CANNED_STRUCTURED["recommendation"])

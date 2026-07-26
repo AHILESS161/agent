@@ -1427,3 +1427,117 @@ class AnalysisCitation(Base):
     knowledge_chunk: Mapped[Optional["KnowledgeChunk"]] = relationship(
         "KnowledgeChunk", foreign_keys=[knowledge_chunk_id]
     )
+
+
+# ===========================================================================
+# Входящие обращения
+# ---------------------------------------------------------------------------
+# Единая точка приёма: сейчас юрист вносит обращение вручную, позже сюда
+# же встанут CRM, почта и webhook. Канал различается полем source,
+# остальной путь обработки общий.
+#
+# Повторная доставка одного события не должна создавать дубликат дела,
+# поэтому у события есть idempotency_key.
+# ===========================================================================
+
+class InboundStatus(str, enum.Enum):
+    received = "received"                  # принято, ещё не обработано
+    linked = "linked"                      # привязано к существующему делу
+    case_created = "case_created"          # создано дело-черновик
+    rejected = "rejected"                  # отклонено специалистом
+    duplicate = "duplicate"                # повтор уже принятого события
+
+
+class InboundEvent(Base):
+    """Обращение, поступившее в систему."""
+
+    __tablename__ = "inbound_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    source: Mapped[SourceChannel] = mapped_column(
+        Enum(SourceChannel, name="sourcechannel"),
+        nullable=False,
+        default=SourceChannel.manual_upload,
+    )
+    # Идентификатор в системе-источнике: письмо, сделка CRM, вызов webhook.
+    external_event_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    # Ключ идемпотентности: повтор того же события не создаёт дубликат.
+    idempotency_key: Mapped[str] = mapped_column(
+        String(128), nullable=False, unique=True, index=True
+    )
+
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    sender: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    subject: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+    body_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    links_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    metadata_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    # Исходный payload сохраняется целиком и связывается с аудитом.
+    raw_payload_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+
+    status: Mapped[InboundStatus] = mapped_column(
+        Enum(InboundStatus, name="inboundstatus"),
+        nullable=False,
+        default=InboundStatus.received,
+    )
+    target_case_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    processing_note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships
+    target_case: Mapped[Optional["TrademarkApplicationDraft"]] = relationship(
+        foreign_keys=[target_case_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )
+    attachments: Mapped[list["InboundAttachment"]] = relationship(
+        back_populates="event", cascade="all, delete-orphan"
+    )
+
+
+class InboundAttachment(Base):
+    """Связь обращения с загруженным документом."""
+
+    __tablename__ = "inbound_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("inbound_events.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    document_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("source_documents.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    original_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    event: Mapped["InboundEvent"] = relationship(back_populates="attachments")
+    document: Mapped[Optional["SourceDocument"]] = relationship(
+        "SourceDocument", foreign_keys=[document_id]
+    )

@@ -104,6 +104,8 @@ export interface AsyncState<T> {
   data: T | null;
   isLoading: boolean;
   error: string | null;
+  /** Данных нет: список пуст или ресурс не создан. */
+  isEmpty: boolean;
   reload: () => void;
 }
 
@@ -154,7 +156,7 @@ export function useCases(pageSize = 100): AsyncState<CasesData> {
     };
   }, [pageSize, tick]);
 
-  return { data, isLoading, error, reload };
+  return { data, isLoading, error, isEmpty: !isLoading && !error && !data, reload };
 }
 
 export interface CaseData {
@@ -205,5 +207,5 @@ export function useCase(applicationId: number): AsyncState<CaseData> {
     };
   }, [applicationId, tick]);
 
-  return { data, isLoading, error, reload };
+  return { data, isLoading, error, isEmpty: !isLoading && !error && !data, reload };
 }

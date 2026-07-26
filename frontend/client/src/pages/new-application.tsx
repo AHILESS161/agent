@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { mockClients } from "@/lib/mock-data";
+import { useCases } from "@/lib/use-cases";
+import { api, ApiError } from "@/lib/api";
 import { MARK_TYPE_LABELS, type MarkType, type ClientType, CLIENT_TYPE_LABELS } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -87,17 +88,57 @@ export default function NewApplicationPage() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
+  // Список клиентов из API: раньше страница читала демонстрационные данные.
+  const cases = useCases();
+  const clientList = Object.values(cases.data?.clientsById ?? {});
+
   const update = (partial: Partial<FormData>) => setForm(prev => ({ ...prev, ...partial }));
   const updateNewClient = (partial: Partial<FormData["newClient"]>) =>
     setForm(prev => ({ ...prev, newClient: { ...prev.newClient, ...partial } }));
 
-  const filteredClients = mockClients.filter(c =>
+  const filteredClients = clientList.filter(c =>
     !clientSearch || c.fullNameOrCompanyName.toLowerCase().includes(clientSearch.toLowerCase()) ||
     c.inn.includes(clientSearch)
   );
 
-  const handleSubmit = () => {
-    toast({ title: "Заявка создана", description: "Заявка успешно создана и сохранена как черновик" });
+  const handleSubmit = async () => {
+    if (!form.clientId) {
+      toast({
+        title: "Не выбран клиент",
+        description: "Выберите клиента или создайте нового.",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      const created = await api.post<{ id: number }>("/applications", {
+        client_id: form.clientId,
+        mark_name: form.markName || null,
+        mark_text: form.markText || null,
+        mark_type: form.markType || null,
+        description_of_mark: form.descriptionOfMark || null,
+        business_description: form.businessDescription || null,
+        goods_services_raw: form.goodsServicesRaw || null,
+        transliteration: form.transliteration || null,
+        translation: form.translation || null,
+        colors_claimed: form.colorsClaimed || null,
+        territory: form.territory || null,
+        notes: form.notes || null,
+      });
+      toast({
+        title: "Дело создано",
+        description: `Дело №${created.id} сохранено как черновик.`,
+      });
+      setLocation(`/applications/${created.id}`);
+      return;
+    } catch (e) {
+      toast({
+        title: "Не удалось создать дело",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+      return;
+    }
     setLocation("/applications");
   };
 
@@ -376,7 +417,7 @@ export default function NewApplicationPage() {
             <div className="space-y-3">
               <ReviewRow label="Клиент" value={
                 form.useExisting
-                  ? mockClients.find(c => c.id === form.clientId)?.fullNameOrCompanyName || "—"
+                  ? clientList.find((c) => c.id === form.clientId)?.fullNameOrCompanyName || "—"
                   : form.newClient.fullName || "—"
               } />
               <ReviewRow label="Обозначение" value={form.markName} />

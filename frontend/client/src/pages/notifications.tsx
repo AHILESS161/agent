@@ -1,103 +1,155 @@
-import { useState } from "react";
 import { Link } from "wouter";
-import { useAuth } from "@/lib/auth";
-import { getNotifications } from "@/lib/mock-data";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Bell, Check, ExternalLink } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { AsyncSection } from "@/components/async-states";
+import { api, ApiError } from "@/lib/api";
+import { useApi, type NotificationsDto } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
+import { Bell, Check, ExternalLink } from "lucide-react";
+
+const TYPE_STYLES: Record<string, string> = {
+  info: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  warning: "bg-amber-500/15 text-amber-700 dark:text-amber-500",
+  action_required: "bg-red-500/15 text-red-700 dark:text-red-400",
+  status_change: "bg-slate-500/15 text-slate-700 dark:text-slate-300",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  info: "Информация",
+  warning: "Предупреждение",
+  action_required: "Требуется действие",
+  status_change: "Изменение статуса",
+};
 
 export default function NotificationsPage() {
-  const { user } = useAuth();
-  const [readIds, setReadIds] = useState<Set<number>>(new Set());
-  const notifs = user ? getNotifications(user.id) : [];
+  const { toast } = useToast();
+  const state = useApi<NotificationsDto>("/notifications?page=1&page_size=100");
 
-  const isRead = (n: typeof notifs[0]) => n.isRead || readIds.has(n.id);
-  const unreadCount = notifs.filter(n => !isRead(n)).length;
-
-  const markAllRead = () => {
-    setReadIds(new Set(notifs.map(n => n.id)));
+  const markAllRead = async () => {
+    try {
+      await api.post("/notifications/mark-read", {});
+      state.reload();
+    } catch (e) {
+      toast({
+        title: "Не удалось отметить прочитанными",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    }
   };
 
-  const markRead = (id: number) => {
-    setReadIds(prev => new Set([...prev, id]));
+  const markRead = async (id: number) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      state.reload();
+    } catch (e) {
+      toast({
+        title: "Не удалось отметить прочитанным",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    }
   };
-
-  // Group by date
-  const grouped = notifs.reduce((acc, n) => {
-    const d = new Date(n.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
-    if (!acc[d]) acc[d] = [];
-    acc[d].push(n);
-    return acc;
-  }, {} as Record<string, typeof notifs>);
 
   return (
     <div className="space-y-4 max-w-2xl" data-testid="notifications-page">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-xl font-bold">Уведомления</h1>
-          {unreadCount > 0 && (
-            <Badge variant="destructive" className="text-[10px]">{unreadCount} новых</Badge>
+          {(state.data?.unread_count ?? 0) > 0 && (
+            <Badge variant="destructive" className="text-[10px]">
+              {state.data?.unread_count} новых
+            </Badge>
           )}
         </div>
-        {unreadCount > 0 && (
-          <Button variant="outline" size="sm" onClick={markAllRead} data-testid="mark-all-read">
-            <Check className="w-3.5 h-3.5 mr-1.5" /> Прочитать все
+        {(state.data?.unread_count ?? 0) > 0 && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void markAllRead()}
+            data-testid="mark-all-read"
+          >
+            <Check className="w-3.5 h-3.5 mr-1.5" />
+            Прочитать все
           </Button>
         )}
       </div>
 
-      {notifs.length === 0 ? (
-        <Card className="border border-card-border">
-          <CardContent className="p-8 text-center text-muted-foreground">
-            <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Нет уведомлений</p>
-          </CardContent>
-        </Card>
-      ) : (
-        Object.entries(grouped).map(([date, items]) => (
-          <div key={date}>
-            <p className="text-xs font-semibold text-muted-foreground mb-2">{date}</p>
+      <AsyncSection
+        state={state}
+        loadingLabel="Загрузка уведомлений…"
+        emptyTitle="Уведомлений нет"
+      >
+        {(data) =>
+          data.items.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="flex flex-col items-center justify-center py-10 text-center">
+                <Bell className="w-8 h-8 text-muted-foreground mb-3" />
+                <p className="text-sm font-medium">Уведомлений пока нет</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Здесь появятся события по вашим делам.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
             <div className="space-y-2">
-              {items.map(n => {
-                const read = isRead(n);
-                return (
-                  <Card
-                    key={n.id}
-                    className={cn(
-                      "border border-card-border cursor-pointer transition-colors hover:bg-accent/50",
-                      !read && "bg-primary/5 border-primary/20"
-                    )}
-                    onClick={() => markRead(n.id)}
-                    data-testid={`notification-${n.id}`}
-                  >
-                    <CardContent className="p-3">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            {!read && <span className="w-2 h-2 bg-primary rounded-full shrink-0" />}
-                            <p className="text-sm font-medium">{n.title}</p>
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-0.5">{n.message}</p>
-                          <p className="text-[10px] text-muted-foreground/60 mt-1">
-                            {new Date(n.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}
-                          </p>
+              {data.items.map((item) => (
+                <Card
+                  key={item.id}
+                  className={cn(!item.is_read && "border-primary/40")}
+                  data-testid={`notification-${item.id}`}
+                >
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-medium">{item.title}</span>
+                          <Badge
+                            className={cn("text-[10px]", TYPE_STYLES[item.type])}
+                          >
+                            {TYPE_LABELS[item.type] ?? item.type}
+                          </Badge>
+                          {!item.is_read && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                          )}
                         </div>
-                        <Link href={`/applications/${n.applicationId}`}>
-                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" data-testid={`goto-app-${n.applicationId}`}>
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </Button>
-                        </Link>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {item.message}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {new Date(item.created_at).toLocaleString("ru-RU")}
+                        </p>
                       </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {item.application_id && (
+                          <Link href={`/applications/${item.application_id}`}>
+                            <Button variant="ghost" size="icon" className="h-7 w-7">
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </Button>
+                          </Link>
+                        )}
+                        {!item.is_read && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => void markRead(item.id)}
+                            data-testid={`mark-read-${item.id}`}
+                          >
+                            <Check className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          </div>
-        ))
-      )}
+          )
+        }
+      </AsyncSection>
     </div>
   );
 }

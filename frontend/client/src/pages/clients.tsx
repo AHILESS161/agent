@@ -1,43 +1,58 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
-import { mockClients, getApplicationsByClientId } from "@/lib/mock-data";
-import { CLIENT_TYPE_LABELS, STATUS_LABELS, STATUS_COLORS, MARK_TYPE_LABELS } from "@shared/schema";
+import { useCases } from "@/lib/use-cases";
+import { AsyncSection } from "@/components/async-states";
+import {
+  CLIENT_TYPE_LABELS,
+  STATUS_LABELS,
+  STATUS_COLORS,
+  MARK_TYPE_LABELS,
+} from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Separator } from "@/components/ui/separator";
-import { Search, Eye, Users, Building2, User, FileText, Phone, Mail, MapPin } from "lucide-react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Search, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function ClientsListPage() {
   const [search, setSearch] = useState("");
+  const state = useCases();
 
-  const filtered = useMemo(() => {
-    return mockClients.filter(c => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return c.fullNameOrCompanyName.toLowerCase().includes(q) ||
-        c.inn.includes(q) || c.shortName.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q);
-    });
-  }, [search]);
+  const clients = useMemo(() => {
+    const all = Object.values(state.data?.clientsById ?? {});
+    if (!search) return all;
+    const query = search.toLowerCase();
+    return all.filter(
+      (client) =>
+        client.fullNameOrCompanyName.toLowerCase().includes(query) ||
+        client.shortName.toLowerCase().includes(query) ||
+        (client.inn ?? "").includes(query),
+    );
+  }, [state.data, search]);
+
+  const countFor = (clientId: number) =>
+    (state.data?.applications ?? []).filter((app) => app.clientId === clientId).length;
 
   return (
-    <div className="space-y-4" data-testid="clients-list-page">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Клиенты</h1>
-      </div>
+    <div className="space-y-4" data-testid="clients-page">
+      <h1 className="text-xl font-bold">Клиенты</h1>
 
       <Card className="border border-card-border">
         <CardContent className="p-4">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
-              placeholder="Поиск по названию, ИНН, email..."
+              placeholder="Поиск по наименованию или ИНН..."
               value={search}
-              onChange={e => setSearch(e.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
               data-testid="input-search-clients"
             />
@@ -45,52 +60,63 @@ export function ClientsListPage() {
         </CardContent>
       </Card>
 
-      <Card className="border border-card-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Наименование</TableHead>
-              <TableHead className="hidden md:table-cell">Тип</TableHead>
-              <TableHead className="hidden md:table-cell">ИНН</TableHead>
-              <TableHead className="hidden lg:table-cell">Контакт</TableHead>
-              <TableHead className="w-20">Заявок</TableHead>
-              <TableHead className="w-12"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filtered.map(c => {
-              const appCount = getApplicationsByClientId(c.id).length;
-              return (
-                <TableRow key={c.id} data-testid={`client-row-${c.id}`}>
-                  <TableCell>
-                    <Link href={`/clients/${c.id}`}>
-                      <span className="text-sm font-medium hover:text-primary cursor-pointer">
-                        {c.fullNameOrCompanyName}
-                      </span>
-                    </Link>
-                    <p className="text-xs text-muted-foreground">{c.email}</p>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <Badge variant="secondary" className="text-[10px]">{CLIENT_TYPE_LABELS[c.type]}</Badge>
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell font-mono text-sm text-muted-foreground">{c.inn}</TableCell>
-                  <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">{c.contactPerson}</TableCell>
-                  <TableCell className="text-center">
-                    <Badge variant="secondary" className="text-[10px]">{appCount}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/clients/${c.id}`}>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" data-testid={`view-client-${c.id}`}>
-                        <Eye className="w-3.5 h-3.5" />
-                      </Button>
-                    </Link>
-                  </TableCell>
+      <AsyncSection
+        state={state}
+        loadingLabel="Загрузка клиентов…"
+        emptyTitle="Клиентов нет"
+      >
+        {() => (
+          <Card className="border border-card-border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Наименование</TableHead>
+                  <TableHead className="hidden md:table-cell">Тип</TableHead>
+                  <TableHead className="hidden lg:table-cell">ИНН</TableHead>
+                  <TableHead className="hidden lg:table-cell">Контакт</TableHead>
+                  <TableHead className="w-20">Дел</TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {clients.map((client) => (
+                  <TableRow key={client.id} data-testid={`client-row-${client.id}`}>
+                    <TableCell>
+                      <Link href={`/clients/${client.id}`}>
+                        <span className="font-medium text-sm hover:text-primary cursor-pointer">
+                          {client.shortName}
+                        </span>
+                      </Link>
+                      <p className="text-[11px] text-muted-foreground">
+                        {client.fullNameOrCompanyName}
+                      </p>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                      {CLIENT_TYPE_LABELS[client.type]}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm font-mono text-muted-foreground">
+                      {client.inn || "—"}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                      {client.email || client.phone || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm">{countFor(client.id)}</TableCell>
+                  </TableRow>
+                ))}
+                {clients.length === 0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={5}
+                      className="text-center text-sm text-muted-foreground py-8"
+                    >
+                      Ничего не найдено
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        )}
+      </AsyncSection>
     </div>
   );
 }
@@ -98,108 +124,119 @@ export function ClientsListPage() {
 export function ClientDetailPage() {
   const [, params] = useRoute("/clients/:id");
   const clientId = params?.id ? parseInt(params.id) : 0;
-  const client = mockClients.find(c => c.id === clientId);
-  const apps = getApplicationsByClientId(clientId);
-
-  if (!client) {
-    return (
-      <div className="flex items-center justify-center min-h-[50vh]">
-        <p className="text-muted-foreground">Клиент не найден</p>
-      </div>
-    );
-  }
-
-  const typeIcon = client.type === "company" ? Building2 : User;
-  const TypeIcon = typeIcon;
+  const state = useCases();
 
   return (
-    <div className="space-y-6" data-testid="client-detail-page">
-      <div className="flex items-center gap-3">
-        <div className="p-2.5 rounded-lg bg-primary/10">
-          <TypeIcon className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="text-xl font-bold">{client.fullNameOrCompanyName}</h1>
-          <Badge variant="secondary" className="text-[10px] mt-0.5">{CLIENT_TYPE_LABELS[client.type]}</Badge>
-        </div>
-      </div>
+    <AsyncSection
+      state={state}
+      loadingLabel="Загрузка клиента…"
+      emptyTitle="Клиент не найден"
+    >
+      {(data) => {
+        const client = data.clientsById[clientId];
+        if (!client) {
+          return (
+            <div className="flex items-center justify-center min-h-[40vh]">
+              <p className="text-muted-foreground text-sm">Клиент не найден</p>
+            </div>
+          );
+        }
+        const applications = data.applications.filter(
+          (app) => app.clientId === clientId,
+        );
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="border border-card-border">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-semibold">Информация</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <InfoRow icon={User} label="Контактное лицо" value={client.contactPerson} />
-            <InfoRow icon={Mail} label="Email" value={client.email} />
-            <InfoRow icon={Phone} label="Телефон" value={client.phone} />
-            <InfoRow icon={MapPin} label="Адрес" value={client.address} />
-            <Separator />
-            <div className="grid grid-cols-2 gap-3">
+        return (
+          <div className="space-y-4" data-testid="client-detail-page">
+            <div className="flex items-center gap-3">
+              <Building2 className="w-5 h-5 text-primary" />
               <div>
-                <p className="text-xs text-muted-foreground">ИНН</p>
-                <p className="text-sm font-mono">{client.inn}</p>
+                <h1 className="text-xl font-bold">{client.shortName}</h1>
+                <p className="text-sm text-muted-foreground">
+                  {client.fullNameOrCompanyName}
+                </p>
               </div>
-              {client.ogrnOrOgrnip && (
-                <div>
-                  <p className="text-xs text-muted-foreground">ОГРН/ОГРНИП</p>
-                  <p className="text-sm font-mono">{client.ogrnOrOgrnip}</p>
-                </div>
-              )}
             </div>
-            <Separator />
-            <p className="text-xs text-muted-foreground">
-              Зарегистрирован: {new Date(client.createdAt).toLocaleDateString("ru-RU")}
-            </p>
-          </CardContent>
-        </Card>
 
-        <Card className="border border-card-border">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <FileText className="w-4 h-4 text-primary" /> Заявки ({apps.length})
-              </CardTitle>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <Card className="border border-card-border">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Реквизиты</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Row label="Тип" value={CLIENT_TYPE_LABELS[client.type]} />
+                  <Row label="ИНН" value={client.inn || "—"} mono />
+                  <Row label="ОГРН/ОГРНИП" value={client.ogrnOrOgrnip || "—"} mono />
+                  <Row label="Адрес" value={client.address || "—"} />
+                </CardContent>
+              </Card>
+
+              <Card className="border border-card-border">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-semibold">Контакты</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <Row label="Контактное лицо" value={client.contactPerson || "—"} />
+                  <Row label="Email" value={client.email || "—"} />
+                  <Row label="Телефон" value={client.phone || "—"} />
+                </CardContent>
+              </Card>
             </div>
-          </CardHeader>
-          <CardContent>
-            {apps.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Нет заявок</p>
-            ) : (
-              <div className="space-y-2">
-                {apps.map(app => (
-                  <Link key={app.id} href={`/applications/${app.id}`}>
-                    <div className="flex items-center justify-between p-3 rounded-lg border border-card-border hover:bg-accent/50 cursor-pointer transition-colors">
+
+            <Card className="border border-card-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">
+                  Дела клиента ({applications.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {applications.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    По этому клиенту дел пока нет.
+                  </p>
+                ) : (
+                  applications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="flex items-center justify-between gap-2 border-b border-border pb-2 last:border-0"
+                    >
                       <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono text-muted-foreground">#{app.id}</span>
-                          <span className="text-sm font-medium truncate">{app.markName}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">{MARK_TYPE_LABELS[app.markType]}</p>
+                        <Link href={`/applications/${app.id}`}>
+                          <span className="text-sm font-medium hover:text-primary cursor-pointer">
+                            {app.markName}
+                          </span>
+                        </Link>
+                        <p className="text-[11px] text-muted-foreground">
+                          #{app.id} · {MARK_TYPE_LABELS[app.markType]}
+                        </p>
                       </div>
-                      <Badge className={cn("text-[10px] shrink-0 ml-2", STATUS_COLORS[app.status])}>
+                      <Badge className={cn("text-[10px]", STATUS_COLORS[app.status])}>
                         {STATUS_LABELS[app.status]}
                       </Badge>
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        );
+      }}
+    </AsyncSection>
   );
 }
 
-function InfoRow({ icon: Icon, label, value }: { icon: typeof User; label: string; value: string }) {
+function Row({
+  label,
+  value,
+  mono,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
   return (
-    <div className="flex items-center gap-3">
-      <Icon className="w-4 h-4 text-muted-foreground shrink-0" />
-      <div>
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm">{value}</p>
-      </div>
+    <div className="flex justify-between gap-3">
+      <span className="text-muted-foreground text-xs">{label}</span>
+      <span className={cn("text-right text-xs", mono && "font-mono")}>{value}</span>
     </div>
   );
 }

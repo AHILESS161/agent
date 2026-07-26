@@ -1,222 +1,249 @@
-import { useState } from "react";
-import { mockUsers, mockApplications, mockClients, mockAuditLogs } from "@/lib/mock-data";
+import { useApi, type AdminStatsDto, type UserDto, type Paginated } from "@/lib/use-api";
+import { AsyncSection } from "@/components/async-states";
 import { ROLE_LABELS, type UserRole } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
-  Users, Settings, Activity, Database, Server,
-  UserPlus, Shield, FileText, CheckCircle, XCircle,
+  Users,
+  Activity,
+  Database,
+  FileText,
+  CheckCircle,
+  XCircle,
+  Server,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast";
 
 function SystemStats() {
-  const stats = [
-    { label: "Пользователей", value: mockUsers.length, icon: Users },
-    { label: "Заявок", value: mockApplications.length, icon: FileText },
-    { label: "Клиентов", value: mockClients.length, icon: Database },
-    { label: "Событий аудита", value: mockAuditLogs.length, icon: Activity },
-  ];
+  const state = useApi<AdminStatsDto>("/admin/stats");
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      {stats.map(s => (
-        <Card key={s.label} className="border border-card-border">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <s.icon className="w-4.5 h-4.5 text-primary" />
+    <AsyncSection
+      state={state}
+      loadingLabel="Загрузка статистики…"
+      emptyTitle="Статистика недоступна"
+    >
+      {(stats) => {
+        const cards = [
+          { label: "Пользователей", value: stats.users.total, icon: Users },
+          { label: "Дел", value: stats.applications.total, icon: FileText },
+          { label: "Клиентов", value: stats.clients.total, icon: Database },
+          {
+            label: "Правовых анализов",
+            value: stats.legal_reviews.total,
+            icon: Activity,
+          },
+        ];
+
+        return (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {cards.map((card) => (
+                <Card key={card.label} className="border border-card-border">
+                  <CardContent className="p-4 flex items-center gap-3">
+                    <div className="rounded-md bg-primary/10 p-2">
+                      <card.icon className="w-4 h-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-xl font-bold">{card.value}</p>
+                      <p className="text-xs text-muted-foreground">{card.label}</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-            <div>
-              <p className="text-xs text-muted-foreground">{s.label}</p>
-              <p className="text-xl font-bold">{s.value}</p>
-            </div>
+
+            <Card className="border border-card-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">
+                  Дела по состоянию
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-3 gap-3 text-sm">
+                <Stat label="Черновики" value={stats.applications.draft} />
+                <Stat label="В работе" value={stats.applications.in_progress} />
+                <Stat label="Поданы" value={stats.applications.submitted} />
+              </CardContent>
+            </Card>
+
+            <Card className="border border-card-border">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-semibold">
+                  Результаты обработки
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                <Stat label="Классы МКТУ" value={stats.class_suggestions.total} />
+                <Stat label="Конфликты" value={stats.conflict_results.total} />
+                <Stat label="Пакеты документов" value={stats.document_packages.total} />
+                <Stat label="Подачи" value={stats.submissions.total} />
+              </CardContent>
+            </Card>
+          </div>
+        );
+      }}
+    </AsyncSection>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-lg font-semibold">{value}</p>
+      <p className="text-xs text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
+function UsersTable() {
+  const state = useApi<Paginated<UserDto>>("/users?page=1&page_size=100");
+
+  return (
+    <AsyncSection
+      state={state}
+      loadingLabel="Загрузка пользователей…"
+      emptyTitle="Пользователей нет"
+    >
+      {(data) => (
+        <Card className="border border-card-border overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">
+              Пользователи ({data.total})
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Пользователь</TableHead>
+                  <TableHead className="hidden md:table-cell">Email</TableHead>
+                  <TableHead>Роль</TableHead>
+                  <TableHead className="w-24">Статус</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.items.map((user) => (
+                  <TableRow key={user.id} data-testid={`user-row-${user.id}`}>
+                    <TableCell className="text-sm font-medium">
+                      {user.full_name || user.email}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                      {user.email}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className="text-[10px]">
+                        {ROLE_LABELS[user.role as UserRole] ?? user.role}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {user.is_active ? (
+                        <span className="flex items-center gap-1 text-xs text-emerald-600">
+                          <CheckCircle className="w-3.5 h-3.5" /> активен
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <XCircle className="w-3.5 h-3.5" /> отключён
+                        </span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
-      ))}
-    </div>
+      )}
+    </AsyncSection>
   );
 }
 
-function UsersManagement() {
-  const { toast } = useToast();
+function PromptsTable() {
+  const state = useApi<{ prompts?: unknown[]; items?: unknown[] }>("/admin/prompts");
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{mockUsers.length} пользователей</p>
-        <Button size="sm" data-testid="button-add-user">
-          <UserPlus className="w-3.5 h-3.5 mr-1.5" /> Добавить
-        </Button>
-      </div>
-
-      <Card className="border border-card-border overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Пользователь</TableHead>
-              <TableHead>Email</TableHead>
-              <TableHead>Роль</TableHead>
-              <TableHead className="w-20">Статус</TableHead>
-              <TableHead className="w-32">Действие</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {mockUsers.map(u => (
-              <TableRow key={u.id} data-testid={`user-row-${u.id}`}>
-                <TableCell className="text-sm font-medium">{u.fullName}</TableCell>
-                <TableCell className="text-sm text-muted-foreground font-mono">{u.email}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary" className="text-[10px]">
-                    <Shield className="w-3 h-3 mr-1" /> {ROLE_LABELS[u.role]}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  {u.isActive ? (
-                    <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400 text-[10px]">
-                      <CheckCircle className="w-3 h-3 mr-1" /> Активен
-                    </Badge>
-                  ) : (
-                    <Badge variant="secondary" className="text-[10px]">
-                      <XCircle className="w-3 h-3 mr-1" /> Отключён
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Select defaultValue={u.role}>
-                    <SelectTrigger className="h-7 text-xs w-28" data-testid={`role-select-${u.id}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(Object.keys(ROLE_LABELS) as UserRole[]).map(r => (
-                        <SelectItem key={r} value={r}>{ROLE_LABELS[r]}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </Card>
-    </div>
-  );
-}
-
-function BackgroundJobs() {
-  const jobs = [
-    { name: "legal_precheck", label: "Правовой пречек", status: "idle", lastRun: "2026-03-29 12:00" },
-    { name: "conflict_search", label: "Поиск конфликтов", status: "running", lastRun: "2026-03-29 13:45" },
-    { name: "doc_generation", label: "Генерация документов", status: "idle", lastRun: "2026-03-29 11:30" },
-    { name: "class_suggestion", label: "Предложение классов", status: "idle", lastRun: "2026-03-29 10:00" },
-  ];
-
-  const statusLabels: Record<string, { label: string; color: string }> = {
-    idle: { label: "Ожидание", color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-    running: { label: "Выполняется", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400" },
-    error: { label: "Ошибка", color: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400" },
-  };
-
-  return (
-    <Card className="border border-card-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Задача</TableHead>
-            <TableHead>Статус</TableHead>
-            <TableHead>Последний запуск</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {jobs.map(j => (
-            <TableRow key={j.name} data-testid={`job-row-${j.name}`}>
-              <TableCell className="text-sm font-medium">{j.label}</TableCell>
-              <TableCell>
-                <Badge className={cn("text-[10px]", statusLabels[j.status].color)}>
-                  {statusLabels[j.status].label}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-xs text-muted-foreground font-mono">{j.lastRun}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
-  );
-}
-
-function PromptVersions() {
-  const prompts = [
-    { name: "legal_precheck_v2", version: "2.1.0", updated: "2026-03-15", status: "active" },
-    { name: "class_suggestion_v3", version: "3.0.1", updated: "2026-03-20", status: "active" },
-    { name: "conflict_analysis_v1", version: "1.2.0", updated: "2026-03-10", status: "active" },
-    { name: "doc_generation_v2", version: "2.0.0", updated: "2026-03-01", status: "draft" },
-    { name: "recommendation_v1", version: "1.0.0", updated: "2026-02-28", status: "active" },
-  ];
-
-  return (
-    <Card className="border border-card-border overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Промпт</TableHead>
-            <TableHead>Версия</TableHead>
-            <TableHead>Обновлён</TableHead>
-            <TableHead>Статус</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {prompts.map(p => (
-            <TableRow key={p.name}>
-              <TableCell className="text-sm font-mono">{p.name}</TableCell>
-              <TableCell className="text-sm font-mono text-muted-foreground">{p.version}</TableCell>
-              <TableCell className="text-xs text-muted-foreground">{p.updated}</TableCell>
-              <TableCell>
-                <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-[10px]">
-                  {p.status === "active" ? "Активен" : "Черновик"}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </Card>
+    <AsyncSection
+      state={state}
+      loadingLabel="Загрузка промптов…"
+      emptyTitle="Промпты недоступны"
+    >
+      {(data) => {
+        const items = (data.prompts ?? data.items ?? []) as Record<string, any>[];
+        return (
+          <Card className="border border-card-border">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">
+                Реестр промптов ({items.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {items.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Промптов нет.</p>
+              ) : (
+                items.map((item, index) => (
+                  <div
+                    key={String(item.prompt_id ?? item.id ?? index)}
+                    className="flex items-center justify-between gap-2 border-b border-border pb-1.5 last:border-0"
+                  >
+                    <span className="text-xs font-mono">
+                      {String(item.prompt_id ?? item.id ?? "—")}
+                    </span>
+                    {item.version && (
+                      <Badge variant="outline" className="text-[10px]">
+                        v{String(item.version)}
+                      </Badge>
+                    )}
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        );
+      }}
+    </AsyncSection>
   );
 }
 
 export default function AdminPage() {
   return (
-    <div className="space-y-6" data-testid="admin-page">
-      <h1 className="text-xl font-bold">Администрирование</h1>
+    <div className="space-y-4" data-testid="admin-page">
+      <div className="flex items-center gap-2">
+        <Server className="w-5 h-5 text-primary" />
+        <h1 className="text-xl font-bold">Администрирование</h1>
+      </div>
 
-      <SystemStats />
-
-      <Tabs defaultValue="users">
+      <Tabs defaultValue="stats" className="w-full">
         <TabsList>
-          <TabsTrigger value="users" className="text-xs" data-testid="admin-tab-users">
-            <Users className="w-3.5 h-3.5 mr-1.5" /> Пользователи
+          <TabsTrigger value="stats" data-testid="tab-admin-stats">
+            Статистика
           </TabsTrigger>
-          <TabsTrigger value="jobs" className="text-xs" data-testid="admin-tab-jobs">
-            <Server className="w-3.5 h-3.5 mr-1.5" /> Задачи
+          <TabsTrigger value="users" data-testid="tab-admin-users">
+            Пользователи
           </TabsTrigger>
-          <TabsTrigger value="prompts" className="text-xs" data-testid="admin-tab-prompts">
-            <Settings className="w-3.5 h-3.5 mr-1.5" /> Промпты
+          <TabsTrigger value="prompts" data-testid="tab-admin-prompts">
+            Промпты
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="users" className="mt-4">
-          <UsersManagement />
-        </TabsContent>
-        <TabsContent value="jobs" className="mt-4">
-          <BackgroundJobs />
-        </TabsContent>
-        <TabsContent value="prompts" className="mt-4">
-          <PromptVersions />
-        </TabsContent>
+
+        <div className="mt-4">
+          <TabsContent value="stats">
+            <SystemStats />
+          </TabsContent>
+          <TabsContent value="users">
+            <UsersTable />
+          </TabsContent>
+          <TabsContent value="prompts">
+            <PromptsTable />
+          </TabsContent>
+        </div>
       </Tabs>
     </div>
   );

@@ -201,6 +201,7 @@ function TopBar() {
 
 const breadcrumbMap: Record<string, string> = {
   "/dashboard": "Дашборд",
+  "/intake": "Приём обращения",
   "/applications": "Заявки",
   "/applications/new": "Новая заявка",
   "/clients": "Клиенты",

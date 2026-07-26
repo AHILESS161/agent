@@ -62,10 +62,28 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
     @staticmethod
     def _extract_text(raw: dict) -> str:
+        """Достать текст ответа.
+
+        У моделей с рассуждениями (reasoning) полезный ответ не всегда
+        оказывается в ``content``: когда бюджет токенов уходит на
+        размышления, ``content`` приходит пустым, а текст остаётся в
+        ``reasoning``. Без этого запасного варианта вызов выглядел как
+        «модель не вернула ответ», хотя ответ был.
+        """
         try:
-            return raw["choices"][0]["message"]["content"]
+            message = raw["choices"][0]["message"]
         except (KeyError, IndexError) as exc:
             raise ValueError(f"Unexpected API response shape: {raw}") from exc
+
+        content = message.get("content")
+        if content:
+            return content
+
+        for fallback_key in ("reasoning", "reasoning_content"):
+            fallback = message.get(fallback_key)
+            if fallback:
+                return str(fallback)
+        return content or ""
 
     @staticmethod
     def _extract_usage(raw: dict) -> tuple[int, int]:

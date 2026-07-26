@@ -188,6 +188,35 @@ class TestJsonExtraction:
     def test_broken_json_returns_none(self):
         assert _parse_json("это не json") is None
 
+    def test_reasoning_with_braces_before_json(self):
+        """Модели с рассуждениями пишут скобки в пояснительном тексте.
+
+        Регрессия: разбор «от первой { до последней }» захватывал
+        рассуждение вместе с ответом и падал, из-за чего анализ
+        возвращал «Ответ модели не является валидным JSON».
+        """
+        raw = (
+            "Рассуждение: схема вида {class_number, rationale} требует\n"
+            "указать класс. Итог:\n"
+            '```json\n{"suggestions": [{"class_number": 9}]}\n```'
+        )
+        assert _parse_json(raw) == {"suggestions": [{"class_number": 9}]}
+
+    def test_fence_not_at_the_start(self):
+        raw = 'Ответ ниже.\n```json\n{"a": 1}\n```\nГотово.'
+        assert _parse_json(raw) == {"a": 1}
+
+    def test_braces_inside_strings_do_not_break_parsing(self):
+        raw = 'Пояснение.\n{"note": "значение с { и } внутри", "a": 2}'
+        assert _parse_json(raw) == {"note": "значение с { и } внутри", "a": 2}
+
+    def test_trailing_text_after_json(self):
+        assert _parse_json('{"a": 1}\n\nЕсли нужно — уточню.') == {"a": 1}
+
+    def test_json_array_alone_is_not_accepted(self):
+        """Ожидается объект: массив верхнего уровня — не наш формат."""
+        assert _parse_json("[1, 2, 3]") is None
+
 
 class TestSafetyInvariants:
     async def test_requires_specialist_review_is_always_true(self, chunks):

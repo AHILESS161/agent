@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -35,6 +36,10 @@ logger = get_logger(__name__)
 
 # Ограничение на объём контекста: слабые модели теряются в длинном тексте.
 MAX_CONTEXT_CHUNKS = 8
+
+# Запас на рассуждения модели плюс сам JSON-ответ: при лимите
+# по умолчанию ответ обрывался на середине структуры.
+MAX_RESPONSE_TOKENS = 12000
 
 SYSTEM_PROMPT = """Ты — помощник патентного поверенного. Твоя задача —
 предварительная оценка рисков регистрации товарного знака по абсолютным
@@ -325,6 +330,7 @@ class RagAbsoluteGroundsAnalyzer:
                         LLMMessage(role="user", content=prompt),
                     ],
                     temperature=0.1,
+                    max_tokens=MAX_RESPONSE_TOKENS,
                 )
             else:
                 response = await self._llm.complete(
@@ -348,31 +354,81 @@ def _max_level(findings: list) -> RiskLevel:
     return highest
 
 
-def _parse_json(raw: str) -> dict | None:
-    """Извлечь JSON из ответа модели.
+# Markdown-блок с JSON в любом месте ответа, а не только в начале.
+_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)```", re.DOTALL | re.IGNORECASE)
 
-    Слабые модели часто оборачивают JSON в markdown-блок или
-    добавляют пояснение до и после.
+
+def _balanced_objects(text: str) -> list[str]:
+    """Найти синтаксически цельные JSON-объекты в тексте.
+
+    Наивный поиск «от первой { до последней }» ломается на моделях
+    с рассуждениями: фигурные скобки встречаются и в пояснительном
+    тексте, и тогда захватывается заведомо битый фрагмент. Здесь
+    границы объекта считаются по балансу скобок, а строковые литералы
+    и экранирование пропускаются, чтобы скобка внутри кавычек не
+    сдвигала счётчик.
     """
-    text = raw.strip()
-    if text.startswith("```"):
-        text = text.split("```")[1] if "```" in text[3:] else text[3:]
-        if text.startswith("json"):
-            text = text[4:]
-    text = text.strip()
+    objects: list[str] = []
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
 
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    for index, char in enumerate(text):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
 
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            if depth == 0:
+                start = index
+            depth += 1
+        elif char == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    objects.append(text[start : index + 1])
+                    start = -1
+    return objects
+
+
+def _parse_json(raw: str) -> dict | None:
+    """Извлечь JSON-объект из ответа модели.
+
+    Модели с рассуждениями (reasoning) ведут себя по-разному от запроса
+    к запросу: то отдают чистый JSON, то оборачивают его в markdown,
+    то предваряют размышлениями. Поэтому разбор идёт по нарастающей —
+    от самого строгого варианта к самому терпимому, и возвращается
+    первый объект, который действительно разобрался.
+    """
+    if not raw:
+        return None
+
+    candidates: list[str] = [raw.strip()]
+
+    # Содержимое markdown-блоков: обычно именно там лежит ответ.
+    candidates.extend(match.strip() for match in _FENCE_RE.findall(raw))
+
+    # Цельные объекты по балансу скобок — из блоков и из всего текста.
+    for source in list(candidates):
+        candidates.extend(_balanced_objects(source))
+
+    for candidate in candidates:
+        if not candidate.startswith("{"):
+            continue
         try:
-            return json.loads(text[start : end + 1])
+            parsed = json.loads(candidate)
         except json.JSONDecodeError:
-            return None
+            continue
+        if isinstance(parsed, dict):
+            return parsed
     return None
 
 

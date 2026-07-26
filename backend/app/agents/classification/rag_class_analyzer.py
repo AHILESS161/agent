@@ -29,6 +29,9 @@ logger = get_logger(__name__)
 
 MAX_CONTEXT_CHUNKS = 8
 
+# Запас на рассуждения модели плюс сам JSON-ответ.
+MAX_RESPONSE_TOKENS = 12000
+
 
 class ClassSuggestion(BaseModel):
     """Предложенный класс МКТУ."""
@@ -239,6 +242,10 @@ class RagNiceClassAnalyzer:
                         LLMMessage(role="user", content=prompt),
                     ],
                     temperature=0.1,
+                    # Модели с рассуждениями тратят часть бюджета на
+                    # размышления. При лимите по умолчанию ответ
+                    # обрывался на середине JSON.
+                    max_tokens=MAX_RESPONSE_TOKENS,
                 )
             else:
                 response = await self._llm.complete(

@@ -245,8 +245,14 @@ def _build_rag_analysis_response(full_text: str) -> str | None:
     anchor = header.split("—")[-1].strip() if "—" in header else header.strip()
 
     # Берём осмысленный отрезок реального текста источника.
-    sentences = [s.strip() for s in re.split(r"(?<=[.;])\s+", content.strip()) if s.strip()]
-    quote = sentences[0] if sentences else content.strip()[:200]
+    # Первая строка фрагмента — заголовок раздела («Пункт 4. ...»),
+    # он слишком короткий и цитатой служить не может.
+    body = "\n".join(content.strip().splitlines()[1:]) or content
+    sentences = [s.strip() for s in re.split(r"(?<=[.;])\s+", body.strip()) if s.strip()]
+    quote = next(
+        (s for s in sentences if len(s.split()) >= 6),
+        " ".join(body.split())[:200],
+    )
     quote = " ".join(quote.split())[:280]
 
     return json.dumps(

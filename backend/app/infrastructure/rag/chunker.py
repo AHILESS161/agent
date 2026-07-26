@@ -25,7 +25,10 @@ _ARTICLE_RE = re.compile(r"Стать[яи]\s+(\d+(?:\.\d+)?)")
 _CLAUSE_RE = re.compile(r"Пункт\s+(\d+(?:\.\d+)?)")
 
 DEFAULT_MAX_CHARS = 1500
-DEFAULT_MIN_CHARS = 120
+# Порог намеренно низкий. При 120 символах из индекса выпадали короткие,
+# но самые нужные разделы: «Класс 25. Одежда и обувь» — 30 символов,
+# и запрос «производство одежды» не находил его вовсе.
+DEFAULT_MIN_CHARS = 15
 
 
 @dataclass
@@ -159,9 +162,15 @@ def _chunks_from_section(
         _split_long_section(body, max_chars) if len(body) > max_chars else [body]
     )
 
+    # Заголовок раздела включается в текст фрагмента.
+    # Он несёт самую плотную информацию — «Класс 25. Одежда и обувь»,
+    # «Пункт 4. Объекты культурного наследия», — но раньше оставался
+    # только в метаданных и в поиске не участвовал.
+    title = heading_path[-1] if heading_path else ""
+
     return [
         Chunk(
-            content=part,
+            content=f"{title}\n{part}" if title else part,
             chunk_index=start_index + offset,
             heading_path=list(heading_path),
             article=article_match.group(1) if article_match else None,

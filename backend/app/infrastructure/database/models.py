@@ -1295,6 +1295,16 @@ class RiskAssessment(Base):
     sources_used_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
     verification_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
+    # Классы МКТУ, с учётом которых сделан вывод. Различительная
+    # способность оценивается только применительно к конкретным товарам,
+    # поэтому перечень классов — часть исходных данных вывода.
+    classes_considered_json: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
+    # Подтверждены ли эти классы специалистом. Если нет, вывод сделан
+    # на неподтверждённом входе.
+    classes_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+
     # Признак обязателен и всегда истинен: система не даёт заключений.
     requires_specialist_review: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True

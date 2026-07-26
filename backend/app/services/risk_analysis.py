@@ -32,6 +32,7 @@ from app.infrastructure.database.models import (
     TrademarkApplicationDraft,
 )
 from app.infrastructure.rag.citations import verify_all
+from app.services.class_analysis import ClassContext, load_class_context
 from app.infrastructure.rag.store import knowledge_base_version, load_active_chunks
 
 logger = get_logger(__name__)
@@ -42,24 +43,33 @@ _CITATION_ID_RE = re.compile(r"^kb-(\d+)$")
 
 @dataclass
 class AnalysisContext:
-    """Факты дела, передаваемые анализатору."""
+    """Факты дела, передаваемые анализатору.
+
+    Классы МКТУ входят в контекст обязательно: различительная
+    способность оценивается только применительно к конкретным товарам.
+    Без перечня классов вывод об описательности повисает в воздухе.
+    """
 
     mark_text: str | None
     mark_type: str | None
     description: str | None
     goods_services: str | None
     classes: str | None
+    classes_confirmed: bool = False
 
     @classmethod
     def from_application(
-        cls, application: TrademarkApplicationDraft
+        cls,
+        application: TrademarkApplicationDraft,
+        class_context: "ClassContext | None" = None,
     ) -> "AnalysisContext":
         return cls(
             mark_text=application.mark_text or application.mark_name,
             mark_type=application.mark_type.value if application.mark_type else None,
             description=application.description_of_mark,
             goods_services=application.goods_services_raw,
-            classes=None,
+            classes=class_context.describe() if class_context else None,
+            classes_confirmed=bool(class_context and class_context.is_confirmed),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -91,7 +101,8 @@ async def run_absolute_grounds_analysis(
     user_id: int | None = None,
 ) -> RiskAssessment:
     """Выполнить анализ абсолютных оснований и сохранить результат."""
-    context = AnalysisContext.from_application(application)
+    class_context = await load_class_context(session, application.id)
+    context = AnalysisContext.from_application(application, class_context)
     chunks = await load_active_chunks(session)
     kb_version = await knowledge_base_version(session)
 
@@ -168,8 +179,30 @@ async def run_absolute_grounds_analysis(
     result = outcome.result
     assessment.overall_risk = RiskLevel(result.overall_risk.value)
     assessment.summary = result.summary
-    assessment.limitations_json = list(result.limitations)
-    assessment.missing_data_json = list(result.missing_data)
+
+    # Вывод об описательности зависит от перечня классов. Если классы
+    # не подтверждены специалистом, вывод опирается на неподтверждённый
+    # вход, и это должно быть видно в отчёте, а не подразумеваться.
+    limitations = list(result.limitations)
+    missing = list(result.missing_data)
+    if not class_context.has_any:
+        limitations.append(
+            "Классы МКТУ по делу не определены. Различительная способность "
+            "оценивается только применительно к конкретным товарам, поэтому "
+            "вывод является предварительным."
+        )
+        missing.append("Перечень классов МКТУ")
+    elif not class_context.is_confirmed:
+        limitations.append(
+            "Классы МКТУ предложены автоматически и не подтверждены "
+            "специалистом. Вывод об описательности зависит от перечня "
+            "товаров и может измениться после его уточнения."
+        )
+
+    assessment.limitations_json = limitations
+    assessment.missing_data_json = missing
+    assessment.classes_considered_json = class_context.as_numbers()
+    assessment.classes_confirmed = class_context.is_confirmed
     session.add(assessment)
     await session.flush()
 
@@ -246,6 +279,9 @@ def serialize_assessment(assessment: RiskAssessment) -> dict[str, Any]:
             "sources_used": assessment.sources_used_json or [],
             "verification": assessment.verification_json or {},
         },
+        # Классы, с учётом которых сделан вывод, и их статус.
+        "classes_considered": assessment.classes_considered_json or [],
+        "classes_confirmed": assessment.classes_confirmed,
         "created_at": assessment.created_at.isoformat() if assessment.created_at else None,
         "findings": [
             {

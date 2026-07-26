@@ -23,6 +23,7 @@ from app.infrastructure.database.models import (
     UserRole,
 )
 from app.infrastructure.database.session import get_session
+from app.services.class_analysis import run_class_analysis
 from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
     serialize_assessment,
@@ -124,6 +125,47 @@ async def run_analysis(
         )
     ).scalar_one()
     return serialize_assessment(loaded)
+
+
+@router.post(
+    "/applications/{application_id}/nice-classes/suggest",
+    status_code=status.HTTP_201_CREATED,
+    summary="Подобрать классы МКТУ по описанию деятельности",
+)
+async def suggest_classes(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Определить классы МКТУ из описания деятельности заявителя.
+
+    Классы влияют на оценку охраноспособности: обозначение описательно
+    только применительно к конкретным товарам. Поэтому подбор классов
+    выполняется до анализа оснований отказа, а его результат
+    подтверждается специалистом.
+    """
+    _require_write_access(current_user)
+    application = await _load_application(session, application_id)
+
+    result = await run_class_analysis(
+        session, application, llm_provider=_get_llm_provider()
+    )
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="nice_classes.suggest",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(application.id),
+            new_value_json={
+                "status": result.get("status"),
+                "suggested": len(result.get("suggestions", [])),
+            },
+        )
+    )
+    await session.flush()
+    return result
 
 
 @router.get(

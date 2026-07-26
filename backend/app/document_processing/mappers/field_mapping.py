@@ -179,6 +179,7 @@ class FieldMappingEngine:
                     "pattern_id": c.pattern_id,
                     "confidence": c.confidence,
                     "page_number": c.page_number,
+                    "pages": c.pages,
                     "validation_passed": c.validation_passed,
                 }
                 for c in extracted.candidates

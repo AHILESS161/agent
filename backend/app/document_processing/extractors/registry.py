@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Iterable
@@ -48,6 +48,9 @@ class FieldCandidateResult:
     validation_passed: bool | None = None
     validation_error: str | None = None
     extraction_method: ExtractionMethod = ExtractionMethod.regex
+    # На скольких страницах встретилось это же значение. Повтор —
+    # подтверждение, а не повод выбирать между одинаковыми вариантами.
+    pages: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -295,6 +298,15 @@ class RegistryExtractor:
     ) -> bool:
         return any(c.raw_value != c.normalized_value for c in candidates)
 
+    @staticmethod
+    def _merge_duplicates(
+        group: list[FieldCandidateResult],
+    ) -> FieldCandidateResult:
+        """Свести повторы одного значения в одного кандидата."""
+        best = max(group, key=lambda c: c.confidence)
+        pages = sorted({c.page_number for c in group if c.page_number is not None})
+        return replace(best, pages=pages)
+
     def _resolve(
         self,
         *,
@@ -327,6 +339,13 @@ class RegistryExtractor:
         by_value: dict[str, list[FieldCandidateResult]] = {}
         for candidate in candidates:
             by_value.setdefault(candidate.normalized_value, []).append(candidate)
+
+        # В списке остаётся по одному представителю на каждое значение:
+        # выбирать между одинаковыми строками не из чего, а сведения
+        # о повторах переносятся в него как подтверждение.
+        base.candidates = [
+            self._merge_duplicates(group) for group in by_value.values()
+        ]
 
         # Значения, не прошедшие валидацию, не могут победить валидные.
         valid_values = {

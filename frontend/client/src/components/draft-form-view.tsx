@@ -37,6 +37,8 @@ interface Candidate {
   raw_value: string;
   normalized_value: string | null;
   page_number: number | null;
+  /** Страницы, где встретилось это же значение. */
+  pages?: number[];
   validation_passed: boolean | null;
 }
 
@@ -469,7 +471,17 @@ function FormRow({
           </div>
         )}
 
-        {/* Несколько несовпадающих значений — выбирает специалист. */}
+        {/* Одно значение, найденное на нескольких страницах, —
+            подтверждение, а не повод выбирать. */}
+        {field.candidates.length === 1 &&
+          (field.candidates[0].pages?.length ?? 0) > 1 && (
+            <p className="text-[10px] text-muted-foreground">
+              значение совпало на страницах:{" "}
+              {field.candidates[0].pages!.join(", ")}
+            </p>
+          )}
+
+        {/* Выбор предлагается, только если значения действительно разные. */}
         {field.candidates.length > 1 && !confirmed && (
           <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-2 space-y-1">
             <p className="text-[10px] font-medium">
@@ -479,7 +491,11 @@ function FormRow({
               <div key={index} className="flex items-center gap-2">
                 <span className="text-[11px] font-mono flex-1">
                   {candidate.normalized_value ?? candidate.raw_value}
-                  {candidate.page_number ? ` · стр. ${candidate.page_number}` : ""}
+                  {(candidate.pages?.length ?? 0) > 1
+                    ? ` · стр. ${candidate.pages!.join(", ")}`
+                    : candidate.page_number
+                      ? ` · стр. ${candidate.page_number}`
+                      : ""}
                   {candidate.validation_passed === false
                     ? " · не прошло проверку"
                     : ""}

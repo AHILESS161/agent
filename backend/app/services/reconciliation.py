@@ -24,6 +24,40 @@ from app.infrastructure.database.models import (
 )
 
 
+def _distinct_candidates(candidates: list) -> list[FieldCandidateResult]:
+    """Свести повторы одного значения в одного кандидата.
+
+    Одно и то же значение встречается в выписке на нескольких страницах.
+    Показывать пять одинаковых строк и предлагать «выбрать верное»
+    бессмысленно: повтор подтверждает значение, а не оспаривает его.
+    Данные, сохранённые до этого правила, сводятся здесь же — чтобы
+    старые дела не требовали повторного разбора документа.
+    """
+    grouped: dict[str, list] = {}
+    for candidate in candidates:
+        grouped.setdefault(candidate.normalized_value or candidate.raw_value, []).append(
+            candidate
+        )
+
+    result: list[FieldCandidateResult] = []
+    for value, group in grouped.items():
+        best = max(group, key=lambda c: c.confidence or 0.0)
+        result.append(
+            FieldCandidateResult(
+                raw_value=best.raw_value,
+                normalized_value=value,
+                pattern_id=best.pattern_id or "",
+                confidence=best.confidence or 0.0,
+                page_number=best.page_number,
+                pages=sorted(
+                    {c.page_number for c in group if c.page_number is not None}
+                ),
+                validation_passed=best.validation_passed,
+            )
+        )
+    return result
+
+
 async def load_reconciliation(
     session: AsyncSession, application_id: int
 ) -> tuple[list[MappingRow], dict[str, int]]:
@@ -69,17 +103,7 @@ async def load_reconciliation(
             source_snippet=field.source_snippet or "",
             validation_error=field.validation_error,
             extraction_method=field.extraction_method,
-            candidates=[
-                FieldCandidateResult(
-                    raw_value=candidate.raw_value,
-                    normalized_value=candidate.normalized_value or "",
-                    pattern_id=candidate.pattern_id or "",
-                    confidence=candidate.confidence or 0.0,
-                    page_number=candidate.page_number,
-                    validation_passed=candidate.validation_passed,
-                )
-                for candidate in field.candidates
-            ],
+            candidates=_distinct_candidates(field.candidates),
         )
         for field in stored
     ]

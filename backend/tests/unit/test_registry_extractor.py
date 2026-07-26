@@ -138,11 +138,16 @@ class TestNormalisation:
 
 class TestConflictHandling:
     def test_corroboration_is_not_treated_as_conflict(self, fields):
-        """ОГРН встречается и в таблице, и в колонтитуле — значение одно."""
+        """ОГРН встречается и в таблице, и в колонтитуле — значение одно.
+
+        Повторы сводятся к одному кандидату: предлагать выбор между
+        одинаковыми строками бессмысленно. Сам факт повтора сохраняется
+        списком страниц и повышает уверенность.
+        """
         ogrn = fields["registry.legal_entity.ogrn"]
         assert ogrn.status is FieldStatus.matched
-        assert len(ogrn.candidates) > 1
-        assert len({c.normalized_value for c in ogrn.candidates}) == 1
+        assert len(ogrn.candidates) == 1
+        assert len(ogrn.candidates[0].pages) > 1
 
     def test_corroboration_raises_confidence(self, fields):
         ogrn = fields["registry.legal_entity.ogrn"]
@@ -211,3 +216,36 @@ class TestNothingIsAutoConfirmed:
         """Подтверждение — исключительно действие специалиста."""
         for field in fields.values():
             assert field.status is not FieldStatus.confirmed
+
+
+class TestRepeatsAreNotAChoice:
+    """Одно значение на нескольких страницах — подтверждение.
+
+    Регрессия: ОГРНИП встречается в колонтитуле каждой страницы
+    выписки, и интерфейс предлагал «выбрать верное» из пяти
+    одинаковых строк.
+    """
+
+    def _extracted(self):
+        from tests.fixtures.egrip_sample import EGRIP_PAGES
+
+        results = extract_registry_fields(EGRIP_PAGES, "egrip")
+        return {r.field_id: r for r in results}
+
+    def test_duplicate_values_collapse_into_one_candidate(self):
+        field = self._extracted()["registry.sole_proprietor.ogrnip"]
+        values = {c.normalized_value for c in field.candidates}
+
+        assert len(values) == 1
+        assert len(field.candidates) == 1
+
+    def test_pages_of_repeats_are_kept(self):
+        """Совпадение на нескольких страницах — полезный признак."""
+        field = self._extracted()["registry.sole_proprietor.ogrnip"]
+        assert len(field.candidates[0].pages) >= 1
+
+    def test_repeats_do_not_create_conflict(self):
+        from app.infrastructure.database.models import FieldStatus
+
+        field = self._extracted()["registry.sole_proprietor.ogrnip"]
+        assert field.status is not FieldStatus.conflict

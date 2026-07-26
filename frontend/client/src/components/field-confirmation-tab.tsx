@@ -101,6 +101,27 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
     }
   };
 
+  /** Отметить поле как незаполняемое в этом деле. */
+  const skipField = async (fieldPath: string, label: string) => {
+    try {
+      await api.post(`/applications/${appId}/fields/skip`, {
+        field_path: fieldPath,
+        label,
+      });
+      toast({
+        title: `Поле убрано: ${label}`,
+        description: "Решение записано и его можно отменить.",
+      });
+      await load();
+    } catch (e) {
+      toast({
+        title: "Не удалось убрать поле",
+        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
+        variant: "destructive",
+      });
+    }
+  };
+
   /** Убрать поле, заведённое специалистом. */
   const removeField = async (fieldId: number, label: string) => {
     setBusyFieldId(fieldId);
@@ -505,12 +526,19 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                     label={item.label}
                     fieldPath={item.registry_field ?? item.case_field}
                     isSensitive={item.is_sensitive}
+                    canSkip={!item.required_for_application}
                     onSave={(value) =>
                       void saveManual(
                         item.registry_field ?? item.case_field,
                         item.label,
                         value,
                         item.is_sensitive,
+                      )
+                    }
+                    onSkip={() =>
+                      void skipField(
+                        item.registry_field ?? item.case_field,
+                        item.label,
                       )
                     }
                   />
@@ -565,12 +593,16 @@ function ManualEntry({
   label,
   fieldPath,
   isSensitive,
+  canSkip,
   onSave,
+  onSkip,
 }: {
   label: string;
   fieldPath: string;
   isSensitive: boolean;
+  canSkip: boolean;
   onSave: (value: string) => void;
+  onSkip: () => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [value, setValue] = useState("");
@@ -592,6 +624,20 @@ function ManualEntry({
           <Pencil className="w-3 h-3 mr-1" />
           Ввести вручную
         </Button>
+        {/* Обязательное поле бланка убрать нельзя: заявление
+            окажется неполным, а система этого не покажет. */}
+        {canSkip && (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-[11px] text-muted-foreground"
+            onClick={onSkip}
+            data-testid={`skip-${fieldPath}`}
+          >
+            <Trash2 className="w-3 h-3 mr-1" />
+            Убрать
+          </Button>
+        )}
       </div>
     );
   }

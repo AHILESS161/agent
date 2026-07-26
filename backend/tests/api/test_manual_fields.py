@@ -177,3 +177,70 @@ class TestAccess:
             json={"field_path": "custom.x", "label": "X", "value": "1"},
         )
         assert response.status_code == 401
+
+
+@pytest.mark.api
+class TestSkipField:
+    """Ненужное в этом деле поле убирается из сверки."""
+
+    def _skip(self, client, lawyer, case, field_path, label):
+        return client.post(
+            f"/api/v1/applications/{case}/fields/skip",
+            json={"field_path": field_path, "label": label},
+            headers=lawyer,
+        )
+
+    def test_optional_field_can_be_skipped(self, client, lawyer, case):
+        response = self._skip(
+            client,
+            lawyer,
+            case,
+            "registry.legal_entity.director.last_name",
+            "Фамилия руководителя",
+        )
+        assert response.status_code == 201
+        assert response.json()["status"] == "left_empty"
+
+    def test_required_field_cannot_be_skipped(self, client, lawyer, case):
+        """Иначе заявление окажется неполным, а система это скроет."""
+        response = self._skip(
+            client, lawyer, case, "registry.legal_entity.inn", "ИНН"
+        )
+        assert response.status_code == 409
+        assert "обязательно" in response.json()["detail"]
+
+    def test_decision_is_visible_in_reconciliation(self, client, lawyer, case):
+        self._skip(
+            client,
+            lawyer,
+            case,
+            "registry.legal_entity.director.last_name",
+            "Фамилия руководителя",
+        )
+        rows = client.get(
+            f"/api/v1/applications/{case}/field-reconciliation", headers=lawyer
+        ).json()["items"]
+
+        row = next(
+            r
+            for r in rows
+            if r["registry_field"] == "registry.legal_entity.director.last_name"
+        )
+        assert row["status"] == "left_empty"
+
+    def test_skip_can_be_undone(self, client, lawyer, case):
+        """Решение не безвозвратное."""
+        created = self._skip(
+            client,
+            lawyer,
+            case,
+            "registry.legal_entity.director.last_name",
+            "Фамилия руководителя",
+        ).json()
+
+        assert (
+            client.delete(
+                f"/api/v1/extracted-fields/{created['id']}", headers=lawyer
+            ).status_code
+            == 204
+        )

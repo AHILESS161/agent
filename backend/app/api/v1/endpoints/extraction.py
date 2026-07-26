@@ -22,6 +22,7 @@ from app.core.logging import get_logger
 from app.core.security import get_current_user
 from app.document_processing.extractors import extract_registry_fields
 from app.document_processing.mappers import build_reconciliation
+from app.document_processing.mappers.field_mapping import FieldMappingEngine
 from app.document_processing.extractors.registry import (
     ExtractedFieldResult,
     FieldCandidateResult,
@@ -428,6 +429,117 @@ async def add_manual_field(
         user_id=current_user.id,
         field_path=payload.field_path,
     )
+    return _serialize_field(existing)
+
+
+class SkipFieldRequest(BaseModel):
+    """Поле, которое специалист считает ненужным в этом деле."""
+
+    field_path: str = Field(min_length=1, max_length=255)
+    label: str = Field(min_length=1, max_length=255)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+@router.post(
+    "/applications/{application_id}/fields/skip",
+    status_code=status.HTTP_201_CREATED,
+    summary="Убрать поле из сверки как ненужное",
+)
+async def skip_field(
+    application_id: int,
+    payload: SkipFieldRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Отметить поле как незаполняемое в этом деле.
+
+    Поле не удаляется бесследно: фиксируется решение специалиста
+    «оставить пустым», и его можно отменить. Обязательные поля
+    бланка убрать нельзя — иначе заявление окажется неполным,
+    а система не показала бы этого.
+    """
+    _require_write_access(current_user)
+
+    application = (
+        await session.execute(
+            select(TrademarkApplicationDraft).where(
+                TrademarkApplicationDraft.id == application_id
+            )
+        )
+    ).scalar_one_or_none()
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Дело {application_id} не найдено",
+        )
+
+    engine = FieldMappingEngine()
+    spec = next(
+        (
+            item
+            for item in engine.config.get("mappings", [])
+            if item.get("registry_field") == payload.field_path
+        ),
+        None,
+    )
+    if spec is not None and spec.get("required_for_application"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Поле обязательно для заявления и не может быть убрано. "
+                "Внесите значение вручную."
+            ),
+        )
+
+    existing = (
+        await session.execute(
+            select(ExtractedField)
+            .where(
+                ExtractedField.application_id == application_id,
+                ExtractedField.field_path == payload.field_path,
+            )
+            .options(selectinload(ExtractedField.candidates))
+        )
+    ).scalar_one_or_none()
+
+    if existing is None:
+        existing = ExtractedField(
+            application_id=application_id,
+            document_id=None,
+            field_path=payload.field_path,
+            label=payload.label,
+            candidate_count=0,
+        )
+        existing.candidates = []
+        session.add(existing)
+
+    existing.status = FieldStatus.left_empty
+    existing.extraction_method = ExtractionMethod.manual
+    existing.raw_value = None
+    existing.normalized_value = None
+    await session.flush()
+
+    session.add(
+        FieldConfirmation(
+            field_id=existing.id,
+            user_id=current_user.id,
+            action=ConfirmationAction.leave_empty,
+            previous_value=None,
+            new_value=None,
+            reason=payload.reason or "Поле не требуется в этом деле",
+        )
+    )
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application_id,
+            action="field.skipped",
+            entity_type="ExtractedField",
+            entity_id=str(existing.id),
+            new_value_json={"field_path": payload.field_path},
+        )
+    )
+    await session.flush()
     return _serialize_field(existing)
 
 

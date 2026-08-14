@@ -83,13 +83,20 @@ class TestDefaultConfiguration:
 
 
 class TestRegistryProviderIsExplicit:
-    def test_unimplemented_provider_fails_loudly(self):
-        """Молча подставлять демо-датасет вместо реального провайдера
-        нельзя: это выдало бы demo-поиск за полноценный."""
+    def test_real_provider_requires_api_key(self):
+        """Молча подставлять demo вместо неверно настроенного real нельзя."""
         from app.infrastructure.providers.factory import ProviderFactory
+        from app.infrastructure.providers.rospatent import RospatentConfigurationError
 
-        with pytest.raises(NotImplementedError, match="не реализован"):
+        with pytest.raises(RospatentConfigurationError, match="FIPS_API_KEY"):
             ProviderFactory.create({"provider": "fips"})
+
+    def test_real_provider_is_available_with_key(self):
+        from app.infrastructure.providers.factory import ProviderFactory
+        from app.infrastructure.providers.rospatent import RospatentSearchProvider
+
+        provider = ProviderFactory.create({"provider": "fips", "api_key": "token"})
+        assert isinstance(provider, RospatentSearchProvider)
 
     def test_mock_provider_is_available(self):
         from app.infrastructure.providers.factory import ProviderFactory

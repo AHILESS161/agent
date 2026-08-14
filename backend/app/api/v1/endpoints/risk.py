@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -38,6 +39,16 @@ logger = get_logger(__name__)
 router = APIRouter(tags=["risk-analysis"])
 
 _WRITE_ROLES = {UserRole.admin, UserRole.lawyer, UserRole.manager}
+
+# Один и тот же анализ нельзя запускать параллельно: в demo-режиме SQLite
+# допускает только одного писателя, а два долгих запроса создают дубли
+# оценок даже после перехода на PostgreSQL. Блокировка локальна процессу;
+# production-защита для нескольких workers должна использовать Redis/job id.
+_FULL_ANALYSIS_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _full_analysis_lock(application_id: int) -> asyncio.Lock:
+    return _FULL_ANALYSIS_LOCKS.setdefault(application_id, asyncio.Lock())
 
 
 class FindingReviewRequest(BaseModel):
@@ -117,30 +128,45 @@ async def run_full(
     _require_write_access(current_user)
     application = await _load_application(session, application_id)
 
-    result = await run_full_analysis(
-        session,
-        application,
-        llm_provider=_get_llm_provider(),
-        registry_provider=_get_registry_provider(),
-        user_id=current_user.id,
-    )
-
-    session.add(
-        AuditLog(
-            user_id=current_user.id,
-            application_id=application.id,
-            action="full_analysis.run",
-            entity_type="TrademarkApplicationDraft",
-            entity_id=str(application.id),
-            new_value_json={
-                "overall_risk": result["overall_risk"],
-                "verdict": result["verdict"],
-                "is_complete": result["is_complete"],
-            },
+    lock = _full_analysis_lock(application_id)
+    if lock.locked():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Заключение по этому делу уже обновляется. "
+                "Дождитесь завершения текущего анализа."
+            ),
         )
-    )
-    await session.flush()
-    return result
+
+    async with lock:
+        result = await run_full_analysis(
+            session,
+            application,
+            llm_provider=_get_llm_provider(),
+            registry_provider=_get_registry_provider(),
+            user_id=current_user.id,
+        )
+
+        session.add(
+            AuditLog(
+                user_id=current_user.id,
+                application_id=application.id,
+                action="full_analysis.run",
+                entity_type="TrademarkApplicationDraft",
+                entity_id=str(application.id),
+                new_value_json={
+                    "overall_risk": result["overall_risk"],
+                    "verdict": result["verdict"],
+                    "is_complete": result["is_complete"],
+                },
+            )
+        )
+        await session.flush()
+        # Коммитим до освобождения блокировки: dependency делает финальный
+        # commit уже после возврата из endpoint, и второй запрос иначе может
+        # успеть начать запись в коротком промежутке между этими событиями.
+        await session.commit()
+        return result
 
 
 @router.post(

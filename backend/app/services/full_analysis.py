@@ -250,7 +250,19 @@ async def run_full_analysis(
     if not classes:
         incomplete.append("классы МКТУ не определены")
 
-    if overall is None:
+    if classes and not class_context.is_confirmed:
+        incomplete.append("классы МКТУ не подтверждены специалистом")
+
+    # Неполный контур с единственным уровнем low не должен превращаться в
+    # успокаивающее «рисков нет». Сохраняем конкретные локальные выводы внутри
+    # секций, но общий уровень оставляем неопределённым.
+    if incomplete and overall in {None, RiskLevel.low}:
+        overall = None
+        verdict_code, verdict_text = (
+            "inconclusive",
+            "Проверка не завершена: отсутствие выявленных рисков не означает их отсутствие.",
+        )
+    elif overall is None:
         verdict_code, verdict_text = (
             "inconclusive",
             "Недостаточно подтверждённых данных для вывода.",

@@ -220,7 +220,11 @@ async def upload_document(
     document.kind_requires_confirmation = classification.requires_confirmation
     document.page_count = len(pages)
     document.char_count = total_chars
-    document.extraction_method = ExtractionMethod(pages[0].method)
+    document.extraction_method = (
+        ExtractionMethod.ocr
+        if any(page.method == ExtractionMethod.ocr.value for page in pages)
+        else ExtractionMethod(pages[0].method)
+    )
     document.processing_status = DocumentProcessingStatus.extracted
     document.metadata_json = {
         "classification_reason": classification.reason,

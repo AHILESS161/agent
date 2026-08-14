@@ -20,15 +20,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
-import { AiDisclaimer, DemoModeBadge } from "@/components/ai-disclaimer";
 import { api, ApiError } from "@/lib/api";
-import { useApi, type ClassesDto, type ConflictsDto } from "@/lib/use-api";
+import { useApi, type ClassesDto } from "@/lib/use-api";
 import { cn } from "@/lib/utils";
 import {
   AlertTriangle,
+  BookOpen,
   Check,
   CheckCircle2,
   ChevronDown,
+  ExternalLink,
   Gavel,
   Layers,
   Loader2,
@@ -134,7 +135,32 @@ interface FindingDto {
     status: string;
     is_trustworthy: boolean;
   }[];
-  verification?: { semantic_verdict?: { llm_used?: boolean } };
+  verification?: {
+    semantic_verdict?: { llm_used?: boolean };
+    record_id?: string;
+    registry_record?: {
+      record_id?: string;
+      mark_text?: string;
+      owner?: string;
+      classes?: Array<number | string>;
+      status?: string;
+      source?: string;
+      application_number?: string | null;
+      registration_number?: string | null;
+      filing_date?: string | null;
+      registration_date?: string | null;
+    };
+  };
+}
+
+interface MemoDto {
+  summary: string | null;
+  risk_assessment: string | null;
+  recommended_action: string | null;
+  recommended_classes_json: number[] | null;
+  key_risks_json: string[] | null;
+  confidence: number | null;
+  approved_by: number | null;
 }
 
 interface ReportDto {
@@ -148,6 +174,8 @@ interface ReportDto {
       inconclusive_reason: string | null;
       findings: FindingDto[];
       limitations: string[];
+      classes_considered: number[];
+      classes_confirmed: boolean;
       provenance: { model_name: string | null; llm_used: boolean };
     } | null
   >;
@@ -157,11 +185,12 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
   const { toast } = useToast();
   const report = useApi<ReportDto>(`/applications/${appId}/risk-report`);
   const classes = useApi<ClassesDto>(`/applications/${appId}/classes`);
-  const conflicts = useApi<ConflictsDto>(`/applications/${appId}/conflicts`);
+  const recommendation = useApi<MemoDto>(`/applications/${appId}/recommendation`);
 
   const [verdict, setVerdict] = useState<VerdictDto | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [busyFinding, setBusyFinding] = useState<number | null>(null);
+  const [analysisNeedsRefresh, setAnalysisNeedsRefresh] = useState(false);
 
   const runAll = async () => {
     setIsRunning(true);
@@ -170,6 +199,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         `/applications/${appId}/full-analysis`,
       );
       setVerdict(result);
+      setAnalysisNeedsRefresh(false);
       toast({
         title: VERDICT_TITLES[result.verdict] ?? "Анализ выполнен",
         description: result.verdict_text,
@@ -177,7 +207,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
       });
       report.reload();
       classes.reload();
-      conflicts.reload();
+      recommendation.reload();
     } catch (e) {
       toast({
         title: "Анализ не выполнен",
@@ -220,135 +250,57 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
       : null);
 
   const VerdictIcon = VERDICT_ICONS[verdictCode ?? "inconclusive"];
+  const classSuggestions = classes.data?.suggestions ?? [];
+  const approvedClassNumbers = classSuggestions
+    .filter((item) => item.approved === true)
+    .map((item) => item.class_number);
+  const displayedClassNumbers =
+    approvedClassNumbers.length > 0
+      ? approvedClassNumbers
+      : classSuggestions
+          .filter((item) => item.approved !== false)
+          .map((item) => item.class_number);
 
   return (
     <div className="space-y-3" data-testid="legal-analysis-tab">
-      {/* --- вердикт --- */}
-      <Card className={cn("border-2", VERDICT_STYLES[verdictCode ?? "inconclusive"])}>
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3 min-w-0">
-              <VerdictIcon
-                className={cn(
-                  "w-7 h-7 shrink-0 mt-0.5",
-                  VERDICT_TEXT_COLOR[verdictCode ?? "inconclusive"],
-                )}
-              />
-              <div className="min-w-0">
-                <h3
-                  className={cn(
-                    "text-base font-bold",
-                    VERDICT_TEXT_COLOR[verdictCode ?? "inconclusive"],
-                  )}
-                  data-testid="verdict-title"
-                >
-                  {verdictCode
-                    ? VERDICT_TITLES[verdictCode]
-                    : "Анализ не проводился"}
-                </h3>
-                <p className="text-xs mt-0.5">
-                  {verdict?.verdict_text ??
-                    (verdictCode
-                      ? "Вердикт по сохранённым результатам проверок."
-                      : "Запустите полный анализ: классы МКТУ, абсолютные основания и конфликты.")}
-                </p>
-              </div>
-            </div>
-            <Button
-              size="sm"
-              disabled={isRunning}
-              onClick={() => void runAll()}
-              data-testid="run-full-analysis"
-            >
-              {isRunning ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Play className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              {isRunning ? "Анализ…" : "Полный анализ"}
-            </Button>
-          </div>
+      <LegalSummaryCard
+        verdictCode={verdictCode}
+        VerdictIcon={VerdictIcon}
+        verdictText={verdict?.verdict_text ?? recommendation.data?.summary ?? null}
+        overallRisk={overallRisk}
+        classes={
+          displayedClassNumbers.length > 0
+            ? displayedClassNumbers
+            : verdict?.classes_considered ?? relative?.classes_considered ?? []
+        }
+        classesConfirmed={
+          approvedClassNumbers.length > 0 ||
+          verdict?.classes_confirmed ||
+          relative?.classes_confirmed ||
+          false
+        }
+        appId={appId}
+        classState={classes}
+        analysisNeedsRefresh={analysisNeedsRefresh}
+        onClassesChanged={() => setAnalysisNeedsRefresh(true)}
+        memo={recommendation.data}
+        findings={[
+          ...(absolute?.findings ?? []),
+          ...(relative?.findings ?? []),
+        ]}
+        incompleteChecks={verdict?.incomplete_checks ?? []}
+        isRunning={isRunning}
+        onRun={() => void runAll()}
+      />
 
-          <div className="flex flex-wrap items-center gap-2">
-            {overallRisk && (
-              <Badge className={cn("text-[10px]", LEVEL_BADGE[overallRisk])}>
-                {RISK_LABELS[overallRisk] ?? overallRisk}
-              </Badge>
-            )}
-            {(verdict?.classes_considered?.length ?? 0) > 0 && (
-              <Badge variant="secondary" className="text-[10px]">
-                классы: {verdict!.classes_considered.join(", ")}
-                {verdict!.classes_confirmed ? " · подтверждены" : " · не подтверждены"}
-              </Badge>
-            )}
-            <DemoModeBadge label="Ограниченный demo-поиск" />
-          </div>
-
-          {isRunning && (
-            <p className="text-[11px] text-muted-foreground">
-              Выполняются проверки по порядку: классы → абсолютные основания →
-              конфликты. Это занимает до минуты.
-            </p>
-          )}
-
-          {/* Незавершённые проверки не должны выглядеть как «всё чисто». */}
-          {verdict && verdict.incomplete_checks.length > 0 && (
-            <div className="rounded-md border border-amber-500/40 bg-amber-500/5 px-3 py-2">
-              <p className="text-[11px] font-medium mb-0.5">
-                Проверки выполнены не полностью:
-              </p>
-              {verdict.incomplete_checks.map((item, i) => (
-                <p key={i} className="text-[11px] text-muted-foreground">
-                  • {item}
-                </p>
-              ))}
-            </div>
-          )}
-
-          {verdict && verdict.steps.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {verdict.steps.map((step) => (
-                <span
-                  key={step.step}
-                  className={cn(
-                    "text-[10px] px-2 py-0.5 rounded-full border",
-                    step.status === "ok"
-                      ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-400"
-                      : step.status === "skipped"
-                        ? "border-border text-muted-foreground"
-                        : "border-amber-500/40 text-amber-700 dark:text-amber-500",
-                  )}
-                  title={step.detail ?? undefined}
-                >
-                  {STEP_LABELS[step.step] ?? step.step}
-                  {step.status === "ok"
-                    ? " ✓"
-                    : step.status === "skipped"
-                      ? " —"
-                      : " !"}
-                </span>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <AiDisclaimer />
-
-      {/* --- классы МКТУ --- */}
-      <Section
-        icon={Layers}
-        title="Классы МКТУ"
-        hint="От перечня классов зависит вывод об охраноспособности: обозначение бывает описательным для одних товаров и фантазийным для других."
-      >
-        <ClassList appId={appId} state={classes} />
-      </Section>
+      <TrademarkMatches findings={relative?.findings ?? []} />
 
       {/* --- абсолютные основания --- */}
       <Section
         icon={Shield}
-        title="Абсолютные основания (ст. 1483 п. 1–5)"
-        hint="Каждый вывод обязан ссылаться на норму, и ссылка проверяется дословно: вывод без подтверждённой цитаты отбрасывается."
+        title="Подробное правовое обоснование: абсолютные основания"
+        hint="Выводы по основаниям для отказа, предусмотренным пунктами 1–5 статьи 1483 ГК РФ."
+        initialOpen={false}
         badge={
           absolute?.findings?.length ? String(absolute.findings.length) : undefined
         }
@@ -384,8 +336,9 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
       {/* --- относительные основания --- */}
       <Section
         icon={Search}
-        title="Относительные основания (ст. 1483 п. 6)"
-        hint="Сходство до степени смешения с чужими знаками по критериям п. 42 Правил № 482 и п. 162 Пленума ВС РФ № 10."
+        title="Подробное правовое обоснование: сходство с ранними знаками"
+        hint="Оценка вероятности смешения по пункту 6 статьи 1483 ГК РФ, Правилам № 482 и разъяснениям Верховного Суда РФ."
+        initialOpen={false}
         badge={
           relative?.findings?.length ? String(relative.findings.length) : undefined
         }
@@ -418,9 +371,6 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         )}
       </Section>
 
-      {/* --- итоговое заключение --- */}
-      <MemoSection appId={appId} />
-
       {/* --- ограничения --- */}
       {((verdict?.limitations?.length ?? 0) > 0 ||
         (absolute?.limitations?.length ?? 0) > 0 ||
@@ -428,7 +378,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         <details className="rounded-lg border border-border p-3">
           <summary className="text-xs font-medium cursor-pointer flex items-center gap-1.5">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            Ограничения анализа
+            Что необходимо дополнительно проверить
           </summary>
           <div className="mt-2 space-y-1">
             {Array.from(
@@ -460,9 +410,11 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
 function ClassList({
   appId,
   state,
+  onChanged,
 }: {
   appId: number;
   state: ReturnType<typeof useApi<ClassesDto>>;
+  onChanged?: () => void;
 }) {
   const { toast } = useToast();
   const [busy, setBusy] = useState<number | null>(null);
@@ -491,6 +443,7 @@ function ClassList({
         approved,
       });
       state.reload();
+      onChanged?.();
     } catch (e) {
       fail(e, "Не удалось сохранить решение");
     } finally {
@@ -503,6 +456,7 @@ function ClassList({
     try {
       await api.delete(`/applications/${appId}/classes/${classId}`);
       state.reload();
+      onChanged?.();
     } catch (e) {
       fail(e, "Не удалось удалить класс");
     } finally {
@@ -519,6 +473,7 @@ function ClassList({
       });
       setIsAdding(false);
       state.reload();
+      onChanged?.();
     } catch (e) {
       fail(e, "Не удалось добавить класс");
     } finally {
@@ -783,85 +738,300 @@ function ClassPicker({
   );
 }
 
-/**
- * Итоговое заключение по делу.
- *
- * Раньше жило отдельной вкладкой «Рекомендации», хотя это результат
- * того же анализа: смотреть вывод отдельно от оснований, на которых
- * он построен, неудобно и опасно.
- */
-function MemoSection({ appId }: { appId: number }) {
-  const state = useApi<{
-    summary: string | null;
-    risk_assessment: string | null;
-    recommended_action: string | null;
-    recommended_classes_json: number[] | null;
-    key_risks_json: string[] | null;
-    confidence: number | null;
-    approved_by: number | null;
-  }>(`/applications/${appId}/recommendation`);
+const ACTIONS: Record<string, string> = {
+  proceed: "Подавать заявку",
+  modify: "Доработать обозначение или перечень товаров и услуг",
+  withdraw: "Не подавать обозначение в текущем виде",
+  further_review: "Провести дополнительную проверку до подачи",
+};
 
-  const memo = state.data;
-  if (!memo) return null;
+const LEGAL_SOURCES = [
+  {
+    title: "Статья 1483 ГК РФ",
+    description: "Основания для отказа в регистрации товарного знака",
+    url: "https://www.consultant.ru/document/cons_doc_LAW_64629/",
+  },
+  {
+    title: "Правила № 482",
+    description: "Критерии оценки сходства обозначений и однородности товаров",
+    url: "https://rospatent.gov.ru/ru/documents/482-prikaz-minekonomrazvitiya-rossii-ot-20-07-2015-482",
+  },
+  {
+    title: "Постановление Пленума ВС РФ № 10",
+    description: "Разъяснения о вероятности смешения обозначений",
+    url: "https://www.vsrf.ru/documents/own/27773/",
+  },
+];
 
-  const ACTIONS: Record<string, string> = {
-    proceed: "Подавать заявку",
-    modify: "Доработать обозначение или перечень",
-    withdraw: "Не подавать в текущем виде",
-    further_review: "Требуется дополнительная проверка",
-  };
+function LegalSummaryCard({
+  verdictCode,
+  VerdictIcon,
+  verdictText,
+  overallRisk,
+  classes,
+  classesConfirmed,
+  appId,
+  classState,
+  analysisNeedsRefresh,
+  onClassesChanged,
+  memo,
+  findings,
+  incompleteChecks,
+  isRunning,
+  onRun,
+}: {
+  verdictCode: string | null;
+  VerdictIcon: typeof Shield;
+  verdictText: string | null;
+  overallRisk: string | null;
+  classes: number[];
+  classesConfirmed: boolean;
+  appId: number;
+  classState: ReturnType<typeof useApi<ClassesDto>>;
+  analysisNeedsRefresh: boolean;
+  onClassesChanged: () => void;
+  memo: MemoDto | null;
+  findings: FindingDto[];
+  incompleteChecks: string[];
+  isRunning: boolean;
+  onRun: () => void;
+}) {
+  const importantRisks = findings
+    .filter((finding) => finding.level === "critical" || finding.level === "high")
+    .slice(0, 4);
 
   return (
-    <Section
-      icon={Gavel}
-      title="Итоговое заключение"
-      hint="Собрано по результатам проверок. Требует подтверждения специалистом."
-    >
-      <div className="space-y-2">
-        {memo.recommended_action && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-medium">Рекомендуемое действие:</span>
-            <Badge className="text-[10px]">
-              {ACTIONS[memo.recommended_action] ?? memo.recommended_action}
-            </Badge>
-            {memo.confidence == null && (
-              <span className="text-[10px] text-muted-foreground">
-                уверенность не определена: проверки выполнены не полностью
+    <Card className={cn("overflow-hidden border-2", VERDICT_STYLES[verdictCode ?? "inconclusive"])}>
+      <CardContent className="p-0">
+        <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 max-w-3xl space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-background/80 shadow-sm">
+                <VerdictIcon className={cn("h-6 w-6", VERDICT_TEXT_COLOR[verdictCode ?? "inconclusive"])} />
               </span>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  Правовое заключение
+                </p>
+                <h2 className={cn("text-2xl font-semibold", VERDICT_TEXT_COLOR[verdictCode ?? "inconclusive"])} data-testid="verdict-title">
+                  {verdictCode ? VERDICT_TITLES[verdictCode] : "Заключение ещё не сформировано"}
+                </h2>
+                <p className="mt-2 text-sm leading-6">
+                  {verdictText ?? "Запустите проверку, чтобы получить оценку рисков и рекомендации до подачи заявки."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {overallRisk && <Badge className={cn("px-3 py-1 text-xs", LEVEL_BADGE[overallRisk])}>{RISK_LABELS[overallRisk] ?? overallRisk}</Badge>}
+              {classes.length > 0 && (
+                <Badge variant="secondary" className="px-3 py-1 text-xs">
+                  МКТУ: {classes.join(", ")} · {classesConfirmed ? "подтверждены" : "требуют подтверждения"}
+                </Badge>
+              )}
+            </div>
+          </div>
+
+          <Button size="lg" disabled={isRunning} onClick={onRun} data-testid="run-full-analysis" className="shrink-0">
+            {isRunning ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+            {isRunning ? "Формируем заключение…" : verdictCode ? "Обновить заключение" : "Провести анализ"}
+          </Button>
+        </div>
+
+        <div className="border-t border-border/70 bg-background/80 p-5">
+          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <Layers className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Подтвердите классы МКТУ</h3>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Решение по классам принимается здесь: оно определяет, среди каких товаров и услуг оцениваются сходство и риски.
+              </p>
+            </div>
+            {analysisNeedsRefresh && (
+              <Badge className="shrink-0 bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                заключение нужно обновить
+              </Badge>
             )}
+          </div>
+          <ClassList
+            appId={appId}
+            state={classState}
+            onChanged={onClassesChanged}
+          />
+          {analysisNeedsRefresh && (
+            <p className="mt-3 text-xs font-medium text-amber-800 dark:text-amber-300">
+              Состав классов изменён. Нажмите «Обновить заключение», чтобы пересчитать поиск совпадений и итоговый риск.
+            </p>
+          )}
+        </div>
+
+        {(memo?.recommended_action || importantRisks.length > 0 || incompleteChecks.length > 0) && (
+          <div className="grid border-t border-border/70 bg-background/65 md:grid-cols-2">
+            <div className="space-y-3 p-5 md:border-r md:border-border/70">
+              <div className="flex items-center gap-2">
+                <Gavel className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Рекомендация</h3>
+              </div>
+              <p className="text-sm leading-6">
+                {memo?.recommended_action
+                  ? ACTIONS[memo.recommended_action] ?? memo.recommended_action
+                  : "Перед подачей проверить отмеченные риски и подтвердить классы МКТУ."}
+              </p>
+              {incompleteChecks.length > 0 && (
+                <p className="text-xs leading-5 text-amber-800 dark:text-amber-300">
+                  Заключение предварительное: {incompleteChecks.join("; ")}.
+                </p>
+              )}
+            </div>
+            <div className="space-y-3 p-5">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-semibold">Ключевые риски</h3>
+              </div>
+              {importantRisks.length > 0 ? (
+                <ul className="space-y-2">
+                  {importantRisks.map((finding) => (
+                    <li key={finding.id} className="flex gap-2 text-sm leading-5">
+                      <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+                      <span>{plainLegalExplanation(finding)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-muted-foreground">Риски высокого и критического уровня не выявлены.</p>
+              )}
+            </div>
           </div>
         )}
 
-        {memo.summary && <p className="text-xs leading-relaxed">{memo.summary}</p>}
+        <div className="border-t border-border/70 bg-background/80 p-5">
+          <div className="mb-3 flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Правовая основа</h3>
+          </div>
+          <div className="grid gap-2 md:grid-cols-3">
+            {LEGAL_SOURCES.map((source) => (
+              <a key={source.title} href={source.url} target="_blank" rel="noreferrer" className="group rounded-lg border border-border bg-card px-3 py-2.5 transition-colors hover:border-primary/50 hover:bg-primary/[0.03]">
+                <span className="flex items-center gap-1.5 text-sm font-semibold group-hover:text-primary">
+                  {source.title}<ExternalLink className="h-3.5 w-3.5" />
+                </span>
+                <span className="mt-1 block text-xs leading-4 text-muted-foreground">{source.description}</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
-        {memo.risk_assessment && (
-          <p className="text-[11px] text-muted-foreground leading-relaxed">
-            {memo.risk_assessment}
+function TrademarkMatches({ findings }: { findings: FindingDto[] }) {
+  const matches = findings.filter((finding) => finding.category === "conflicting_mark");
+  if (matches.length === 0) return null;
+
+  const priority = matches.filter((finding) => finding.level === "critical" || finding.level === "high");
+  const other = matches.filter((finding) => finding.level !== "critical" && finding.level !== "high");
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-red-600" />
+            <h2 className="text-lg font-semibold">Наиболее рискованные совпадения</h2>
+            {priority.length > 0 && <Badge className="bg-red-500/15 text-red-700 dark:text-red-400">{priority.length}</Badge>}
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Знаки, которые могут стать основанием для отказа по пункту 6 статьи 1483 ГК РФ.
           </p>
+        </div>
+
+        {priority.length > 0 ? (
+          <div className="grid gap-3 xl:grid-cols-2">
+            {priority.map((finding) => <TrademarkMatchCard key={finding.id} finding={finding} prominent />)}
+          </div>
+        ) : (
+          <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
+            Совпадений высокого или критического риска не выявлено.
+          </div>
         )}
 
-        {(memo.recommended_classes_json?.length ?? 0) > 0 && (
-          <p className="text-[11px]">
-            <span className="text-muted-foreground">Классы:</span>{" "}
-            {memo.recommended_classes_json!.join(", ")}
-          </p>
-        )}
-
-        {(memo.key_risks_json?.length ?? 0) > 0 && (
-          <details className="text-[11px]">
-            <summary className="cursor-pointer text-muted-foreground">
-              Ключевые риски ({memo.key_risks_json!.length})
+        {other.length > 0 && (
+          <details className="group rounded-lg border border-border">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold hover:bg-muted/40">
+              <span>Посмотреть остальные найденные знаки ({other.length})</span>
+              <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
             </summary>
-            <ul className="mt-1 space-y-0.5 pl-3">
-              {memo.key_risks_json!.map((risk, index) => (
-                <li key={index}>• {risk}</li>
-              ))}
-            </ul>
+            <div className="grid gap-3 border-t border-border p-3 xl:grid-cols-2">
+              {other.map((finding) => <TrademarkMatchCard key={finding.id} finding={finding} />)}
+            </div>
           </details>
         )}
-      </div>
-    </Section>
+      </CardContent>
+    </Card>
   );
+}
+
+function TrademarkMatchCard({ finding, prominent = false }: { finding: FindingDto; prominent?: boolean }) {
+  const record = finding.verification?.registry_record;
+  const quoted = Array.from(finding.explanation.matchAll(/«([^»]+)»/g));
+  const mark = record?.mark_text || quoted[1]?.[1] || quoted[0]?.[1] || "Обозначение без названия";
+  const classes = (record?.classes ?? []).map(String).filter(Boolean);
+  const number = record?.registration_number || record?.application_number || record?.record_id || finding.verification?.record_id;
+  const registryUrl = `https://searchplatform.rospatent.gov.ru/trademarks?search=${encodeURIComponent(mark)}`;
+
+  return (
+    <article className={cn("rounded-xl border p-4", prominent ? "border-red-500/40 bg-red-500/[0.04]" : "border-border bg-card")}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Товарный знак</p>
+          <h3 className="mt-1 truncate text-lg font-semibold">{mark}</h3>
+        </div>
+        <Badge className={cn("shrink-0 text-[11px]", LEVEL_BADGE[finding.level])}>{RISK_LABELS[finding.level] ?? finding.level}</Badge>
+      </div>
+
+      <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+        <div>
+          <dt className="text-xs text-muted-foreground">Классы МКТУ</dt>
+          <dd className="mt-1 flex flex-wrap gap-1.5">
+            {classes.length > 0 ? classes.map((item) => <Badge key={item} variant="secondary">Класс {item}</Badge>) : <span className="font-medium text-amber-700 dark:text-amber-400">не указаны в записи</span>}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">Правообладатель</dt>
+          <dd className="mt-1 font-medium">{record?.owner || "не указан"}</dd>
+        </div>
+        {number && (
+          <div>
+            <dt className="text-xs text-muted-foreground">Номер заявки или регистрации</dt>
+            <dd className="mt-1 font-medium">{number}</dd>
+          </div>
+        )}
+        <div>
+          <dt className="text-xs text-muted-foreground">Правовое основание оценки</dt>
+          <dd className="mt-1 font-medium">{finding.legal_basis || "п. 6 ст. 1483 ГК РФ"}</dd>
+        </div>
+      </dl>
+
+      {finding.recommended_action && <p className="mt-4 border-t border-border pt-3 text-sm leading-5"><span className="font-semibold">Что делать:</span> {finding.recommended_action}</p>}
+      <a href={registryUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+        Проверить запись в реестре <ExternalLink className="h-3.5 w-3.5" />
+      </a>
+    </article>
+  );
+}
+
+function plainLegalExplanation(finding: FindingDto): string {
+  const record = finding.verification?.registry_record;
+  if (finding.category === "conflicting_mark" && record?.mark_text) {
+    return `Сходство с обозначением «${record.mark_text}» в классах МКТУ ${(record.classes ?? []).join(", ") || "не указаны"}.`;
+  }
+  return finding.explanation
+    .replace(/Звуковое сходство [\d.]+, графическое [\d.]+, смысловое [\d.]+, однородность товаров [\d.]+\.?/gi, "")
+    .replace(/Комментарий LLM[^.]*\.?/gi, "")
+    .trim();
 }
 
 function InconclusiveNote({ reason }: { reason: string | null }) {
@@ -880,15 +1050,17 @@ function Section({
   title,
   hint,
   badge,
+  initialOpen = true,
   children,
 }: {
   icon: typeof Shield;
   title: string;
   hint?: string;
   badge?: string;
+  initialOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(initialOpen);
   return (
     <Card>
       <CardContent className="p-3">
@@ -960,12 +1132,7 @@ function FindingCard({
           {RISK_LABELS[finding.level] ?? finding.level}
         </Badge>
         {finding.legal_basis && (
-          <span className="text-[11px] font-mono">{finding.legal_basis}</span>
-        )}
-        {finding.verification?.semantic_verdict?.llm_used && (
-          <Badge variant="outline" className="text-[10px] border-amber-500/50">
-            смысл определён моделью
-          </Badge>
+          <span className="text-[11px] font-medium">{finding.legal_basis}</span>
         )}
         {agreed && (
           <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px] ml-auto">
@@ -981,7 +1148,7 @@ function FindingCard({
         )}
       </div>
 
-      <p className="text-xs leading-relaxed">{finding.explanation}</p>
+      <p className="text-xs leading-relaxed">{plainLegalExplanation(finding)}</p>
 
       {finding.citations.map((citation) => (
         <div
@@ -993,7 +1160,7 @@ function FindingCard({
               : "border-destructive/40 bg-destructive/5",
           )}
         >
-          <span className="text-[10px] font-mono text-muted-foreground">
+          <span className="text-[10px] font-medium text-muted-foreground">
             {citation.anchor ?? citation.source_ref ?? "источник"}
           </span>
           <p className="text-[11px] italic mt-0.5">«{citation.quote}»</p>

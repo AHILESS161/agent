@@ -74,6 +74,7 @@ class TestValues:
 
         assert name["value"] == "ООО «ПРИМЕР»"
         assert name["is_filled"] is True
+        assert name["origin"] == "regex"
 
     def test_unconfirmed_fields_stay_empty(self):
         form = build_form(DraftContent())
@@ -90,6 +91,7 @@ class TestValues:
         goods = next(s for s in form["sections"] if s["id"] == "goods")
         assert "Класс 25" in goods["fields"][0]["value"]
         assert "Класс 35" in goods["fields"][0]["value"]
+        assert goods["fields"][0]["origin"] == "подтверждённые классы МКТУ"
 
 
 class TestFillModes:

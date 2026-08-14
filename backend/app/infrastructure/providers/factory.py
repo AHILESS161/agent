@@ -3,7 +3,8 @@ Provider Factory — creates the appropriate TrademarkRegistryProvider based on 
 
 Supported provider types:
     - "mock"  → MockFipsProvider (in-memory, no network)
-    - "fips"  → (future) Real FIPS/Роспатент HTTP provider
+    - "fips" / "rospatent" → official Rospatent Search Platform API
+    - "rospatent_public" → limited anonymous public Search Platform UI
 """
 from __future__ import annotations
 
@@ -19,10 +20,11 @@ class ProviderFactory:
 
     Config shape:
         {
-            "provider": "mock" | "fips",
-            # For real FIPS provider (future):
-            "base_url": "https://www1.fips.ru/",
+            "provider": "mock" | "fips" | "rospatent_public",
+            "base_url": "https://searchplatform.rospatent.gov.ru/patsearch/v0.2/",
             "api_key":  "...",
+            "trademark_datasets": ["..."],
+            "application_datasets": ["..."],
             "timeout":  30.0,
         }
     """
@@ -43,16 +45,44 @@ class ProviderFactory:
             return MockFipsProvider()
 
         if provider_type in ("fips", "rospatent"):
-            # Реальная интеграция с ФИПС/Роспатентом не реализована.
-            # Молча подставлять демо-датасет нельзя: это выдало бы
-            # ограниченный demo-поиск за полноценный поиск по реестру.
-            raise NotImplementedError(
-                "Провайдер ФИПС/Роспатент пока не реализован. "
-                "Укажите FIPS_PROVIDER=mock, чтобы работать с демо-датасетом "
-                "и получать честную отметку demo-режима в отчётах."
+            from app.infrastructure.providers.rospatent import RospatentSearchProvider
+
+            return RospatentSearchProvider(
+                api_key=str(cfg.get("api_key") or ""),
+                base_url=str(
+                    cfg.get("base_url")
+                    or "https://searchplatform.rospatent.gov.ru/patsearch/v0.2/"
+                ),
+                trademark_datasets=list(cfg.get("trademark_datasets") or []),
+                application_datasets=list(cfg.get("application_datasets") or []),
+                class_filter_field=str(
+                    cfg.get("class_filter_field") or "classification.icgs"
+                ),
+                timeout=float(cfg.get("timeout") or 30.0),
+                verify_ssl=bool(cfg.get("verify_ssl", True)),
+                client=cfg.get("client"),
+            )
+
+        if provider_type in ("rospatent_public", "fips_public", "public"):
+            from app.infrastructure.providers.rospatent_public import (
+                RospatentPublicSearchProvider,
+            )
+
+            return RospatentPublicSearchProvider(
+                base_url=str(
+                    cfg.get("public_base_url")
+                    or "https://searchplatform.rospatent.gov.ru/"
+                ),
+                data_sources=list(cfg.get("public_data_sources") or []),
+                timeout=float(cfg.get("timeout") or 30.0),
+                verify_ssl=bool(cfg.get("verify_ssl", True)),
+                max_results=int(cfg.get("public_max_results") or 100),
+                page_size=int(cfg.get("public_page_size") or 50),
+                min_interval=float(cfg.get("public_min_interval") or 0.75),
+                client=cfg.get("client"),
             )
 
         raise ValueError(
             f"Unknown registry provider type: '{provider_type}'. "
-            "Supported values: mock, fips."
+            "Supported values: mock, fips, rospatent_public."
         )

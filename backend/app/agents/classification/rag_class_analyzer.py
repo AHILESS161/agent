@@ -218,7 +218,7 @@ class RagNiceClassAnalyzer:
                 sources_used=list(available_sources),
             )
 
-        parsed = _parse_json(raw)
+        parsed = raw if isinstance(raw, dict) else _parse_json(raw)
         if parsed is None:
             return ClassAnalysisOutcome(
                 result=None,
@@ -303,16 +303,29 @@ class RagNiceClassAnalyzer:
             verification=verification,
         )
 
-    async def _call_llm(self, prompt: str) -> str | None:
+    async def _call_llm(self, prompt: str) -> str | dict[str, Any] | None:
         try:
-            if hasattr(self._llm, "generate"):
-                from app.infrastructure.llm.base import LLMMessage
+            from app.infrastructure.llm.base import LLMMessage
+
+            messages = [
+                LLMMessage(role="system", content=SYSTEM_PROMPT),
+                LLMMessage(role="user", content=prompt),
+            ]
+
+            # Просим провайдер применить JSON Schema на уровне API. Простая
+            # инструкция «верни JSON» иногда даёт синтаксически корректный,
+            # но нестабильный по структуре ответ. Для GigaChat это особенно
+            # заметно при повторных прогонах одного и того же дела.
+            if hasattr(self._llm, "generate_structured"):
+                response = await self._llm.generate_structured(
+                    messages=messages,
+                    output_schema=ClassAnalysisResult.model_json_schema(),
+                    temperature=0.1,
+                )
+            elif hasattr(self._llm, "generate"):
 
                 response = await self._llm.generate(
-                    messages=[
-                        LLMMessage(role="system", content=SYSTEM_PROMPT),
-                        LLMMessage(role="user", content=prompt),
-                    ],
+                    messages=messages,
                     temperature=0.1,
                     # Модели с рассуждениями тратят часть бюджета на
                     # размышления. При лимите по умолчанию ответ
@@ -324,10 +337,14 @@ class RagNiceClassAnalyzer:
                     prompt=prompt, system=SYSTEM_PROMPT, temperature=0.1
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Ошибка вызова LLM", error=str(exc))
+            logger.warning(
+                "Ошибка вызова LLM",
+                error_type=type(exc).__name__,
+                error=str(exc) or repr(exc),
+            )
             return None
 
-        if isinstance(response, str):
+        if isinstance(response, (str, dict)):
             return response
         return getattr(response, "content", None) or getattr(response, "text", None)
 

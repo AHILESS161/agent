@@ -105,7 +105,7 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
         description:
           `Полей: ${result.fields_extracted}. ` +
           `Сохранено подтверждённых: ${result.preserved_confirmed_fields}. ` +
-          `Проверьте значения на вкладке «Сверка полей».`,
+          `Проверьте значения ниже, на шаге сверки данных.`,
       });
       onExtracted?.();
     } catch (e) {
@@ -145,10 +145,9 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
     <div className="space-y-4" data-testid="source-documents-tab">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h3 className="text-sm font-semibold">Исходные документы</h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            PDF, DOCX, TXT, PNG, JPG. Тип файла проверяется по содержимому.
-            Распознавание сканов (OCR) не поддерживается.
+          <h3 className="text-base font-semibold">Документы проекта</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Добавьте выписку или другой документ, из которого нужно перенести данные.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -220,42 +219,37 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
 
             return (
               <Card key={doc.id} data-testid={`document-${doc.id}`}>
-                <CardContent className="p-3">
+                <CardContent className="p-4">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
                         <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
-                        <span className="text-sm font-medium truncate">
+                        <span className="truncate text-base font-semibold">
                           {doc.original_filename}
                         </span>
-                        <Badge variant="secondary" className="text-[10px]">
+                        <Badge variant="secondary">
                           {DOCUMENT_KIND_LABELS[doc.document_kind] ?? doc.document_kind}
                         </Badge>
+                        {doc.extraction_method === "ocr" && (
+                          <Badge variant="outline">Распознано со скана</Badge>
+                        )}
                         {doc.kind_requires_confirmation && (
-                          <Badge variant="outline" className="text-[10px]">
+                          <Badge variant="outline">
                             тип требует подтверждения
                           </Badge>
                         )}
                       </div>
 
-                      <p className="text-[11px] text-muted-foreground mt-1.5">
+                      <p className="mt-1.5 text-sm text-muted-foreground">
                         {formatSize(doc.file_size)}
                         {doc.page_count ? ` · страниц: ${doc.page_count}` : ""}
-                        {doc.extraction_method ? ` · ${doc.extraction_method}` : ""}
                         {" · "}
                         {PROCESSING_STATUS_LABELS[doc.processing_status] ??
                           doc.processing_status}
-                        {doc.kind_confidence != null
-                          ? ` · уверенность типа ${doc.kind_confidence}`
-                          : ""}
-                      </p>
-
-                      <p className="text-[10px] font-mono text-muted-foreground mt-1 truncate">
-                        SHA-256: {doc.sha256}
                       </p>
 
                       {failed && doc.error_message && (
-                        <p className="mt-1.5 text-[11px] text-destructive">
+                        <p className="mt-1.5 text-sm text-destructive">
                           {doc.error_message}
                         </p>
                       )}

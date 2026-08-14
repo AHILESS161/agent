@@ -12,6 +12,8 @@ class SearchQuery(BaseModel):
 
 class RegistryRecord(BaseModel):
     record_id: str
+    external_id: str | None = None
+    source: str | None = None  # registration / application
     mark_text: str
     mark_type: str
     owner: str
@@ -19,6 +21,8 @@ class RegistryRecord(BaseModel):
     status: str  # registered/pending/expired/cancelled
     filing_date: str | None
     registration_date: str | None
+    application_number: str | None = None
+    registration_number: str | None = None
     image_url: str | None = None
 
 

@@ -16,6 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api, ApiError } from "@/lib/api";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
+import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
   DocumentPackagesTab,
   StatusHistoryTab,
@@ -516,7 +517,7 @@ export default function ApplicationDetailPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-bold">{app.markName}</h1>
+            <h1 className="text-3xl font-semibold">{app.markName}</h1>
             <Badge className={cn("text-[10px]", STATUS_COLORS[app.status])}>
               {STATUS_LABELS[app.status]}
             </Badge>
@@ -528,39 +529,72 @@ export default function ApplicationDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="general" className="w-full">
-        <TabsList className="w-full flex overflow-x-auto justify-start bg-transparent border-b border-border rounded-none h-auto p-0 gap-0">
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid h-auto w-full grid-cols-4 overflow-hidden rounded-lg border border-border bg-card p-0">
           {[
-            { value: "general", label: "Общие сведения", icon: Info },
-            { value: "source-documents", label: "Исходные документы", icon: Upload },
-            { value: "legal", label: "Правовой анализ", icon: Shield },
-            { value: "draft", label: "Заявление", icon: FileSignature },
-            { value: "documents", label: "Документы", icon: FileText },
-            { value: "history", label: "История", icon: History },
+            { value: "overview", label: "Карточка", hint: "сведения", icon: Info },
+            { value: "data", label: "Данные", hint: "документы и сверка", icon: ClipboardCheck },
+            { value: "review", label: "Экспертиза", hint: "классы и риски", icon: Shield },
+            { value: "result", label: "Результат", hint: "заявление и файлы", icon: FileSignature },
           ].map(tab => (
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none whitespace-nowrap"
+              className="relative flex min-w-0 items-center justify-start gap-3 rounded-none border-r border-border px-3 py-4 text-left last:border-r-0 data-[state=active]:bg-primary/[0.07] data-[state=active]:text-foreground data-[state=active]:shadow-none sm:px-5"
               data-testid={`tab-${tab.value}`}
             >
-              <tab.icon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-current text-xs data-[state=active]:border-primary">
+                <tab.icon className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-semibold sm:text-base">{tab.label}</span>
+                <span className="hidden truncate text-xs font-normal text-muted-foreground md:block">{tab.hint}</span>
+              </span>
             </TabsTrigger>
           ))}
         </TabsList>
 
-        <div className="mt-4">
-          <TabsContent value="general">
+        <div className="mt-6">
+          <TabsContent value="overview">
             <GeneralInfoTab app={app} client={client} onSaved={reload} />
           </TabsContent>
-          <TabsContent value="source-documents">
-            <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
+          <TabsContent value="data" className="space-y-8">
+            <section>
+              <div className="mb-4 flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">1</span>
+                <div>
+                  <h2 className="text-base font-semibold">Загрузите исходные документы</h2>
+                  <p className="text-sm text-muted-foreground">Система извлечёт реквизиты, но не подтвердит их за специалиста.</p>
+                </div>
+              </div>
+              <SourceDocumentsTab appId={appId} onExtracted={() => setFieldsRefreshKey(k => k + 1)} />
+            </section>
+            <section className="border-t border-border pt-7">
+              <div className="mb-4 flex items-start gap-3">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-white">2</span>
+                <div>
+                  <h2 className="text-base font-semibold">Проверьте извлечённые данные</h2>
+                  <p className="text-sm text-muted-foreground">Подтвердите спорные значения до формирования заявления.</p>
+                </div>
+              </div>
+              <FieldConfirmationTab key={fieldsRefreshKey} appId={appId} />
+            </section>
           </TabsContent>
-          <TabsContent value="legal"><LegalAnalysisTab appId={appId} /></TabsContent>
-          <TabsContent value="draft"><ApplicationDraftTab appId={appId} /></TabsContent>
-          <TabsContent value="documents"><DocumentPackagesTab appId={appId} /></TabsContent>
-          <TabsContent value="history"><StatusHistoryTab appId={appId} /></TabsContent>
+          <TabsContent value="review"><LegalAnalysisTab appId={appId} /></TabsContent>
+          <TabsContent value="result" className="space-y-8">
+            <section>
+              <h2 className="mb-3 text-xl font-semibold">Заявление</h2>
+              <ApplicationDraftTab appId={appId} />
+            </section>
+            <section className="border-t border-border pt-7">
+              <h2 className="mb-3 text-xl font-semibold">Готовые документы</h2>
+              <DocumentPackagesTab appId={appId} />
+            </section>
+            <section className="border-t border-border pt-7">
+              <h2 className="mb-3 text-xl font-semibold">История дела</h2>
+              <StatusHistoryTab appId={appId} />
+            </section>
+          </TabsContent>
         </div>
       </Tabs>
     </div>

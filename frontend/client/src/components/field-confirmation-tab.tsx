@@ -209,8 +209,7 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
           <FileWarning className="w-8 h-8 text-muted-foreground mb-3" />
           <p className="text-sm font-medium">Реквизиты ещё не извлечены</p>
           <p className="text-xs text-muted-foreground mt-1 max-w-sm">
-            Загрузите выписку на вкладке «Исходные документы» и нажмите
-            «Извлечь реквизиты».
+            Загрузите выписку на шаге выше и нажмите «Извлечь реквизиты».
           </p>
         </CardContent>
       </Card>
@@ -218,56 +217,44 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
   }
 
   return (
-    <div className="space-y-4" data-testid="field-confirmation-tab">
-      <AiDisclaimer />
+    <div className="space-y-5" data-testid="field-confirmation-tab">
+      <AiDisclaimer compact />
 
       {/* --- сводка --- */}
-      <Card>
-        <CardContent className="p-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
-            <span className="font-semibold">Готовность к формированию черновика:</span>
-            {summary.can_generate_draft ? (
-              <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px]">
-                можно формировать
-              </Badge>
-            ) : (
-              <Badge className="bg-amber-500/15 text-amber-700 dark:text-amber-500 text-[10px]">
-                требуется подтверждение полей
-              </Badge>
+      <Card className={cn("overflow-hidden", summary.can_generate_draft ? "border-emerald-500/35" : "border-primary/35")}>
+        <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center">
+          <div className={cn(
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-semibold",
+            summary.can_generate_draft ? "bg-emerald-500/12 text-emerald-700" : "bg-primary/10 text-primary",
+          )}>
+            {summary.can_generate_draft ? <Check className="h-6 w-6" /> : summary.requires_attention}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-lg font-semibold">
+              {summary.can_generate_draft
+                ? "Данные проверены — можно формировать заявление"
+                : attentionSummary(summary.requires_attention)}
+            </p>
+            {!summary.can_generate_draft && summary.blocking_document_generation.length > 0 && (
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                В первую очередь: {summary.blocking_document_generation.join(", ")}.
+              </p>
             )}
-            <span className="text-muted-foreground">
-              всего: {summary.total} · требуют внимания: {summary.requires_attention}
-            </span>
-            <span className="text-muted-foreground">
-              версия маппинга: {summary.mapping_version} · схема заявления:{" "}
-              {summary.application_schema_version}
-            </span>
+          </div>
             <Button
               variant="ghost"
-              size="sm"
-              className="ml-auto"
+              className="shrink-0"
               onClick={() => void load()}
               data-testid="button-reload-reconciliation"
             >
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
               Обновить
             </Button>
-          </div>
-
-          {!summary.can_generate_draft && summary.blocking_document_generation.length > 0 && (
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              Черновик заявления не будет сформирован, пока не подтверждены:{" "}
-              <span className="text-foreground">
-                {summary.blocking_document_generation.join(", ")}
-              </span>
-              .
-            </p>
-          )}
         </CardContent>
       </Card>
 
       {/* --- поля --- */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {items.map((item, index) => {
           const fieldId = item.extracted_field_id;
           const isBusy = busyFieldId != null && busyFieldId === fieldId;
@@ -278,39 +265,42 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
           return (
             <Card
               key={`${item.case_field}-${index}`}
-              className={cn(item.blocks_document_generation && "border-amber-500/50")}
+              className={cn(
+                "overflow-hidden",
+                item.blocks_document_generation && "border-l-4 border-l-amber-500",
+                item.status === "confirmed" && "border-l-4 border-l-emerald-500/70",
+              )}
               data-testid={`field-row-${item.case_field}`}
             >
-              <CardContent className="p-3 space-y-2">
+              <CardContent className="space-y-4 p-5">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium">{item.label}</span>
-                  <Badge className={cn("text-[10px]", STATUS_STYLES[item.status])}>
+                  <span className="text-base font-semibold">{item.label}</span>
+                  <Badge className={cn(STATUS_STYLES[item.status])}>
                     {FIELD_STATUS_LABELS[item.status] ?? item.status}
                   </Badge>
                   {item.required_for_application && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline">
                       обязательное
                     </Badge>
                   )}
                   {item.is_sensitive && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline">
                       персональные данные
                     </Badge>
                   )}
                 </div>
 
-                {/* Значение из документа -> поле заявления */}
-                <div className="grid gap-2 sm:grid-cols-3 text-xs">
-                  <div>
-                    <p className="text-muted-foreground text-[11px]">Из документа</p>
-                    <p className="font-mono break-all">
+                {/* The working view shows the decision, not extraction internals. */}
+                <div className="rounded-xl bg-muted/55 px-4 py-3">
+                    <p className="text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">Предлагаемое значение</p>
+                    <p className="mt-1 break-words text-base font-medium leading-relaxed">
                       {item.is_sensitive && !isRevealed
                         ? maskIfSensitive(displayValue, true)
                         : displayValue ?? "—"}
                       {item.is_sensitive && fieldId != null && (
                         <button
                           type="button"
-                          className="ml-2 text-[10px] underline text-muted-foreground"
+                          className="ml-3 text-xs font-normal text-primary hover:underline"
                           onClick={() =>
                             setRevealed((p) => ({ ...p, [fieldId]: !p[fieldId] }))
                           }
@@ -319,54 +309,29 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                         </button>
                       )}
                     </p>
-                    {item.normalization_changed && item.registry_raw_value && (
-                      <p className="text-[10px] text-muted-foreground mt-0.5">
-                        исходно: {item.registry_raw_value}
-                      </p>
-                    )}
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground text-[11px]">В карточке дела</p>
-                    <p className="font-mono break-all">{item.case_value ?? "—"}</p>
-                  </div>
-
-                  <div>
-                    <p className="text-muted-foreground text-[11px]">Поле заявления</p>
-                    {/* Показывается имя поля бланка с кодом INID:
-                        технический путь специалисту ничего не говорит.
-                        Сам путь остаётся во всплывающей подсказке. */}
-                    <p className="text-[11px]" title={item.application_field ?? undefined}>
-                      {item.application_field_label ??
-                        (item.application_field
-                          ? "поле бланка"
-                          : "не переносится в бланк")}
-                    </p>
-                  </div>
                 </div>
 
-                {/* Источник */}
-                <p className="text-[10px] text-muted-foreground">
-                  {item.page_number ? `Страница ${item.page_number}` : "Источник не указан"}
-                  {item.pattern_id ? ` · паттерн ${item.pattern_id}` : ""}
-                  {item.extraction_method ? ` · ${item.extraction_method}` : ""}
-                  {item.confidence != null ? ` · уверенность ${item.confidence}` : ""}
-                </p>
+                {item.case_value && item.case_value !== displayValue && (
+                  <div className="flex flex-col gap-1 rounded-lg border border-amber-500/35 bg-amber-500/[0.06] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm font-medium text-amber-800">В карточке уже записано другое значение</span>
+                    <span className="break-all text-sm">{item.case_value}</span>
+                  </div>
+                )}
 
                 {item.validation_error && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-500">
+                  <p className="text-sm text-amber-700 dark:text-amber-500">
                     {item.validation_error}
                   </p>
                 )}
                 {item.note && (
-                  <p className="text-[11px] text-muted-foreground">{item.note}</p>
+                  <p className="text-sm text-muted-foreground">{item.note}</p>
                 )}
 
                 {/* Конкурирующие кандидаты */}
                 {item.candidates.length > 1 &&
                   new Set(item.candidates.map((c) => c.normalized_value)).size > 1 && (
-                    <div className="rounded-md border border-border p-2 space-y-1.5">
-                      <p className="text-[11px] font-medium">
+                    <div className="space-y-2 rounded-lg border border-border p-4">
+                      <p className="text-sm font-semibold">
                         Найдено несколько значений — выберите верное:
                       </p>
                       {item.candidates.map((candidate) => (
@@ -374,14 +339,8 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                           key={candidate.id}
                           className="flex items-center justify-between gap-2"
                         >
-                          <span className="text-[11px] font-mono break-all">
+                          <span className="break-all text-sm">
                             {candidate.normalized_value ?? candidate.raw_value}
-                            <span className="ml-2 text-muted-foreground">
-                              {candidate.page_number ? `стр. ${candidate.page_number}` : ""}
-                              {candidate.validation_passed === false
-                                ? " · не прошло проверку"
-                                : ""}
-                            </span>
                           </span>
                           <Button
                             size="sm"
@@ -408,7 +367,7 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                         setEditing((p) => ({ ...p, [fieldId]: e.target.value }))
                       }
                       placeholder="Введите значение"
-                      className="h-8 text-xs"
+                      className="text-base"
                       data-testid={`input-edit-${fieldId}`}
                     />
                     <Button
@@ -444,7 +403,7 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 text-[11px] text-muted-foreground"
+                      className="text-sm text-muted-foreground"
                       disabled={isBusy}
                       onClick={() => void removeField(fieldId, item.label)}
                       data-testid={`delete-field-${fieldId}`}
@@ -461,7 +420,7 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
                     {item.available_actions.includes("accept") && (
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="default"
                         disabled={isBusy || item.status === "confirmed"}
                         onClick={() => void act(item, "accept")}
                         data-testid={`button-accept-${item.case_field}`}
@@ -559,27 +518,17 @@ export function FieldConfirmationTab({ appId }: { appId: number }) {
         }
       />
 
-      {/* Поля заявления без источника в выписке */}
-      {summary.not_sourced_from_registry.length > 0 && (
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-xs font-semibold mb-1.5">
-              Не заполняется из реестровой выписки
-            </p>
-            <ul className="space-y-1">
-              {summary.not_sourced_from_registry.map((entry) => (
-                <li key={entry.field} className="text-[11px] text-muted-foreground">
-                  <span className="font-mono">{entry.field}</span> — {entry.reason}
-                </li>
-              ))}
-            </ul>
-          </CardContent>
-        </Card>
-      )}
-
-      <p className="text-[11px] text-muted-foreground">{reconciliation.disclaimer}</p>
     </div>
   );
+}
+
+function attentionSummary(value: number): string {
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  if (mod100 >= 11 && mod100 <= 14) return `${value} полей требуют решения`;
+  if (mod10 === 1) return `${value} поле требует решения`;
+  if (mod10 >= 2 && mod10 <= 4) return `${value} поля требуют решения`;
+  return `${value} полей требуют решения`;
 }
 
 /**
@@ -610,14 +559,14 @@ function ManualEntry({
   if (!isOpen) {
     return (
       <div className="flex items-center gap-2 pt-1">
-        <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
           <CircleSlash className="w-3.5 h-3.5" />
           Значение не извлечено из документа
         </p>
         <Button
           size="sm"
           variant="outline"
-          className="h-7 text-[11px]"
+          className="text-sm"
           onClick={() => setIsOpen(true)}
           data-testid={`manual-entry-${fieldPath}`}
         >
@@ -630,7 +579,7 @@ function ManualEntry({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-[11px] text-muted-foreground"
+            className="text-sm text-muted-foreground"
             onClick={onSkip}
             data-testid={`skip-${fieldPath}`}
           >
@@ -649,7 +598,7 @@ function ManualEntry({
         value={value}
         onChange={(e) => setValue(e.target.value)}
         placeholder={`${label}${isSensitive ? " (персональные данные)" : ""}`}
-        className="h-8 text-xs"
+        className="text-base"
         data-testid={`manual-input-${fieldPath}`}
       />
       <Button
@@ -703,20 +652,20 @@ function AddCustomField({
 
   return (
     <Card>
-      <CardContent className="p-3 flex flex-wrap items-center gap-2">
+      <CardContent className="flex flex-wrap items-center gap-3 p-4">
         <Input
           autoFocus
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder="Название поля"
-          className="h-8 text-xs w-52"
+          className="w-60 text-base"
           data-testid="custom-field-label"
         />
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="Значение"
-          className="h-8 text-xs flex-1 min-w-[160px]"
+          className="min-w-[180px] flex-1 text-base"
           data-testid="custom-field-value"
         />
         <Button

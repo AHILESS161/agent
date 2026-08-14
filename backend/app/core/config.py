@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
-from pydantic import field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -31,14 +31,40 @@ class Settings(BaseSettings):
     VECTOR_STORE_URL: Optional[str] = None
 
     # LLM Provider
-    LLM_PROVIDER: str = "mock"  # local / openai / anthropic / mock
+    LLM_PROVIDER: str = "mock"  # local / openai / gigachat / anthropic / mock
     LLM_MODEL: str = "gpt-4o"
     LLM_BASE_URL: Optional[str] = None
     LLM_API_KEY: Optional[str] = None
+    GIGACHAT_AUTHORIZATION_KEY: Optional[str] = None
+    GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"
+    GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    GIGACHAT_VERIFY_SSL: bool = True
+    GIGACHAT_CA_BUNDLE_FILE: Optional[str] = None
 
     # Провайдер реестра товарных знаков (Роспатент / ФИПС).
-    # На текущем этапе реально доступен только "mock" — демо-датасет.
     FIPS_PROVIDER: str = "mock"
+    FIPS_BASE_URL: str = "https://searchplatform.rospatent.gov.ru/patsearch/v0.2/"
+    FIPS_API_KEY: Optional[str] = None
+    FIPS_TRADEMARK_DATASETS: Annotated[List[str], NoDecode] = Field(
+        default_factory=list
+    )
+    FIPS_APPLICATION_DATASETS: Annotated[List[str], NoDecode] = Field(
+        default_factory=list
+    )
+    FIPS_CLASS_FILTER_FIELD: str = "classification.icgs"
+    FIPS_TIMEOUT: float = 30.0
+    FIPS_VERIFY_SSL: bool = True
+    FIPS_PUBLIC_BASE_URL: str = "https://searchplatform.rospatent.gov.ru/"
+    FIPS_PUBLIC_DATA_SOURCES: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: [
+            "trademarks",
+            "known_trademarks",
+            "international_trademarks",
+        ]
+    )
+    FIPS_PUBLIC_MAX_RESULTS: int = 100
+    FIPS_PUBLIC_PAGE_SIZE: int = 50
+    FIPS_PUBLIC_MIN_INTERVAL: float = 0.75
 
     # --- Feature flags ---------------------------------------------------
     # Фактическая подача заявки во внешний реестр. Выключена намеренно:
@@ -64,6 +90,18 @@ class Settings(BaseSettings):
     FILE_STORAGE_PATH: str = "./storage/documents"
     MAX_UPLOAD_MB: int = 25
 
+    # OCR для сканов и изображений. Обычный PDF с текстовым слоем проходит
+    # без OCR; Tesseract запускается только для страниц, где текста нет.
+    OCR_ENABLED: bool = True
+    OCR_LANGUAGES: str = "rus+eng"
+    OCR_DPI: int = 300
+    OCR_PSM: int = 3
+    OCR_MIN_TEXT_CHARS: int = 30
+    OCR_TIMEOUT_SECONDS: int = 60
+    OCR_MAX_IMAGE_PIXELS: int = 40_000_000
+    OCR_TESSERACT_CMD: Optional[str] = None
+    OCR_TESSDATA_DIR: Optional[str] = None
+
     # Logging
     LOG_LEVEL: str = "INFO"
 
@@ -76,6 +114,20 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [origin.strip() for origin in v.split(",")]
         return list(v)  # type: ignore[arg-type]
+
+    @field_validator(
+        "FIPS_TRADEMARK_DATASETS",
+        "FIPS_APPLICATION_DATASETS",
+        "FIPS_PUBLIC_DATA_SOURCES",
+        mode="before",
+    )
+    @classmethod
+    def parse_dataset_ids(cls, v: object) -> List[str]:
+        if v in (None, ""):
+            return []
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return [str(item).strip() for item in v if str(item).strip()]  # type: ignore[union-attr]
 
     @field_validator("LOG_LEVEL")
     @classmethod

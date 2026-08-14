@@ -40,6 +40,10 @@ from app.infrastructure.database.models import (
     TrademarkApplicationDraft,
 )
 from app.agents.legal.query_variants import QueryVariantGenerator
+from app.agents.legal.registry_context import (
+    MAX_REGISTRY_RECORDS_FOR_LLM,
+    review_registry_context,
+)
 from app.agents.legal.semantic_similarity import (
     SemanticSimilarityAnalyzer,
     SemanticVerdict,
@@ -65,11 +69,27 @@ MIN_SIMILARITY = 0.3
 # совпадение опаснее всего.
 MAX_SEMANTIC_CHECKS = 12
 
+# Контрольный поиск вне выбранных классов нужен для общеизвестных знаков и
+# случаев однородности товаров из разных классов. Он выполняется только после
+# основного class-first прохода и намеренно уже основного поиска.
+BROAD_CONTROL_RESULTS = 20
+
+_RISK_ORDER = {
+    RiskLevel.low: 0,
+    RiskLevel.medium: 1,
+    RiskLevel.high: 2,
+    RiskLevel.critical: 3,
+}
+
 
 def _search_mode() -> SearchMode:
     """Режим поиска по фактически настроенному провайдеру."""
     provider = (getattr(settings, "FIPS_PROVIDER", "mock") or "mock").lower()
-    return SearchMode.demo if provider == "mock" else SearchMode.real
+    if provider == "mock":
+        return SearchMode.demo
+    if provider in {"rospatent_public", "fips_public", "public"}:
+        return SearchMode.limited
+    return SearchMode.real
 
 
 def _risk_level(similarity: float, confusion_likely: bool) -> RiskLevel:
@@ -80,6 +100,51 @@ def _risk_level(similarity: float, confusion_likely: bool) -> RiskLevel:
     if similarity >= 0.5:
         return RiskLevel.medium
     return RiskLevel.low
+
+
+def _llm_risk(value: Any) -> RiskLevel | None:
+    try:
+        return RiskLevel(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _max_risk(left: RiskLevel, right: RiskLevel | None) -> RiskLevel:
+    if right is None:
+        return left
+    return right if _RISK_ORDER[right] > _RISK_ORDER[left] else left
+
+
+def _class_priority(record: Any, classes: list[int]) -> int:
+    """2 — пересечение выбранных классов, 1 — класс неизвестен, 0 — вне классов."""
+    if not classes:
+        return 1
+    record_classes = set(record.classes or [])
+    if not record_classes:
+        return 1
+    return 2 if set(classes) & record_classes else 0
+
+
+def _llm_can_elevate(
+    comment: dict[str, Any] | None,
+    record: Any,
+    similarity: Any,
+    classes: list[int],
+) -> bool:
+    """Разрешить юридическому слою сохранить недооценённую правилами карточку.
+
+    Модель не меняет коэффициенты. Она может только поднять карточку на ручную
+    проверку, если назвала риск не ниже medium и имеется независимая опора:
+    пересечение классов, неизвестный перечень либо заметное сходство знаков.
+    """
+    if not comment or comment.get("requires_attention") is not True:
+        return False
+    level = _llm_risk(comment.get("legal_risk"))
+    if level not in {RiskLevel.medium, RiskLevel.high, RiskLevel.critical}:
+        return False
+    return (
+        _class_priority(record, classes) > 0 and similarity.mark_similarity >= 0.15
+    ) or similarity.mark_similarity >= 0.5
 
 
 async def _apply_semantic_layer(
@@ -179,7 +244,15 @@ async def run_conflict_search(
         search_strategy_json={
             "mark_text": mark_text,
             "classes": classes,
+            "class_source": "approved" if class_context.is_confirmed else "suggested",
+            "class_context": class_context.describe(),
+            "search_order": (
+                ["selected_classes", "broader_registry_control"]
+                if classes
+                else ["broader_registry_without_classes"]
+            ),
             "search_types": ["exact", "fuzzy", "phonetic"],
+            "sources": ["registrations", "applications"],
         },
         started_at=datetime.now(timezone.utc),
     )
@@ -200,24 +273,84 @@ async def run_conflict_search(
 
     records: dict[str, Any] = {}
     found_by: dict[str, str] = {}
-    try:
-        for variant in variants:
-            for search_type in ("exact", "fuzzy", "phonetic"):
+    search_scope: dict[str, str] = {}
+    search_applications = getattr(registry_provider, "search_applications", None)
+    applications_checked = callable(search_applications)
+
+    async def collect_phase(
+        *,
+        phase_variants: list[Any],
+        phase_classes: list[int] | None,
+        phase_name: str,
+        registration_search_types: tuple[str, ...],
+        max_results: int,
+    ) -> None:
+        """Собрать одну фазу, сохраняя порядок class-first в аудите."""
+        for variant in phase_variants:
+            for search_type in registration_search_types:
                 query = SearchQuery(
                     mark_text=variant.text,
                     mark_type=(
                         application.mark_type.value if application.mark_type else None
                     ),
-                    classes=classes or None,
+                    classes=phase_classes or None,
                     search_type=search_type,
-                    max_results=MAX_RESULTS,
+                    max_results=max_results,
                 )
                 for record in await registry_provider.search_marks(query):
-                    # Один знак может найтись несколькими видами поиска
-                    # и по нескольким вариантам запроса.
+                    # Не все внешние адаптеры гарантируют серверную фильтрацию.
+                    # В первой фазе дополнительно проверяем пересечение локально.
+                    if (
+                        phase_classes
+                        and record.classes
+                        and not set(phase_classes).intersection(record.classes)
+                    ):
+                        continue
                     if record.record_id not in records:
                         records[record.record_id] = record
                         found_by[record.record_id] = variant.kind
+                        search_scope[record.record_id] = phase_name
+
+            if applications_checked:
+                application_query = SearchQuery(
+                    mark_text=variant.text,
+                    mark_type=(
+                        application.mark_type.value if application.mark_type else None
+                    ),
+                    classes=phase_classes or None,
+                    search_type="fuzzy",
+                    max_results=max_results,
+                )
+                for record in await search_applications(application_query):
+                    if (
+                        phase_classes
+                        and record.classes
+                        and not set(phase_classes).intersection(record.classes)
+                    ):
+                        continue
+                    if record.record_id not in records:
+                        records[record.record_id] = record
+                        found_by[record.record_id] = f"application:{variant.kind}"
+                        search_scope[record.record_id] = phase_name
+
+    try:
+        await collect_phase(
+            phase_variants=variants,
+            phase_classes=classes or None,
+            phase_name=("selected_classes" if classes else "broader_registry_without_classes"),
+            registration_search_types=("exact", "fuzzy", "phonetic"),
+            max_results=MAX_RESULTS,
+        )
+        if classes:
+            # Контрольный проход выполняется после классов, только по исходному
+            # написанию и с меньшим лимитом. Он не вытесняет class-first выдачу.
+            await collect_phase(
+                phase_variants=variants[:1],
+                phase_classes=None,
+                phase_name="broader_registry_control",
+                registration_search_types=("exact", "fuzzy"),
+                max_results=BROAD_CONTROL_RESULTS,
+            )
     except Exception as exc:  # noqa: BLE001
         job.status = SearchJobStatus.failed
         job.error_message = str(exc)
@@ -264,10 +397,59 @@ async def run_conflict_search(
             getattr(llm_provider, "MODEL_NAME", None),
         )
 
+    # Модель должна увидеть релевантные карточки ДО числового отсечения. Иначе
+    # простой коэффициент может скрыть доминирующий элемент или сходство общего
+    # впечатления, которое по пунктам 41–43 Правил № 482 оценил бы юрист.
+    review_candidates = sorted(
+        scored,
+        key=lambda pair: (
+            _class_priority(pair[0], classes),
+            pair[0].status in {"registered", "pending"},
+            pair[1].confusion_likely,
+            pair[1].mark_similarity,
+            pair[1].overall,
+        ),
+        reverse=True,
+    )[:MAX_REGISTRY_RECORDS_FOR_LLM]
+
+    registry_review = await review_registry_context(
+        llm_provider,
+        applicant_mark=mark_text,
+        applicant_mark_type=(
+            application.mark_type.value if application.mark_type else None
+        ),
+        applicant_classes=classes,
+        applicant_goods=application.goods_services_raw or "",
+        conflicts=review_candidates,
+        provider_name=getattr(settings, "FIPS_PROVIDER", "mock"),
+        search_mode=mode.value,
+        class_context_description=class_context.describe(),
+        classes_confirmed=class_context.is_confirmed,
+        applicant_details={
+            "description_of_mark": application.description_of_mark,
+            "transliteration": application.transliteration,
+            "translation": application.translation,
+            "colors_claimed": application.colors_claimed,
+            "priority_claim": application.priority_claim,
+        },
+    )
+    if registry_review is not None:
+        assessment.llm_used = True
+        assessment.model_name = getattr(llm_provider, "MODEL_NAME", None)
+
     conflicts: list[tuple[Any, Any]] = []
+    llm_elevated: set[str] = set()
     for record, similarity in scored:
-        if similarity.overall < MIN_SIMILARITY:
+        comment = (
+            registry_review.comments.get(record.record_id)
+            if registry_review is not None
+            else None
+        )
+        elevated = _llm_can_elevate(comment, record, similarity, classes)
+        if similarity.overall < MIN_SIMILARITY and not elevated:
             continue
+        if elevated and similarity.overall < MIN_SIMILARITY:
+            llm_elevated.add(record.record_id)
 
         session.add(
             ConflictSearchResult(
@@ -284,7 +466,26 @@ async def run_conflict_search(
         )
         conflicts.append((record, similarity))
 
-    conflicts.sort(key=lambda pair: pair[1].overall, reverse=True)
+    def effective_level(pair: tuple[Any, Any]) -> RiskLevel:
+        record, similarity = pair
+        deterministic = _risk_level(similarity.overall, similarity.confusion_likely)
+        comment = (
+            registry_review.comments.get(record.record_id)
+            if registry_review is not None
+            else None
+        )
+        if _llm_can_elevate(comment, record, similarity, classes):
+            return _max_risk(deterministic, _llm_risk(comment.get("legal_risk")))
+        return deterministic
+
+    conflicts.sort(
+        key=lambda pair: (
+            _RISK_ORDER[effective_level(pair)],
+            _class_priority(pair[0], classes),
+            pair[1].overall,
+        ),
+        reverse=True,
+    )
 
     job.status = SearchJobStatus.completed
     job.total_results = len(conflicts)
@@ -298,11 +499,23 @@ async def run_conflict_search(
             "а не по полному реестру Роспатента. Полнота результатов "
             "не гарантируется."
         )
-    limitations.append(
-        "Проверены только зарегистрированные обозначения из доступного "
-        "источника. Поданные заявки, общеизвестные знаки, НМПТ, фирменные "
-        "наименования и объекты по пунктам 7–10 статьи 1483 не проверялись."
-    )
+    elif mode is SearchMode.limited:
+        limitations.append(
+            "Поиск выполнен через публичный интерфейс Поисковой платформы Роспатента. "
+            "Это недокументированный интерфейс с ограниченной полнотой и без гарантии "
+            "стабильности; результат является предварительным."
+        )
+    if applications_checked:
+        limitations.append(
+            "Проверены зарегистрированные обозначения и опубликованные заявки из доступных "
+            "наборов провайдера. Общеизвестные знаки, НМПТ, фирменные наименования и "
+            "объекты по пунктам 7–10 статьи 1483 требуют отдельных поисков."
+        )
+    else:
+        limitations.append(
+            "Проверены только зарегистрированные обозначения: выбранный провайдер не "
+            "поддерживает поиск опубликованных заявок."
+        )
     if not classes:
         limitations.append(
             "Классы МКТУ не определены — однородность товаров оценена "
@@ -332,6 +545,14 @@ async def run_conflict_search(
             "(пункт 42 Правил № 482) не проверялось и поиск по переводу "
             "не выполнялся: языковая модель недоступна."
         )
+    if registry_review is not None:
+        limitations.append(
+            "Языковой модели до порогового отсечения переданы приоритетные записи "
+            "реестра (не более "
+            f"{MAX_REGISTRY_RECORDS_FOR_LLM}) для пояснения факторов риска. "
+            "Модель не изменяет рассчитанные системой коэффициенты, но может поднять "
+            "карточку на ручную проверку при наличии независимых признаков."
+        )
 
     missing: list[str] = []
     if not classes:
@@ -342,35 +563,63 @@ async def run_conflict_search(
     assessment.sources_used_json = [
         f"registry:{record.record_id}" for record, _ in conflicts
     ]
+    methods = ["deterministic_similarity"]
+    if semantic_verdicts:
+        methods.append("llm_semantic")
+    if registry_review is not None:
+        methods.append("llm_registry_review")
     assessment.verification_json = {
         "records_examined": len(records),
         "conflicts_found": len(conflicts),
-        "method": (
-            "deterministic_similarity + llm_semantic"
-            if semantic_verdicts
-            else "deterministic_similarity"
-        ),
+        "method": " + ".join(methods),
         "semantic_checks": len(semantic_verdicts),
-        "criteria": "п.42 Правил № 482; п.162 Пленума ВС РФ № 10",
+        "llm_registry_records_sent": (
+            len(review_candidates)
+            if registry_review is not None
+            else 0
+        ),
+        "llm_registry_review": (
+            registry_review.as_dict() if registry_review is not None else None
+        ),
+        "applications_checked": applications_checked,
+        "class_first_search": bool(classes),
+        "selected_class_records": sum(
+            scope == "selected_classes" for scope in search_scope.values()
+        ),
+        "broader_control_records": sum(
+            scope == "broader_registry_control" for scope in search_scope.values()
+        ),
+        "llm_elevated_record_ids": sorted(llm_elevated),
+        "criteria": (
+            "пп.40–45 Правил № 482; п.6 ст.1483 ГК РФ; "
+            "п.162 Постановления Пленума ВС РФ № 10"
+        ),
     }
 
     if not conflicts:
-        assessment.overall_risk = RiskLevel.low
+        assessment.overall_risk = None
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "В доступной выдаче не выявлены карточки, достаточные для вывода о риске."
+        )
         assessment.summary = (
-            f"В доступном источнике совпадений с обозначением «{mark_text}» "
-            "не обнаружено. Это не исключает наличия конфликтов в непроверенных "
-            "источниках."
+            f"По обозначению «{mark_text}» значимые совпадения в доступной выдаче "
+            "не выявлены. Это не означает отсутствие риска: поиск ограничен "
+            "доступными источниками и требует проверки специалистом."
         )
         session.add(assessment)
         await session.flush()
         return assessment
 
-    highest = conflicts[0][1]
-    assessment.overall_risk = _risk_level(highest.overall, highest.confusion_likely)
+    highest_record, highest = conflicts[0]
+    assessment.overall_risk = effective_level(conflicts[0])
     assessment.summary = (
-        f"Обнаружено совпадений: {len(conflicts)}. Наибольшее сходство — "
-        f"«{conflicts[0][0].mark_text}» ({highest.overall:.2f})."
+        f"Выявлено карточек, требующих оценки: {len(conflicts)}. Наиболее значимая — "
+        f"«{highest_record.mark_text}» (расчётный коэффициент {highest.overall:.2f}, "
+        f"предварительный риск {assessment.overall_risk.value})."
     )
+    if registry_review is not None and registry_review.summary:
+        assessment.summary += f" Комментарий LLM: {registry_review.summary}"
     session.add(assessment)
     await session.flush()
 
@@ -390,11 +639,39 @@ async def run_conflict_search(
         if verdict is not None:
             explanation += " " + describe(verdict, mark_text, record.mark_text or "")
 
+        registry_comment = (
+            registry_review.comments.get(record.record_id)
+            if registry_review is not None
+            else None
+        )
+        if registry_comment and registry_comment.get("comment"):
+            explanation += " Комментарий LLM по записи реестра: " + str(
+                registry_comment["comment"]
+            )
+        if registry_comment:
+            for title, key in (
+                ("Сходство обозначений", "mark_similarity_analysis"),
+                ("Однородность товаров/услуг", "goods_homogeneity_analysis"),
+                ("Приоритет и статус", "priority_and_status_analysis"),
+            ):
+                if registry_comment.get(key):
+                    explanation += f" {title}: {registry_comment[key]}"
+            if registry_comment.get("counterarguments"):
+                explanation += " Контраргументы: " + "; ".join(
+                    registry_comment["counterarguments"]
+                ) + "."
+            if registry_comment.get("missing_evidence"):
+                explanation += " Не хватает данных: " + "; ".join(
+                    registry_comment["missing_evidence"]
+                ) + "."
+
+        finding_level = effective_level((record, similarity))
+
         session.add(
             RiskFinding(
                 assessment_id=assessment.id,
                 category="conflicting_mark",
-                level=_risk_level(similarity.overall, similarity.confusion_likely),
+                level=finding_level,
                 legal_basis="ГК РФ ст. 1483 п. 6",
                 explanation=explanation,
                 case_facts_json=[
@@ -403,12 +680,28 @@ async def run_conflict_search(
                     f"Противопоставленный знак: {record.record_id}",
                 ],
                 missing_data_json=[],
-                confidence=round(min(0.9, similarity.overall), 2),
+                confidence=round(
+                    min(
+                        0.9,
+                        max(
+                            similarity.overall,
+                            registry_review.confidence
+                            if registry_review is not None
+                            and registry_review.confidence is not None
+                            else 0.0,
+                        ),
+                    ),
+                    2,
+                ),
                 recommended_action=(
-                    "Оценить вероятность смешения и рассмотреть получение "
-                    "письма-согласия либо доработку обозначения"
-                    if similarity.confusion_likely
-                    else "Принять во внимание при итоговой оценке"
+                    str(registry_comment.get("recommended_action"))
+                    if registry_comment and registry_comment.get("recommended_action")
+                    else (
+                        "Оценить вероятность смешения и рассмотреть получение "
+                        "письма-согласия либо доработку обозначения"
+                        if similarity.confusion_likely
+                        else "Принять во внимание при итоговой оценке"
+                    )
                 ),
                 # Источник — запись реестра, а не фрагмент базы знаний,
                 # поэтому цитаты из нормативных материалов здесь нет.
@@ -416,11 +709,39 @@ async def run_conflict_search(
                 verification_json={
                     "source": "registry_record",
                     "record_id": record.record_id,
+                    # Данные карточки сохраняются вместе с юридическим выводом.
+                    # Фронтенду не приходится восстанавливать знак, классы и
+                    # статус из технического текста explanation или выполнять
+                    # второй, потенциально уже изменившийся поиск в реестре.
+                    "registry_record": {
+                        "record_id": record.record_id,
+                        "mark_text": record.mark_text,
+                        "owner": record.owner,
+                        "classes": record.classes,
+                        "status": record.status,
+                        "source": record.source,
+                        "application_number": record.application_number,
+                        "registration_number": record.registration_number,
+                        "filing_date": record.filing_date,
+                        "registration_date": record.registration_date,
+                    },
                     "found_by": found_by.get(record.record_id, "original"),
+                    "search_scope": search_scope.get(record.record_id),
                     "similarity": similarity.as_dict(),
+                    "decision_source": (
+                        "llm_legal_attention"
+                        if record.record_id in llm_elevated
+                        else "deterministic_threshold"
+                    ),
+                    "effective_risk": finding_level.value,
                     **(
                         {"semantic_verdict": verdict.as_dict()}
                         if verdict is not None
+                        else {}
+                    ),
+                    **(
+                        {"llm_registry_review": registry_comment}
+                        if registry_comment is not None
                         else {}
                     ),
                 },

@@ -87,10 +87,10 @@ interface DraftFormDto {
 }
 
 const FILL_LABELS: Record<string, string> = {
-  manual: "заполняется вручную",
-  checkbox: "отметка в бланке",
-  office: "заполняет Роспатент",
-  classes: "из перечня классов",
+  manual: "Заполняет специалист",
+  checkbox: "Отмечает специалист в бланке",
+  office: "Заполняет Роспатент",
+  classes: "Из подтверждённых классов МКТУ",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -177,6 +177,50 @@ export function DraftFormView({ appId }: { appId: number }) {
     >
       {(data) => (
         <div className="space-y-3">
+          {(() => {
+            const manualPending = data.sections
+              .flatMap((section) => section.fields)
+              .filter(
+                (field) =>
+                  (field.fill === "manual" || field.fill === "checkbox") &&
+                  (!field.is_filled || field.needs_attention),
+              );
+            if (manualPending.length === 0) return null;
+            return (
+              <div className="rounded-lg border-2 border-amber-500/50 bg-amber-500/[0.08] p-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                    <Pencil className="h-4 w-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-amber-950 dark:text-amber-200">
+                      Нужно заполнить вручную: {manualPending.length}
+                    </h3>
+                    <p className="mt-1 text-xs leading-5 text-amber-900/80 dark:text-amber-200/80">
+                      Эти поля не заполняются автоматически. В бланке они выделены янтарным цветом и подписаны «Заполняет специалист».
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {manualPending.slice(0, 6).map((field) => (
+                        <Badge
+                          key={`${field.source ?? field.label}-${field.label}`}
+                          variant="outline"
+                          className="border-amber-500/40 bg-background/70 text-[10px] text-amber-950 dark:text-amber-200"
+                        >
+                          {field.label}
+                        </Badge>
+                      ))}
+                      {manualPending.length > 6 && (
+                        <Badge variant="outline" className="border-amber-500/40 bg-background/70 text-[10px]">
+                          ещё {manualPending.length - 6}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Шапка бланка со сводкой готовности */}
           <div className="rounded-lg border-2 border-foreground/70 bg-background">
             <div className="border-b-2 border-foreground/70 px-4 py-3 text-center">
@@ -292,6 +336,15 @@ function FormRow({
   const confirmed = field.status === "confirmed";
   const canConfirm =
     field.extracted_field_id != null && !confirmed && field.is_filled;
+  const requiresManualAction =
+    field.fill === "manual" || field.fill === "checkbox";
+  const responsibility = requiresManualAction
+    ? FILL_LABELS[field.fill]
+    : field.fill === "auto"
+      ? field.origin
+        ? `Источник: ${field.origin}${field.page_number ? `, стр. ${field.page_number}` : ""}`
+        : "Из подтверждённых данных проекта"
+      : FILL_LABELS[field.fill] ?? field.fill;
 
   // Персональные данные по умолчанию скрыты.
   const shown =
@@ -304,9 +357,12 @@ function FormRow({
   return (
     <div
       className={cn(
-        "flex items-start gap-3 px-3 py-2",
+        "flex items-start gap-3 border-l-4 px-3 py-3",
         confirmed && "bg-emerald-500/5",
-        field.needs_attention && "bg-red-500/5",
+        requiresManualAction
+          ? "border-l-amber-500 bg-amber-500/[0.06]"
+          : "border-l-transparent",
+        field.needs_attention && "border-l-red-500 bg-red-500/[0.07]",
       )}
       data-testid={`form-field-${field.source ?? field.label}`}
     >
@@ -324,6 +380,20 @@ function FormRow({
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium">{field.label}</span>
+
+          <Badge
+            variant="outline"
+            className={cn(
+              "text-[10px] font-medium",
+              requiresManualAction
+                ? "border-amber-500/50 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+                : field.fill === "office"
+                  ? "border-slate-400/50 bg-slate-500/10 text-slate-700 dark:text-slate-300"
+                  : "border-sky-500/40 bg-sky-500/[0.08] text-sky-800 dark:text-sky-300",
+            )}
+          >
+            {responsibility}
+          </Badge>
 
           {field.required && (
             <Badge
@@ -351,11 +421,6 @@ function FormRow({
             </span>
           )}
 
-          {field.fill !== "auto" && (
-            <span className="text-[10px] text-muted-foreground">
-              {FILL_LABELS[field.fill] ?? field.fill}
-            </span>
-          )}
         </div>
 
         {isEditing ? (
@@ -522,9 +587,9 @@ function FormRow({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {field.origin && (
+          {field.origin && requiresManualAction && (
             <span className="text-[10px] text-muted-foreground">
-              источник: {field.origin}
+              Предзаполнено: {field.origin}
               {field.page_number ? `, стр. ${field.page_number}` : ""}
             </span>
           )}

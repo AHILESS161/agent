@@ -11,44 +11,44 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 216 20% 97%;
-  --foreground: 215 25% 14%;
-  --border: 214 12% 88%;
-  --card: 210 20% 99%;
-  --card-foreground: 215 25% 14%;
-  --card-border: 214 12% 92%;
-  --sidebar: 217 33% 17%;
-  --sidebar-foreground: 210 20% 92%;
-  --sidebar-border: 217 30% 22%;
-  --sidebar-primary: 174 83% 32%;
+  --background: 42 20% 97%;
+  --foreground: 244 67% 16%;
+  --border: 36 10% 84%;
+  --card: 40 24% 99%;
+  --card-foreground: 244 67% 16%;
+  --card-border: 36 10% 87%;
+  --sidebar: 210 14% 4%;
+  --sidebar-foreground: 0 0% 96%;
+  --sidebar-border: 210 8% 14%;
+  --sidebar-primary: 178 74% 34%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 217 30% 22%;
-  --sidebar-accent-foreground: 210 20% 92%;
-  --sidebar-ring: 174 83% 32%;
-  --popover: 210 20% 98%;
-  --popover-foreground: 215 25% 14%;
-  --popover-border: 214 12% 88%;
-  --primary: 174 83% 32%;
+  --sidebar-accent: 210 8% 14%;
+  --sidebar-accent-foreground: 0 0% 96%;
+  --sidebar-ring: 178 74% 34%;
+  --popover: 40 24% 99%;
+  --popover-foreground: 244 67% 16%;
+  --popover-border: 36 10% 84%;
+  --primary: 178 74% 34%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 214 14% 92%;
-  --secondary-foreground: 215 25% 14%;
-  --muted: 214 12% 93%;
-  --muted-foreground: 215 13% 44%;
-  --accent: 214 14% 92%;
-  --accent-foreground: 215 25% 14%;
+  --secondary: 40 12% 92%;
+  --secondary-foreground: 244 67% 16%;
+  --muted: 40 12% 93%;
+  --muted-foreground: 232 8% 43%;
+  --accent: 178 30% 92%;
+  --accent-foreground: 244 67% 16%;
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
-  --input: 214 12% 78%;
-  --ring: 174 83% 32%;
-  --chart-1: 174 83% 32%;
+  --input: 36 10% 76%;
+  --ring: 178 74% 34%;
+  --chart-1: 178 74% 34%;
   --chart-2: 215 25% 27%;
   --chart-3: 43 96% 56%;
   --chart-4: 262 52% 48%;
   --chart-5: 0 84% 60%;
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', 'Segoe UI', Arial, Helvetica, system-ui, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, monospace;
-  --radius: .5rem;
+  --radius: .625rem;
   --shadow-2xs: 0px 1px 2px 0px hsl(215 25% 14% / 0.03);
   --shadow-xs: 0px 1px 3px 0px hsl(215 25% 14% / 0.04);
   --shadow-sm: 0px 1px 3px 0px hsl(215 25% 14% / 0.06), 0px 1px 2px -1px hsl(215 25% 14% / 0.04);
@@ -147,7 +147,32 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    letter-spacing: -0.01em;
   }
+  h1, h2, h3, h4 {
+    letter-spacing: -0.035em;
+  }
+}
+
+@layer components {
+  .shadcn-card {
+    box-shadow: none;
+  }
+  .brand-wordmark {
+    font-family: 'Montserrat', Arial, Helvetica, sans-serif;
+    font-weight: 650;
+    letter-spacing: -0.06em;
+    text-rendering: geometricPrecision;
+  }
+}
+
+/* A 2K display should increase information size, not empty margins. */
+@media (min-width: 1800px) {
+  html { font-size: 18px; }
+}
+
+@media (min-width: 2500px) {
+  html { font-size: 19px; }
 }
 
 @layer utilities {

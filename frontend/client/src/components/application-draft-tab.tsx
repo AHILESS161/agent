@@ -160,8 +160,8 @@ export function ApplicationDraftTab({ appId }: { appId: number }) {
     <div className="space-y-3">
       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
         <p className="text-xs text-muted-foreground max-w-lg">
-          Бланк заполняется только значениями, подтверждёнными на вкладке
-          «Сверка полей». Поля с конфликтом, требующие проверки или не
+          Бланк заполняется только значениями, подтверждёнными на этапе
+          «Данные». Поля с конфликтом, требующие проверки или не
           найденные в документах, остаются пустыми — причина указана ниже.
           Выгрузка доступна после утверждения специалистом.
         </p>

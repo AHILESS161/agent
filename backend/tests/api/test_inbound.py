@@ -31,6 +31,7 @@ INTAKE = {
         "inn": "7707083893",
     },
     "mark_name": "ЗВЁЗДОЧКА",
+    "mark_type": "word",
     "business_description": "Производство кондитерских изделий",
     "goods_services": "печенье, торты",
 }
@@ -77,6 +78,20 @@ class TestIntakeCreatesCase:
         assert body["status"] == "case_created"
         assert body["created_case_id"]
 
+    def test_created_case_is_visible_in_lawyers_project_list(
+        self, client, lawyer_auth
+    ):
+        """Входящее дело не должно становиться «ничьим» и пропадать с обзора."""
+        created = client.post(
+            "/api/v1/inbound/events", json=INTAKE, headers=lawyer_auth
+        ).json()
+
+        projects = client.get(
+            "/api/v1/applications?page=1&page_size=100", headers=lawyer_auth
+        ).json()["items"]
+
+        assert created["created_case_id"] in {item["id"] for item in projects}
+
     def test_case_keeps_business_description_for_class_selection(
         self, client, lawyer_auth
     ):
@@ -90,6 +105,17 @@ class TestIntakeCreatesCase:
         ).json()
         assert case["business_description"] == INTAKE["business_description"]
         assert case["mark_name"] == INTAKE["mark_name"]
+
+    def test_case_keeps_mark_type_selected_at_intake(self, client, lawyer_auth):
+        """Выбранный на первом экране вид знака не должен теряться."""
+        created = client.post(
+            "/api/v1/inbound/events", json=INTAKE, headers=lawyer_auth
+        ).json()
+
+        case = client.get(
+            f"/api/v1/applications/{created['created_case_id']}", headers=lawyer_auth
+        ).json()
+        assert case["mark_type"] == "word"
 
     def test_client_message_is_preserved_in_notes(self, client, lawyer_auth):
         """Текст обращения часто содержит пояснения, которых нет в полях."""

@@ -91,6 +91,10 @@ async function request<T>(
 
   const response = await fetch(`/api/v1${path}`, {
     method,
+    // Отчёты и карточки дела меняются после долгих фоновых проверок.
+    // Браузер не должен повторно показывать старый GET-ответ, в котором
+    // ещё не было владельца и классов найденного товарного знака.
+    cache: "no-store",
     headers: {
       ...authHeaders(),
       ...(body !== undefined && !isFormData

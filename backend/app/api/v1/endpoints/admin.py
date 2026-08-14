@@ -175,7 +175,9 @@ async def list_models(
                 "provider": settings.LLM_PROVIDER,
                 "model": settings.LLM_MODEL,
                 "base_url": settings.LLM_BASE_URL,
-                "api_key_set": bool(settings.LLM_API_KEY),
+                "api_key_set": bool(
+                    settings.LLM_API_KEY or settings.GIGACHAT_AUTHORIZATION_KEY
+                ),
             }
         ]
     }

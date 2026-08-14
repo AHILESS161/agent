@@ -12,7 +12,6 @@ import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import ApplicationsListPage from "@/pages/applications-list";
 import ApplicationDetailPage from "@/pages/application-detail";
-import NewApplicationPage from "@/pages/new-application";
 import IntakePage from "@/pages/intake";
 import ProfilePage from "@/pages/profile";
 import { ClientsListPage, ClientDetailPage } from "@/pages/clients";
@@ -30,7 +29,9 @@ function AuthenticatedRoutes() {
         <Route path="/dashboard" component={DashboardPage} />
         <Route path="/intake" component={IntakePage} />
         <Route path="/profile" component={ProfilePage} />
-        <Route path="/applications/new" component={NewApplicationPage} />
+        <Route path="/applications/new">
+          <Redirect to="/intake" />
+        </Route>
         <Route path="/applications/:id" component={ApplicationDetailPage} />
         <Route path="/applications" component={ApplicationsListPage} />
         {(user?.role !== "client") && <Route path="/clients/:id" component={ClientDetailPage} />}

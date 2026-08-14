@@ -30,9 +30,14 @@ def _get_llm_provider() -> Any:
         "base_url": getattr(settings, "LLM_BASE_URL", None),
         "api_key": getattr(settings, "LLM_API_KEY", None),
         "model": getattr(settings, "LLM_MODEL", None),
+        "authorization_key": getattr(settings, "GIGACHAT_AUTHORIZATION_KEY", None),
+        "scope": getattr(settings, "GIGACHAT_SCOPE", None),
+        "auth_url": getattr(settings, "GIGACHAT_AUTH_URL", None),
+        "verify_ssl": getattr(settings, "GIGACHAT_VERIFY_SSL", True),
+        "ca_bundle_file": getattr(settings, "GIGACHAT_CA_BUNDLE_FILE", None),
     }
     # Убираем None, чтобы PROVIDER_DEFAULTS фабрики могли их подставить.
-    return LLMProviderFactory.create({k: v for k, v in config.items() if v})
+    return LLMProviderFactory.create({k: v for k, v in config.items() if v is not None})
 
 
 @lru_cache(maxsize=1)
@@ -51,12 +56,29 @@ def _get_registry_provider() -> Any:
     """Вернуть провайдер реестра товарных знаков (Роспатент/ФИПС).
 
     Тип провайдера задаётся переменной окружения ``FIPS_PROVIDER``.
-    На текущем этапе доступна только реализация ``mock`` — демо-датасет.
+    Реальный провайдер использует официальный Open API поисковой платформы
+    Роспатента и bearer API-ключ из настроек окружения.
     """
     from app.core.config import settings
     from app.infrastructure.providers.factory import ProviderFactory
 
-    return ProviderFactory.create({"provider": settings.FIPS_PROVIDER})
+    return ProviderFactory.create(
+        {
+            "provider": settings.FIPS_PROVIDER,
+            "base_url": settings.FIPS_BASE_URL,
+            "api_key": settings.FIPS_API_KEY,
+            "trademark_datasets": settings.FIPS_TRADEMARK_DATASETS,
+            "application_datasets": settings.FIPS_APPLICATION_DATASETS,
+            "class_filter_field": settings.FIPS_CLASS_FILTER_FIELD,
+            "timeout": settings.FIPS_TIMEOUT,
+            "verify_ssl": settings.FIPS_VERIFY_SSL,
+            "public_base_url": settings.FIPS_PUBLIC_BASE_URL,
+            "public_data_sources": settings.FIPS_PUBLIC_DATA_SOURCES,
+            "public_max_results": settings.FIPS_PUBLIC_MAX_RESULTS,
+            "public_page_size": settings.FIPS_PUBLIC_PAGE_SIZE,
+            "public_min_interval": settings.FIPS_PUBLIC_MIN_INTERVAL,
+        }
+    )
 
 
 # Публичные псевдонимы — предпочтительны в новом коде.

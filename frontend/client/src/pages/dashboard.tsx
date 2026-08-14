@@ -1,266 +1,152 @@
-import { useAuth } from "@/lib/auth";
 import { Link } from "wouter";
 import { useCases } from "@/lib/use-cases";
 import { useApi, type NotificationsDto } from "@/lib/use-api";
 import { AsyncSection } from "@/components/async-states";
-import {
-  STATUS_LABELS,
-  STATUS_COLORS,
-  ROLE_LABELS,
-  type ApplicationStatus,
-} from "@shared/schema";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { STATUS_LABELS, STATUS_COLORS } from "@shared/schema";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Bell, FileText, Plus, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-/** Группировка состояний дела для сводки. */
-const STATUS_GROUPS: { label: string; statuses: ApplicationStatus[]; color: string }[] = [
-  {
-    label: "Черновик / Сбор данных",
-    statuses: ["draft", "info_requested", "info_received"],
-    color: "bg-slate-400",
-  },
-  {
-    label: "Классификация",
-    statuses: [
-      "classification_pending",
-      "classification_review",
-      "classification_approved",
-    ],
-    color: "bg-cyan-500",
-  },
-  {
-    label: "Правовой анализ",
-    statuses: [
-      "legal_review_pending",
-      "legal_review_in_progress",
-      "legal_review_done",
-    ],
-    color: "bg-blue-500",
-  },
-  {
-    label: "Поиск конфликтов",
-    statuses: [
-      "conflict_search_pending",
-      "conflict_search_in_progress",
-      "conflict_search_done",
-    ],
-    color: "bg-violet-500",
-  },
-  {
-    label: "Заключение и документы",
-    statuses: [
-      "memo_generation",
-      "memo_approved",
-      "document_generation",
-      "document_approved",
-    ],
-    color: "bg-amber-500",
-  },
-  {
-    label: "Подана / Закрыта",
-    statuses: ["submitted", "closed"],
-    color: "bg-emerald-500",
-  },
-];
-
-function displayName(user: { fullName: string; preferredName?: string | null } | null): string {
-  if (!user) return "";
-  const preferred = user.preferredName?.trim();
-  if (preferred) return preferred;
-
-  const parts = user.fullName.trim().split(/\s+/);
-  // «Фамилия Имя Отчество» → имя; одно слово или адрес почты — как есть.
-  return parts.length >= 2 ? parts[1] : parts[0];
-}
-
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 6) return "Доброй ночи";
-  if (hour < 12) return "Доброе утро";
-  if (hour < 18) return "Добрый день";
-  return "Добрый вечер";
-}
+const ATTENTION_STATUSES = new Set([
+  "info_requested",
+  "classification_review",
+  "legal_review_pending",
+  "conflict_search_pending",
+  "document_generation",
+]);
 
 export default function DashboardPage() {
-  const { user } = useAuth();
   const cases = useCases();
   const notifications = useApi<NotificationsDto>("/notifications?page=1&page_size=5");
-
-  // ФИО хранится как «Фамилия Имя Отчество», поэтому первое слово —
-  // это фамилия, и приветствие по нему звучит казённо. Берём имя,
-  // а если человек задал в профиле, как к нему обращаться, — его.
-  const shortName = displayName(user);
+  const today = new Date().toLocaleDateString("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 
   return (
-    <div className="space-y-4" data-testid="dashboard-page">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">
-            {greeting()}
-            {shortName ? `, ${shortName}` : ""}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {user ? ROLE_LABELS[user.role] : ""} ·{" "}
-            {new Date().toLocaleDateString("ru-RU", {
-              weekday: "long",
-              day: "numeric",
-              month: "long",
-              year: "numeric",
-            })}
-          </p>
-        </div>
-        <Link href="/applications/new">
-          <Button size="sm" data-testid="button-new-application">
-            <Plus className="w-4 h-4 mr-1.5" />
-            Новое дело
-          </Button>
-        </Link>
-      </div>
+    <div data-testid="dashboard-page">
+      <header className="mb-7">
+        <h1 className="text-4xl font-semibold leading-none text-foreground lg:text-[46px]">Обзор</h1>
+        <p className="mt-3 text-sm text-muted-foreground">{today}</p>
+      </header>
 
       <AsyncSection
         state={cases}
         loadingLabel="Загрузка сводки…"
-        emptyTitle="Дел пока нет"
-        emptyHint="Создайте первое дело, чтобы начать работу."
+        emptyTitle="Проектов пока нет"
+        emptyHint="Нажмите «Создать», чтобы добавить первый товарный знак."
       >
         {(data) => {
           const apps = data.applications;
-          const active = apps.filter(
-            (a) => a.status !== "closed" && a.status !== "submitted",
-          );
-          const submitted = apps.filter((a) => a.status === "submitted");
-          const closed = apps.filter((a) => a.status === "closed");
-
-          const stats = [
-            { label: "Всего дел", value: apps.length, icon: FileText },
-            { label: "В работе", value: active.length, icon: TrendingUp },
-            { label: "Поданы", value: submitted.length, icon: FileText },
-            { label: "Закрыты", value: closed.length, icon: FileText },
-          ];
+          const active = apps.filter((app) => !["closed", "submitted"].includes(app.status));
+          const attention = active.filter((app) => ATTENTION_STATUSES.has(app.status));
+          const waiting = active.filter((app) => app.status === "info_requested");
+          const recent = [...apps]
+            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+            .slice(0, 6);
 
           return (
             <>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                {stats.map((stat) => (
-                  <Card key={stat.label} className="border border-card-border">
-                    <CardContent className="p-4 flex items-center gap-3">
-                      <div className="rounded-md bg-primary/10 p-2">
-                        <stat.icon className="w-4 h-4 text-primary" />
-                      </div>
-                      <div>
-                        <p className="text-2xl font-bold">{stat.value}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {stat.label}
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
+              <section className="mb-8 rounded-r-[22px] border-y-2 border-r-2 border-primary px-6 py-4">
+                <p className="text-2xl leading-tight text-foreground lg:text-[34px]">
+                  <strong className="font-semibold">{active.length} активных {projectWord(active.length)}.</strong>{" "}
+                  <span>{attention.length} требуют внимания.</span>
+                </p>
+              </section>
+
+              <section className="mb-9 grid max-w-3xl grid-cols-3">
+                {[
+                  ["Активные проекты", active.length],
+                  ["Требуют внимания", attention.length],
+                  ["Ожидают ответа", waiting.length],
+                ].map(([label, value], index) => (
+                  <div key={String(label)} className={cn("px-6 first:pl-0", index > 0 && "border-l border-border")}>
+                    <p className="text-sm text-muted-foreground">{label}</p>
+                    <p className="mt-1 text-5xl font-medium leading-none text-foreground">{value}</p>
+                  </div>
                 ))}
-              </div>
+              </section>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <Card className="border border-card-border">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">
-                      Распределение по этапам
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {STATUS_GROUPS.map((group) => {
-                      const count = apps.filter((a) =>
-                        group.statuses.includes(a.status),
-                      ).length;
-                      const percent = apps.length
-                        ? Math.round((count / apps.length) * 100)
-                        : 0;
-                      return (
-                        <div key={group.label}>
-                          <div className="flex items-center justify-between text-xs">
-                            <span>{group.label}</span>
-                            <span className="text-muted-foreground">{count}</span>
-                          </div>
-                          <div className="mt-1 h-1.5 w-full rounded-full bg-muted">
-                            <div
-                              className={cn("h-1.5 rounded-full", group.color)}
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
+              <div className="grid border-t border-border lg:grid-cols-[.95fr_1.25fr]">
+                <section className="border-b border-border py-6 lg:border-b-0 lg:border-r lg:pr-8">
+                  <h2 className="mb-5 text-base font-semibold">Требуют внимания</h2>
+                  <div className="divide-y divide-border">
+                    {notifications.isLoading && <p className="py-4 text-sm text-muted-foreground">Загрузка…</p>}
+                    {notifications.data?.items.slice(0, 5).map((item, index) => (
+                      <div key={item.id} className="flex gap-3 py-3.5 text-sm">
+                        <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", index === 0 ? "bg-red-400" : "bg-primary")} />
+                        <div className="min-w-0">
+                          <p className="font-medium">{item.title}</p>
+                          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{item.message}</p>
                         </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
+                      </div>
+                    ))}
+                    {!notifications.isLoading && (notifications.data?.items.length ?? 0) === 0 && (
+                      <p className="py-4 text-sm text-muted-foreground">Срочных действий нет.</p>
+                    )}
+                  </div>
+                  <Link href="/notifications">
+                    <span className="mt-5 inline-block cursor-pointer text-sm font-medium text-primary hover:underline">Все уведомления →</span>
+                  </Link>
+                </section>
 
-                <Card className="border border-card-border">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-semibold">
-                      Последние дела
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {apps.slice(0, 6).map((app) => {
-                      const client = data.clientsById[app.clientId];
-                      return (
-                        <div
-                          key={app.id}
-                          className="flex items-center justify-between gap-2"
-                        >
-                          <div className="min-w-0">
-                            <Link href={`/applications/${app.id}`}>
-                              <span className="text-sm font-medium hover:text-primary cursor-pointer">
-                                {app.markName}
-                              </span>
-                            </Link>
-                            <p className="text-[11px] text-muted-foreground">
-                              #{app.id}
-                              {client ? ` · ${client.shortName}` : ""}
-                            </p>
-                          </div>
-                          <Badge
-                            className={cn(
-                              "text-[10px] whitespace-nowrap",
-                              STATUS_COLORS[app.status],
-                            )}
-                          >
-                            {STATUS_LABELS[app.status]}
-                          </Badge>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
+                <section className="py-6 lg:pl-8">
+                  <div className="mb-5 flex items-center justify-between">
+                    <h2 className="text-base font-semibold">Проекты</h2>
+                    <Link href="/applications">
+                      <span className="cursor-pointer text-sm text-primary hover:underline">Все проекты</span>
+                    </Link>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[560px] text-left text-sm">
+                      <thead className="text-xs font-normal text-muted-foreground">
+                        <tr className="border-b border-border">
+                          <th className="pb-3 font-normal">Заявитель</th>
+                          <th className="pb-3 font-normal">Товарный знак</th>
+                          <th className="pb-3 font-normal">Этап</th>
+                          <th className="pb-3 text-right font-normal">Обновлён</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {recent.map((app) => {
+                          const client = data.clientsById[app.clientId];
+                          return (
+                            <tr key={app.id}>
+                              <td className="py-3.5 text-muted-foreground">{client?.shortName ?? "—"}</td>
+                              <td className="py-3.5">
+                                <Link href={`/applications/${app.id}`}>
+                                  <span className="cursor-pointer font-medium hover:text-primary">{app.markName}</span>
+                                </Link>
+                              </td>
+                              <td className="py-3.5">
+                                <Badge className={cn("whitespace-nowrap text-[10px]", STATUS_COLORS[app.status])}>
+                                  {STATUS_LABELS[app.status]}
+                                </Badge>
+                              </td>
+                              <td className="py-3.5 text-right text-xs text-muted-foreground">
+                                {new Date(app.updatedAt).toLocaleDateString("ru-RU", { day: "numeric", month: "short" })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
               </div>
             </>
           );
         }}
       </AsyncSection>
-
-      <Card className="border border-card-border">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-            <Bell className="w-3.5 h-3.5" />
-            Уведомления
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {notifications.isLoading && (
-            <p className="text-xs text-muted-foreground">Загрузка…</p>
-          )}
-          {!notifications.isLoading &&
-            (notifications.data?.items.length ?? 0) === 0 && (
-              <p className="text-xs text-muted-foreground">Новых уведомлений нет.</p>
-            )}
-          {notifications.data?.items.map((item) => (
-            <div key={item.id} className="border-b border-border pb-2 last:border-0">
-              <p className="text-xs font-medium">{item.title}</p>
-              <p className="text-[11px] text-muted-foreground">{item.message}</p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
     </div>
   );
+}
+
+function projectWord(value: number) {
+  const mod100 = value % 100;
+  const mod10 = value % 10;
+  if (mod100 >= 11 && mod100 <= 14) return "проектов";
+  if (mod10 === 1) return "проект";
+  if (mod10 >= 2 && mod10 <= 4) return "проекта";
+  return "проектов";
 }

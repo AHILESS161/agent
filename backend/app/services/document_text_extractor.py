@@ -5,6 +5,7 @@
     - PDF  (через pdfplumber)
     - DOCX (через python-docx)
     - TXT  (как fallback, на случай если pdfplumber не справился)
+    - сканы PDF, PNG и JPG (OCR через Tesseract, русский + английский)
 
 Возвращает чистый текст, пригодный для эвристического и LLM-парсинга.
 """
@@ -13,8 +14,11 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
+
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,13 @@ try:
     _DOCX_AVAILABLE = True
 except ImportError:
     _DOCX_AVAILABLE = False
+
+try:
+    import pytesseract
+    from PIL import Image, ImageOps
+    _OCR_IMPORTS_AVAILABLE = True
+except ImportError:
+    _OCR_IMPORTS_AVAILABLE = False
 
 
 class UnsupportedDocumentType(ValueError):
@@ -54,31 +65,26 @@ def detect_extension(filename: str) -> str:
 
 def extract_text_from_bytes(content: bytes, filename: str) -> str:
     """Главная точка входа: принимает байты и имя файла, возвращает текст."""
-    ext = detect_extension(filename)
+    ext = detect_extension_for_pages(filename)
     if ext == ".pdf":
         return extract_pdf_text(content)
     if ext in (".docx", ".doc"):
         return extract_docx_text(content)
     if ext == ".txt":
         return content.decode("utf-8", errors="replace")
+    if ext in (".png", ".jpg", ".jpeg"):
+        return "\n\n".join(
+            page.text for page in extract_pages_from_bytes(content, filename)
+            if page.text.strip()
+        )
     raise UnsupportedDocumentType(f"Unsupported extension: {ext}")
 
 
 def extract_pdf_text(content: bytes) -> str:
-    """Извлекает текст из PDF через pdfplumber."""
-    if not _PDFPLUMBER_AVAILABLE:
-        raise RuntimeError(
-            "pdfplumber is not installed. Run: pip install pdfplumber"
-        )
-
-    pages_text: list[str] = []
-    with pdfplumber.open(io.BytesIO(content)) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text() or ""
-            if text.strip():
-                pages_text.append(text)
-    result = "\n\n".join(pages_text)
-    logger.info("extract_pdf_text: %d pages, %d chars", len(pages_text), len(result))
+    """Извлекает текст из PDF; для скана автоматически применяет OCR."""
+    pages = extract_pages_from_bytes(content, "document.pdf")
+    result = "\n\n".join(page.text for page in pages if page.text.strip())
+    logger.info("extract_pdf_text: %d pages, %d chars", len(pages), len(result))
     return result
 
 
@@ -123,15 +129,101 @@ class ExtractedPage:
     ocr_confidence: float | None = None
 
 
+def _prepare_image(image):
+    """Нормализовать изображение, не увеличивая бесконтрольно память."""
+    image = ImageOps.exif_transpose(image).convert("L")
+    image = ImageOps.autocontrast(image)
+    pixels = image.width * image.height
+    if pixels > settings.OCR_MAX_IMAGE_PIXELS:
+        scale = (settings.OCR_MAX_IMAGE_PIXELS / pixels) ** 0.5
+        image = image.resize(
+            (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+        )
+    return image
+
+
+def _ocr_image(image) -> tuple[str, float | None]:
+    """Распознать изображение и вернуть текст вместе со средней уверенностью."""
+    if not settings.OCR_ENABLED:
+        raise NoTextLayerError("OCR отключён в настройках сервера.")
+    if not _OCR_IMPORTS_AVAILABLE:
+        raise NoTextLayerError(
+            "OCR недоступен: не установлен Python-пакет pytesseract."
+        )
+
+    if settings.OCR_TESSERACT_CMD:
+        pytesseract.pytesseract.tesseract_cmd = settings.OCR_TESSERACT_CMD
+
+    prepared = _prepare_image(image)
+    tesseract_config = f"--oem 3 --psm {settings.OCR_PSM}"
+    if settings.OCR_TESSDATA_DIR:
+        os.environ["TESSDATA_PREFIX"] = settings.OCR_TESSDATA_DIR
+    try:
+        data = pytesseract.image_to_data(
+            prepared,
+            lang=settings.OCR_LANGUAGES,
+            config=tesseract_config,
+            output_type=pytesseract.Output.DICT,
+            timeout=settings.OCR_TIMEOUT_SECONDS,
+        )
+    except pytesseract.TesseractNotFoundError as exc:
+        raise NoTextLayerError(
+            "OCR недоступен: Tesseract не установлен или не найден."
+        ) from exc
+    except RuntimeError as exc:
+        raise NoTextLayerError(f"OCR не завершён: {exc}") from exc
+
+    lines: list[str] = []
+    current_key: tuple[int, int, int] | None = None
+    current_tokens: list[str] = []
+    weighted_confidence = 0.0
+    confidence_weight = 0
+
+    for index, raw_text in enumerate(data.get("text", [])):
+        token = str(raw_text or "").strip()
+        if not token:
+            continue
+        key = (
+            int(data["block_num"][index]),
+            int(data["par_num"][index]),
+            int(data["line_num"][index]),
+        )
+        if current_key is not None and key != current_key and current_tokens:
+            lines.append(" ".join(current_tokens))
+            current_tokens = []
+        current_key = key
+        current_tokens.append(token)
+
+        try:
+            confidence = float(data["conf"][index])
+        except (KeyError, TypeError, ValueError):
+            confidence = -1
+        if confidence >= 0:
+            weight = max(1, len(token))
+            weighted_confidence += confidence * weight
+            confidence_weight += weight
+
+    if current_tokens:
+        lines.append(" ".join(current_tokens))
+
+    text = "\n".join(lines).strip()
+    confidence = (
+        round(weighted_confidence / confidence_weight / 100, 3)
+        if confidence_weight
+        else None
+    )
+    return text, confidence
+
+
 def extract_pages_from_bytes(content: bytes, filename: str) -> list[ExtractedPage]:
     """Постранично извлечь текст, фиксируя способ извлечения.
 
     Постраничность нужна для прослеживаемости: каждое извлечённое поле
     должно ссылаться на конкретную страницу источника.
 
-    OCR не реализован. Скан (PDF без текстового слоя, изображение)
-    осознанно приводит к ошибке, а не к пустому результату, который
-    можно принять за «в документе ничего нет».
+    Для PDF сначала читается текстовый слой. OCR включается постранично
+    только там, где текста недостаточно; это сохраняет структуру обычных
+    PDF и не расходует CPU без необходимости.
     """
     ext = detect_extension_for_pages(filename)
 
@@ -142,13 +234,39 @@ def extract_pages_from_bytes(content: bytes, filename: str) -> list[ExtractedPag
         with pdfplumber.open(io.BytesIO(content)) as pdf:
             for index, page in enumerate(pdf.pages, start=1):
                 text = page.extract_text() or ""
+                if len(text.strip()) < settings.OCR_MIN_TEXT_CHARS:
+                    try:
+                        image = page.to_image(
+                            resolution=settings.OCR_DPI, antialias=True
+                        ).original
+                        ocr_text, confidence = _ocr_image(image)
+                    except NoTextLayerError:
+                        # Короткая подпись в цифровом PDF всё равно полезна.
+                        # Ошибка OCR критична только для действительно пустой страницы.
+                        if text.strip():
+                            logger.warning(
+                                "OCR fallback failed for PDF page %d; using text layer",
+                                index,
+                            )
+                            ocr_text, confidence = "", None
+                        else:
+                            raise
+                    if ocr_text.strip():
+                        pages.append(
+                            ExtractedPage(
+                                page_number=index,
+                                text=ocr_text,
+                                method="ocr",
+                                ocr_confidence=confidence,
+                            )
+                        )
+                        continue
                 pages.append(
                     ExtractedPage(page_number=index, text=text, method="pdf_text_layer")
                 )
         if not any(p.text.strip() for p in pages):
             raise NoTextLayerError(
-                "PDF не содержит текстового слоя — вероятно, это скан. "
-                "Распознавание сканов (OCR) в текущей версии не поддерживается."
+                "Не удалось распознать текст в PDF. Проверьте качество скана."
             )
         return pages
 
@@ -171,10 +289,31 @@ def extract_pages_from_bytes(content: bytes, filename: str) -> list[ExtractedPag
         raise UnsupportedDocumentType("Не удалось декодировать TXT (пробовали UTF-8 и CP1251)")
 
     if ext in (".png", ".jpg", ".jpeg"):
-        raise NoTextLayerError(
-            "Извлечение текста из изображений требует OCR, который "
-            "в текущей версии не поддерживается. Загрузите PDF или DOCX."
-        )
+        if not _OCR_IMPORTS_AVAILABLE:
+            raise NoTextLayerError(
+                "OCR недоступен: не установлен Python-пакет pytesseract или Pillow."
+            )
+        try:
+            with Image.open(io.BytesIO(content)) as image:
+                text, confidence = _ocr_image(image)
+        except NoTextLayerError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise UnsupportedDocumentType(
+                f"Не удалось открыть изображение: {exc}"
+            ) from exc
+        if not text.strip():
+            raise NoTextLayerError(
+                "Не удалось распознать текст на изображении. Проверьте качество снимка."
+            )
+        return [
+            ExtractedPage(
+                page_number=1,
+                text=text,
+                method="ocr",
+                ocr_confidence=confidence,
+            )
+        ]
 
     raise UnsupportedDocumentType(f"Неподдерживаемое расширение: {ext}")
 

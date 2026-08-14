@@ -39,6 +39,10 @@ class LLMProviderFactory:
 
     # Provider-specific defaults (used only if value is not provided in config)
     PROVIDER_DEFAULTS: dict[str, dict[str, str]] = {
+        "gigachat": {
+            "base_url": "https://api.giga.chat/v1",
+            "model": "GigaChat-3-Ultra",
+        },
         "openai": {
             "base_url": "https://api.openai.com/v1",
             "model": "gpt-4o",
@@ -65,6 +69,24 @@ class LLMProviderFactory:
             from app.infrastructure.llm.mock_provider import MockLLMProvider
 
             return MockLLMProvider()
+
+        if provider_type == "gigachat":
+            from app.infrastructure.llm.gigachat_provider import GigaChatProvider
+
+            defaults = LLMProviderFactory.PROVIDER_DEFAULTS["gigachat"]
+            authorization_key = config.get("authorization_key") or config.get("api_key")
+            return GigaChatProvider(
+                authorization_key=authorization_key or "",
+                base_url=config.get("base_url") or defaults["base_url"],
+                model=config.get("model") or defaults["model"],
+                auth_url=config.get("auth_url")
+                or "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
+                scope=config.get("scope") or "GIGACHAT_API_PERS",
+                timeout=float(config.get("timeout", 120.0)),
+                verify_ssl=bool(config.get("verify_ssl", True)),
+                ca_bundle_file=config.get("ca_bundle_file"),
+                default_system_prompt=config.get("default_system_prompt"),
+            )
 
         if provider_type in ("local", "openai", "deepseek", "routerai"):
             from app.infrastructure.llm.openai_compatible_provider import (
@@ -98,5 +120,5 @@ class LLMProviderFactory:
 
         raise ValueError(
             f"Unknown LLM provider type: '{provider_type}'. "
-            "Supported values: mock, local, openai, routerai, deepseek, anthropic."
+            "Supported values: mock, local, openai, routerai, deepseek, gigachat, anthropic."
         )

@@ -21,6 +21,7 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.llm.mock_provider import MockLLMProvider
 from app.infrastructure.providers.base import RegistryRecord
+from app.agents.legal.registry_context import RegistryContextReview
 from app.services.conflict_search import run_conflict_search
 from sqlalchemy import select
 
@@ -56,10 +57,12 @@ class RecordingRegistry(StubRegistry):
     def __init__(self, mark_text: str, classes: list[int], only_for: str = ""):
         super().__init__(mark_text, classes)
         self.queried_texts: list[str] = []
+        self.queried_classes: list[list[int] | None] = []
         self._only_for = only_for.casefold()
 
     async def search_marks(self, query):
         self.queried_texts.append(query.mark_text)
+        self.queried_classes.append(query.classes)
         if self._only_for and query.mark_text.casefold() != self._only_for:
             return []
         return await super().search_marks(query)
@@ -129,6 +132,13 @@ class TestCrossLanguageConflict:
         assert "APPLE" in findings[0].explanation
         assert "прямой перевод" in findings[0].explanation
 
+        # Карточка результата должна отображаться юридически понятно, без
+        # разбора технического explanation на фронтенде.
+        record = findings[0].verification_json["registry_record"]
+        assert record["mark_text"] == "APPLE"
+        assert record["classes"] == [25]
+        assert record["record_id"] == "RU9999001"
+
     async def test_model_usage_is_recorded(self, async_session, application):
         """Специалист должен видеть, что вывод опирается на модель."""
         assessment = await run_conflict_search(
@@ -160,6 +170,46 @@ class TestCrossLanguageConflict:
             llm_provider=MockLLMProvider(),
         )
         assert assessment.requires_specialist_review is True
+
+    async def test_registry_llm_review_is_saved_with_the_finding(
+        self, async_session, application, monkeypatch
+    ):
+        async def fake_registry_review(*args, **kwargs):
+            conflicts = kwargs["conflicts"]
+            assert conflicts[0][0].record_id == "RU9999001"
+            return RegistryContextReview(
+                summary="Карточка реестра передана модели.",
+                overall_observation="Нужна проверка специалистом.",
+                confidence=0.7,
+                comments={
+                    "RU9999001": {
+                        "comment": "Модель учла владельца, классы и статус.",
+                        "confusion_factors": ["совпадение значения"],
+                        "recommended_action": "Проверить однородность товаров.",
+                    }
+                },
+            )
+
+        monkeypatch.setattr(
+            "app.services.conflict_search.review_registry_context",
+            fake_registry_review,
+        )
+        assessment = await run_conflict_search(
+            async_session,
+            application,
+            registry_provider=StubRegistry("APPLE", [25]),
+            llm_provider=MockLLMProvider(),
+        )
+
+        assert "llm_registry_review" in assessment.verification_json["method"]
+        assert assessment.verification_json["llm_registry_records_sent"] == 1
+        assert assessment.verification_json["llm_registry_review"]["summary"]
+        findings = await _findings(async_session, assessment.id)
+        assert "Модель учла владельца" in findings[0].explanation
+        assert (
+            findings[0].verification_json["llm_registry_review"]["recommended_action"]
+            == "Проверить однородность товаров."
+        )
 
 
 class TestQueryIsExpanded:
@@ -226,6 +276,90 @@ class TestQueryIsExpanded:
         findings = await _findings(async_session, assessment.id)
         assert findings[0].verification_json["found_by"] == "translation"
 
+    async def test_confirmed_classes_are_searched_before_broad_control(
+        self, async_session, application
+    ):
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id,
+                class_number=25,
+                class_description="одежда",
+                approved=True,
+            )
+        )
+        await async_session.flush()
+        registry = RecordingRegistry("APPLE", [25])
+
+        assessment = await run_conflict_search(
+            async_session,
+            application,
+            registry_provider=registry,
+            llm_provider=MockLLMProvider(),
+        )
+
+        first_broad = registry.queried_classes.index(None)
+        assert first_broad > 0
+        assert all(value == [25] for value in registry.queried_classes[:first_broad])
+        assert assessment.verification_json["class_first_search"] is True
+        assert assessment.verification_json["selected_class_records"] >= 1
+
+
+class TestExperiencedLawyerLayer:
+    async def test_model_sees_prethreshold_record_and_can_raise_manual_attention(
+        self, async_session, application
+    ):
+        class LegalAttentionLLM(MockLLMProvider):
+            async def generate_structured(self, messages, output_schema, temperature=0.1):
+                assert '"overall": 0.167' in messages[1].content
+                return {
+                    "summary": "Есть юридически значимая карточка.",
+                    "overall_observation": "Нужно проверить смысловую связь.",
+                    "overall_risk": "high",
+                    "methodology_steps": ["Проверены обозначения и однородность."],
+                    "record_reviews": [
+                        {
+                            "record_id": "RU9999001",
+                            "legal_risk": "high",
+                            "requires_attention": True,
+                            "comment": "Простой коэффициент не исчерпывает анализ.",
+                            "mark_similarity_analysis": "Требуется проверка общего впечатления.",
+                            "goods_homogeneity_analysis": "Класс совпадает, перечень нужно уточнить.",
+                            "priority_and_status_analysis": "Регистрация указана как действующая.",
+                            "confusion_factors": ["смысловая связь"],
+                            "counterarguments": ["написание отличается"],
+                            "missing_evidence": ["полный перечень товаров"],
+                            "legal_references": ["п. 41 Правил № 482"],
+                            "recommended_action": "Провести ручное сопоставление перечней.",
+                        }
+                    ],
+                    "confidence": 0.72,
+                }
+
+        application.mark_name = "ДОМ"
+        application.mark_text = "ДОМ"
+        application.goods_services_raw = "услуги проектирования"
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id,
+                class_number=42,
+                approved=True,
+            )
+        )
+        await async_session.flush()
+
+        assessment = await run_conflict_search(
+            async_session,
+            application,
+            registry_provider=StubRegistry("КРОВЛЯ", [42]),
+            llm_provider=LegalAttentionLLM(),
+        )
+
+        findings = await _findings(async_session, assessment.id)
+        assert len(findings) == 1
+        assert findings[0].level.value == "high"
+        assert findings[0].verification_json["decision_source"] == "llm_legal_attention"
+        assert assessment.verification_json["llm_elevated_record_ids"] == ["RU9999001"]
+
 
 class TestModelIsNotAskedNeedlessly:
     """Смысловая проверка идёт по парам и стоит вызова на каждую."""
@@ -242,6 +376,8 @@ class TestModelIsNotAskedNeedlessly:
         )
 
         assert await _findings(async_session, assessment.id) == []
+        assert assessment.overall_risk is None
+        assert assessment.is_inconclusive is True
 
     async def test_different_classes_skip_the_model(self, async_session, application):
         """Товары неоднородны — смысловое совпадение вывод не изменит."""

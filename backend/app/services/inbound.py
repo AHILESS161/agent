@@ -26,6 +26,7 @@ from app.infrastructure.database.models import (
     InboundAttachment,
     InboundEvent,
     InboundStatus,
+    MarkType,
     SourceChannel,
     TrademarkApplicationDraft,
 )
@@ -167,6 +168,7 @@ async def create_case_from_event(
     new_client: dict[str, Any] | None,
     mark_name: str | None,
     mark_text: str | None,
+    mark_type: MarkType | None,
     business_description: str | None,
     goods_services: str | None,
     user_id: int | None = None,
@@ -200,8 +202,13 @@ async def create_case_from_event(
 
     application = TrademarkApplicationDraft(
         client_id=client_id,
+        # Дело должно сразу принадлежать специалисту, который принял
+        # обращение. Иначе карточка открывается по прямой ссылке, но исчезает
+        # из «Обзора» и общего списка из-за фильтра доступных пользователю дел.
+        created_by_user_id=user_id,
         mark_name=mark_name,
         mark_text=mark_text,
+        mark_type=mark_type,
         business_description=business_description,
         goods_services_raw=goods_services,
         # Текст обращения сохраняется в примечаниях: он часто содержит

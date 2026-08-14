@@ -9,8 +9,8 @@ import { AlertTriangle, Info } from "lucide-react";
 export function AiDisclaimer({ compact = false }: { compact?: boolean }) {
   if (compact) {
     return (
-      <p className="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground">
-        <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+      <p className="flex items-start gap-2 text-sm leading-relaxed text-muted-foreground">
+        <Info className="mt-0.5 h-4 w-4 shrink-0" />
         Результаты сформированы автоматически и носят предварительный
         характер. Требуется проверка специалистом.
       </p>
@@ -23,7 +23,7 @@ export function AiDisclaimer({ compact = false }: { compact?: boolean }) {
       data-testid="ai-disclaimer"
     >
       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-500" />
-      <p className="text-xs leading-relaxed text-foreground">
+      <p className="text-sm leading-relaxed text-foreground">
         Результаты сформированы с применением AI и носят предварительный
         информационный характер. Они требуют проверки специалистом.
       </p>
@@ -38,7 +38,7 @@ export function AiDisclaimer({ compact = false }: { compact?: boolean }) {
 export function DemoModeBadge({ label = "Демо-режим" }: { label?: string }) {
   return (
     <span
-      className="inline-flex items-center rounded border border-amber-500/50 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-500"
+      className="inline-flex items-center rounded border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-500"
       data-testid="demo-badge"
     >
       {label}

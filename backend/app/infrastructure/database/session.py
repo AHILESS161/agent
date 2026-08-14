@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -25,6 +26,12 @@ def _build_engine() -> AsyncEngine:
     url = settings.DATABASE_URL
     if url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
+        # Полный правовой анализ выполняет внешние запросы и может держать
+        # транзакцию дольше обычного HTTP-запроса. SQLite по умолчанию ждёт
+        # освобождения записи всего пять секунд, после чего отвечает
+        # ``database is locked``. Для локального/demo режима даём активной
+        # операции завершиться вместо случайного HTTP 500.
+        connect_args["timeout"] = 120
     return create_async_engine(
         url,
         echo=settings.DEBUG,
@@ -34,6 +41,21 @@ def _build_engine() -> AsyncEngine:
 
 
 engine: AsyncEngine = _build_engine()
+
+
+if settings.DATABASE_URL.startswith("sqlite"):
+    @event.listens_for(engine.sync_engine, "connect")
+    def _configure_sqlite(dbapi_connection, _connection_record) -> None:
+        cursor = dbapi_connection.cursor()
+        try:
+            # WAL позволяет экрану читать готовое заключение, пока новый
+            # анализ записывает результаты. busy_timeout дублирует timeout
+            # на уровне SQLite для всех подключений.
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=120000")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 
 AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
     bind=engine,

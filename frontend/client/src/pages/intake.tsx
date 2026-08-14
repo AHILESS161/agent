@@ -15,7 +15,7 @@
 import { useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -282,7 +282,7 @@ export default function IntakePage() {
       toast({
         title: `Дело №${newCaseId} создано`,
         description: uploaded
-          ? `Документов приложено: ${uploaded}. Реквизиты — на вкладке «Сверка полей».`
+          ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
       });
     } catch (e) {
@@ -306,8 +306,7 @@ export default function IntakePage() {
               <div>
                 <p className="text-sm font-medium">Дело №{caseId} создано</p>
                 <p className="text-xs text-muted-foreground">
-                  Дальше — проверка извлечённых реквизитов на вкладке
-                  «Сверка полей» и подтверждение полей.
+                  Дальше — проверка извлечённых реквизитов на этапе «Данные».
                 </p>
               </div>
             </div>
@@ -322,40 +321,36 @@ export default function IntakePage() {
   }
 
   return (
-    <div className="space-y-4 max-w-3xl" data-testid="intake-page">
-      <div className="flex items-center gap-2">
-        <Inbox className="w-5 h-5 text-primary" />
+    <div className="mx-auto max-w-6xl space-y-8" data-testid="intake-page">
+      <div className="flex flex-col justify-between gap-5 border-b border-border pb-7 sm:flex-row sm:items-end">
         <div>
-          <h1 className="text-xl font-bold">Приём обращения</h1>
-          <p className="text-sm text-muted-foreground">
-            Приложите документы клиента — система заполнит форму, вы проверите
+          <p className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-primary">Новый товарный знак</p>
+          <h1 className="text-4xl font-semibold sm:text-5xl">Создание проекта</h1>
+          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
+            Три шага: документы, заявитель и обозначение. Все данные можно изменить позже.
           </p>
+        </div>
+        <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
+          <span className="h-2.5 w-2.5 rounded-full bg-primary" />
+          Автосохранение после создания
         </div>
       </div>
 
       {/* Шаг 1: документы (первым — с них начинается работа) */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <StepBadge n={1} />
-            Документы клиента
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Приложите выписку ЕГРЮЛ или ЕГРИП — из неё автоматически
-            подставятся наименование, ИНН, ОГРН и адрес. Также можно приложить
-            доверенность и изображение обозначения. PDF, DOCX, TXT, PNG, JPG.
-          </p>
-
+      <ProjectStep
+        n={1}
+        title="Добавьте документы"
+        description="Необязательно. Выписка ЕГРЮЛ или ЕГРИП заполнит реквизиты заявителя."
+      >
           <div
-            className="rounded-lg border border-dashed border-border p-4 flex flex-col items-center gap-2 text-center"
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary/35 bg-primary/[0.035] px-6 py-9 text-center transition-colors hover:border-primary/60 hover:bg-primary/[0.055]"
             data-testid="intake-dropzone"
           >
-            <Upload className="w-6 h-6 text-muted-foreground" />
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Upload className="h-6 w-6" />
+            </span>
             <Button
-              variant="outline"
-              size="sm"
+              variant="default"
               disabled={isReading}
               onClick={() => fileInput.current?.click()}
               data-testid="button-attach"
@@ -365,10 +360,10 @@ export default function IntakePage() {
               ) : (
                 <Upload className="w-3.5 h-3.5 mr-1.5" />
               )}
-              Приложить документ
+              {isReading ? "Читаем документ…" : "Выбрать документ"}
             </Button>
-            <p className="text-[11px] text-muted-foreground">
-              Тип файла проверяется по содержимому, а не по расширению
+            <p className="text-sm text-muted-foreground">
+              PDF, DOCX, TXT, PNG или JPG · до 25 МБ
             </p>
           </div>
           <input
@@ -384,35 +379,35 @@ export default function IntakePage() {
           />
 
           {attached.length > 0 && (
-            <div className="space-y-1.5">
+            <div className="mt-5 space-y-2">
               {attached.map((item, index) => (
                 <div
                   key={`${item.file.name}-${index}`}
-                  className="flex items-start gap-2 rounded-md border border-border px-2.5 py-2"
+                  className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3"
                 >
                   <FileText className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium truncate">{item.file.name}</p>
-                    <p className="text-[11px] text-muted-foreground">
+                    <p className="truncate text-sm font-semibold">{item.file.name}</p>
+                    <p className="text-xs text-muted-foreground">
                       {DOCUMENT_KIND_LABELS[item.documentKind ?? ""] ??
                         "Тип не определён"}
                     </p>
                     {item.warning && (
-                      <p className="text-[11px] text-amber-600 dark:text-amber-500 flex items-start gap-1 mt-0.5">
+                      <p className="mt-1 flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
                         <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
                         {item.warning}
                       </p>
                     )}
                   </div>
                   {item.autofilled && (
-                    <Badge className="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 text-[10px] shrink-0">
+                    <Badge className="shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
                       <Sparkles className="w-3 h-3 mr-1" />
                       данные в форме
                     </Badge>
                   )}
                   <button
                     type="button"
-                    className="text-[11px] text-muted-foreground hover:text-destructive shrink-0"
+                    className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
                     onClick={() => removeAttachment(index)}
                     data-testid={`remove-attachment-${index}`}
                   >
@@ -422,42 +417,43 @@ export default function IntakePage() {
               ))}
             </div>
           )}
-        </CardContent>
-      </Card>
+      </ProjectStep>
 
       {/* Шаг 2: заявитель */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <StepBadge n={2} />
-            Заявитель
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex gap-2">
-            <Button
+      <ProjectStep
+        n={2}
+        title="Укажите заявителя"
+        description="Создайте нового заявителя или выберите существующего из базы."
+      >
+          <div className="inline-flex rounded-lg bg-muted p-1">
+            <button
               type="button"
-              size="sm"
-              variant={!useExistingClient ? "default" : "outline"}
+              className={cn(
+                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
+                !useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
               onClick={() => setUseExistingClient(false)}
             >
-              Новый клиент
-            </Button>
-            <Button
+              Новый заявитель
+            </button>
+            <button
               type="button"
-              size="sm"
-              variant={useExistingClient ? "default" : "outline"}
+              className={cn(
+                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
+                useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
               onClick={() => setUseExistingClient(true)}
             >
-              Существующий
-            </Button>
+              Выбрать из базы
+            </button>
           </div>
 
           {useExistingClient ? (
-            <Field label="Клиент">
+            <div className="mt-6">
+            <Field label="Заявитель">
               <Select value={clientId} onValueChange={setClientId}>
                 <SelectTrigger data-testid="select-client">
-                  <SelectValue placeholder="Выберите клиента" />
+                  <SelectValue placeholder="Начните вводить название" />
                 </SelectTrigger>
                 <SelectContent>
                   {clients.map((client) => (
@@ -468,8 +464,9 @@ export default function IntakePage() {
                 </SelectContent>
               </Select>
             </Field>
+            </div>
           ) : (
-            <>
+            <div className="mt-6 grid gap-5">
               <Field label="Тип заявителя">
                 <Select
                   value={clientType}
@@ -507,7 +504,7 @@ export default function IntakePage() {
                 />
               </Field>
 
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-5 sm:grid-cols-2">
                 <Field label="ИНН">
                   <Input
                     value={inn}
@@ -545,26 +542,22 @@ export default function IntakePage() {
               </Field>
 
               {clientType === "individual" && (
-                <p className="text-[11px] text-muted-foreground flex items-start gap-1">
+                <p className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
                   <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                  Паспортные данные физлица вносятся вручную: автоизвлечение из
-                  скана паспорта пока не поддерживается.
+                  Текст скана распознаётся, но паспортные реквизиты пока нужно
+                  проверить и перенести в поля вручную.
                 </p>
               )}
-            </>
+            </div>
           )}
-        </CardContent>
-      </Card>
+      </ProjectStep>
 
       {/* Шаг 3: обозначение и деятельность */}
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold flex items-center gap-2">
-            <StepBadge n={3} />
-            Обозначение и деятельность
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <ProjectStep
+        n={3}
+        title="Опишите товарный знак"
+        description="Укажите обозначение и коротко расскажите, для каких товаров или услуг оно нужно."
+      >
           <Field
             label="Вид знака"
             hint={
@@ -633,10 +626,10 @@ export default function IntakePage() {
             />
           </Field>
 
-          <Separator />
+          <Separator className="my-2" />
 
-          <details className="text-xs">
-            <summary className="cursor-pointer text-muted-foreground">
+          <details className="rounded-lg border border-border px-4 py-3 text-sm">
+            <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
               Сведения об обращении (необязательно)
             </summary>
             <div className="space-y-3 mt-3">
@@ -659,17 +652,17 @@ export default function IntakePage() {
               </Field>
             </div>
           </details>
-        </CardContent>
-      </Card>
+      </ProjectStep>
 
-      <div className="flex justify-end">
-        <Button onClick={() => void submit()} disabled={isSaving} data-testid="button-create-case">
+      <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
+        <p className="hidden text-sm text-muted-foreground sm:block">После создания откроется карточка проекта</p>
+        <Button size="lg" onClick={() => void submit()} disabled={isSaving} data-testid="button-create-case">
           {isSaving ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />
           ) : (
             <CheckCircle2 className="w-4 h-4 mr-2" />
           )}
-          Создать дело
+          Создать проект
         </Button>
       </div>
     </div>
@@ -678,9 +671,34 @@ export default function IntakePage() {
 
 function StepBadge({ n }: { n: number }) {
   return (
-    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold">
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
       {n}
     </span>
+  );
+}
+
+function ProjectStep({
+  n,
+  title,
+  description,
+  children,
+}: {
+  n: number;
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-card-border bg-card">
+      <header className="flex items-start gap-4 border-b border-border bg-primary/[0.045] px-6 py-5 sm:px-8">
+        <StepBadge n={n} />
+        <div>
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+        </div>
+      </header>
+      <div className="space-y-5 px-6 py-6 sm:px-8 sm:py-7">{children}</div>
+    </section>
   );
 }
 
@@ -694,10 +712,10 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <Label className="text-xs font-medium">{label}</Label>
+    <div className="space-y-2">
+      <Label className="text-sm font-semibold">{label}</Label>
       {children}
-      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   );
 }

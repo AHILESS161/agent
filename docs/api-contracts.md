@@ -1012,3 +1012,89 @@ agent_run_duration_seconds_bucket{agent="absolute_grounds",le="5.0"} 38
 | `INN_DUPLICATE` | Клиент с таким ИНН уже существует |
 | `PROMPT_NOT_FOUND` | Промпт с указанным кодом не найден |
 | `INSUFFICIENT_RAG_COVERAGE` | Недостаточно источников в базе знаний |
+
+---
+
+## 14. Реестр товарных знаков (read-only)
+
+Все методы требуют Bearer-токен. Поиск и просмотр карточки доступны ролям
+`admin`, `lawyer`, `manager`; список наборов официального API — только
+`admin` и `lawyer`.
+
+### POST `/api/v1/registry/search`
+
+Ищет зарегистрированные товарные знаки, опубликованные заявки либо обе
+коллекции. При `source: "both"` результаты чередуются, чтобы небольшой лимит
+не был целиком занят первой коллекцией.
+
+```json
+{
+  "query": "Регистр",
+  "classes": [9, 42],
+  "search_type": "fuzzy",
+  "source": "both",
+  "max_results": 20
+}
+```
+
+`search_type`: `exact`, `fuzzy`, `phonetic`, `transliteration`, `semantic`.
+`source`: `registrations`, `applications`, `both`. Максимальный допустимый
+`max_results` — 200.
+
+```json
+{
+  "provider": "rospatent_public",
+  "source": "both",
+  "total": 2,
+  "records": [
+    {
+      "record_id": "registration:123456",
+      "external_id": "123456",
+      "source": "registration",
+      "mark_text": "РЕГИСТР",
+      "mark_type": "word",
+      "owner": "Правообладатель",
+      "classes": [9, 42],
+      "status": "registered",
+      "filing_date": "2024-01-15",
+      "registration_date": "2025-02-10",
+      "application_number": "2024700000",
+      "registration_number": "123456",
+      "image_url": null
+    }
+  ]
+}
+```
+
+### GET `/api/v1/registry/records/{record_id}`
+
+Возвращает нормализованную карточку по идентификатору из поиска. Для
+публичного провайдера полнота карточки зависит от данных поисковой платформы.
+
+### GET `/api/v1/registry/datasets`
+
+Возвращает доступные наборы официального Open API. В публичном и mock-режимах
+список может быть пустым.
+
+### Участие реестра в полном анализе
+
+Отдельный вызов API реестра ничего не записывает и не запускает LLM. При
+запуске полного анализа система сначала ищет регистрации и заявки в классах,
+ранее выбранных в деле, затем делает ограниченный широкий контроль,
+рассчитывает оценки сходства и до порогового отсечения передаёт модели до 10
+верхних записей. Результат аудируется
+в `RiskAssessment.verification_json`:
+
+- `class_first_search`, `selected_class_records`, `broader_control_records` —
+  порядок и охват двух фаз поиска;
+- `llm_registry_records_sent` — число записей, переданных модели;
+- `llm_elevated_record_ids` — допороговые карточки, которые модель обоснованно
+  подняла на ручную проверку;
+- `llm_registry_review` — резюме, общее наблюдение, уверенность модели и
+  комментарии, привязанные к существующим `record_id`;
+- `verification_method` включает `llm_registry_review`, только если модель
+  успешно вернула корректный структурированный ответ.
+
+Модель не изменяет детерминированные оценки сходства. Ошибка LLM не делает
+реестровый поиск неуспешным. Если значимые карточки не выявлены, относительный
+анализ возвращает `is_inconclusive: true`, а не утверждение о низком риске.

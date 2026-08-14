@@ -26,6 +26,7 @@ from app.infrastructure.database.models import (
     ExtractionMethod,
     InboundEvent,
     InboundStatus,
+    MarkType,
     SourceChannel,
     SourceDocument,
     User,
@@ -77,6 +78,7 @@ class IntakeRequest(BaseModel):
     new_client: Optional[NewClientData] = None
     mark_name: Optional[str] = None
     mark_text: Optional[str] = None
+    mark_type: Optional[MarkType] = None
     business_description: Optional[str] = Field(default=None, max_length=5000)
     goods_services: Optional[str] = Field(default=None, max_length=5000)
 
@@ -162,6 +164,7 @@ async def create_intake(
                 new_client=payload.new_client.model_dump() if payload.new_client else None,
                 mark_name=payload.mark_name,
                 mark_text=payload.mark_text or payload.mark_name,
+                mark_type=payload.mark_type,
                 business_description=payload.business_description,
                 goods_services=payload.goods_services,
                 user_id=current_user.id,
@@ -285,7 +288,11 @@ async def add_attachment(
         document.kind_requires_confirmation = classification.requires_confirmation
         document.page_count = len(pages)
         document.char_count = total_chars
-        document.extraction_method = ExtractionMethod(pages[0].method)
+        document.extraction_method = (
+            ExtractionMethod.ocr
+            if any(page.method == ExtractionMethod.ocr.value for page in pages)
+            else ExtractionMethod(pages[0].method)
+        )
         document.processing_status = DocumentProcessingStatus.extracted
 
     await inbound.attach_document(

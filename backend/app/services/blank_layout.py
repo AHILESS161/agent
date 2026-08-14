@@ -149,6 +149,7 @@ def build_form(
     """
     layout = load_layout()
     values = {item.field_id: item.value for item in content.filled}
+    value_sources = {item.field_id: item.source for item in content.filled}
 
     # Строка сверки ищется по полю заявления, на которое она отображается.
     by_application_field = {
@@ -187,6 +188,14 @@ def build_form(
                 hint=raw.get("hint"),
                 multiline=bool(raw.get("multiline", False)),
             )
+
+            # Даже если поле пришло не из загруженного документа, интерфейс
+            # должен честно показать происхождение: карточка дела,
+            # подтверждённые классы или другое правило предзаполнения.
+            if source and value:
+                layout_field.origin = value_sources.get(source)
+            if fill == FILL_CLASSES and value:
+                layout_field.origin = "подтверждённые классы МКТУ"
 
             row = by_application_field.get(source) if source else None
 
@@ -279,7 +288,7 @@ def build_form(
         "blocking": [f.label for f in blocking],
         "can_generate": not blocking,
         "notice": (
-            "Пустые поля заполняются специалистом. Значения подставляются "
-            "только после подтверждения на вкладке «Сверка полей»."
+            "Поля с пометкой «Заполняет специалист» требуют ручного действия. "
+            "Для остальных полей рядом указан источник или ответственный."
         ),
     }

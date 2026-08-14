@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useCases } from "@/lib/use-cases";
 import {
@@ -20,7 +20,8 @@ import { cn } from "@/lib/utils";
 
 export default function ApplicationsListPage() {
   const { user } = useAuth();
-  const [search, setSearch] = useState("");
+  const routeSearch = useSearch();
+  const [search, setSearch] = useState(() => new URLSearchParams(routeSearch).get("search") ?? "");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data, isLoading, error, reload } = useCases();
@@ -80,12 +81,15 @@ export default function ApplicationsListPage() {
   return (
     <div className="space-y-4" data-testid="applications-list-page">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Заявки</h1>
+        <div>
+          <h1 className="text-4xl font-semibold">Товарные знаки</h1>
+          <p className="mt-2 text-sm text-muted-foreground">Все проекты и этапы регистрации</p>
+        </div>
         {user?.role !== "client" && (
-          <Link href="/applications/new">
+          <Link href="/intake">
             <Button size="sm" data-testid="button-new-application">
               <Plus className="w-4 h-4 mr-1.5" />
-              Новая заявка
+              Создать проект
             </Button>
           </Link>
         )}

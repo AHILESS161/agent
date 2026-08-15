@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
 import { AppLayout } from "@/components/layout";
+import { ClientPortalLayout } from "@/components/client-portal-layout";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import ApplicationsListPage from "@/pages/applications-list";
@@ -19,9 +20,42 @@ import NotificationsPage from "@/pages/notifications";
 import AuditPage from "@/pages/audit";
 import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
+import ClientDashboardPage from "@/pages/client-dashboard";
+import ClientApplicationPage from "@/pages/client-application";
+
+function ClientRoutes() {
+  return (
+    <ClientPortalLayout>
+      <Switch>
+        <Route path="/dashboard" component={ClientDashboardPage} />
+        <Route path="/start" component={IntakePage} />
+        <Route path="/intake">
+          <Redirect to="/start" />
+        </Route>
+        <Route path="/applications/new">
+          <Redirect to="/start" />
+        </Route>
+        <Route path="/applications/:id" component={ClientApplicationPage} />
+        <Route path="/applications">
+          <Redirect to="/dashboard" />
+        </Route>
+        <Route path="/notifications" component={NotificationsPage} />
+        <Route path="/profile" component={ProfilePage} />
+        <Route path="/">
+          <Redirect to="/dashboard" />
+        </Route>
+        <Route component={NotFound} />
+      </Switch>
+    </ClientPortalLayout>
+  );
+}
 
 function AuthenticatedRoutes() {
   const { user } = useAuth();
+
+  if (user?.role === "client") {
+    return <ClientRoutes />;
+  }
 
   return (
     <AppLayout>
@@ -34,8 +68,8 @@ function AuthenticatedRoutes() {
         </Route>
         <Route path="/applications/:id" component={ApplicationDetailPage} />
         <Route path="/applications" component={ApplicationsListPage} />
-        {(user?.role !== "client") && <Route path="/clients/:id" component={ClientDetailPage} />}
-        {(user?.role !== "client") && <Route path="/clients" component={ClientsListPage} />}
+        <Route path="/clients/:id" component={ClientDetailPage} />
+        <Route path="/clients" component={ClientsListPage} />
         <Route path="/notifications" component={NotificationsPage} />
         {(user?.role === "admin" || user?.role === "lawyer") && <Route path="/audit" component={AuditPage} />}
         {user?.role === "admin" && <Route path="/admin" component={AdminPage} />}

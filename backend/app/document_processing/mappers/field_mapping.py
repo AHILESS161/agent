@@ -184,6 +184,10 @@ class FieldMappingEngine:
                 }
                 for c in extracted.candidates
             ]
+        elif row.case_value:
+            # Значение уже явно сохранено человеком в карточке заявителя.
+            # Отсутствие такого значения в выписке не делает поле пустым.
+            row.status = FieldStatus.confirmed
         elif row.default_value:
             # Значение по умолчанию — предложение, а не факт из документа.
             row.status = FieldStatus.needs_review
@@ -210,6 +214,17 @@ class FieldMappingEngine:
                     "Значение собрано из нескольких частей документа — "
                     "требуется проверка"
                 )
+
+            # Совпадающее значение в карточке означает, что пользователь
+            # уже проверил и сохранил его. Не просим подтвердить то же самое
+            # повторно на следующем экране.
+            if (
+                row.registry_value
+                and row.case_value
+                and row.registry_value == row.case_value
+            ):
+                row.status = FieldStatus.confirmed
+                row.validation_error = None
 
         row.available_actions = self._actions_for(row)
         return row

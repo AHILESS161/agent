@@ -111,6 +111,15 @@ async def collect_draft_content(
     )
     by_path = {row.field_path: row for row in rows}
 
+    client = application.client
+    case_values = {
+        "case.applicant.full_name": client.full_name_or_company_name if client else None,
+        "case.applicant.inn": client.inn if client else None,
+        "case.applicant.ogrn": client.ogrn_or_ogrnip if client else None,
+        "case.applicant.legal_address": client.address if client else None,
+        "case.applicant.country_code": (client.country or "RU") if client else "RU",
+    }
+
     engine = FieldMappingEngine()
     for spec in engine.config.get("mappings", []):
         target = spec.get("application_field")
@@ -122,9 +131,22 @@ async def collect_draft_content(
         required = bool(spec.get("required_for_application", False))
 
         row = by_path.get(registry_field) if registry_field else None
+        case_value = case_values.get(spec.get("case_field"))
 
         if row is None:
-            if spec.get("default_value"):
+            if case_value:
+                # Пользователь уже проверил и сохранил значение в карточке
+                # заявителя. Оно не обязано присутствовать в выписке (адрес
+                # ИП, например, обычно скрыт в открытой ЕГРИП).
+                content.filled.append(
+                    FilledField(
+                        field_id=target,
+                        label=label,
+                        value=str(case_value),
+                        source="введено пользователем",
+                    )
+                )
+            elif spec.get("default_value"):
                 # Значение по умолчанию — предложение, а не факт.
                 content.skipped.append(
                     SkippedField(
@@ -220,6 +242,40 @@ async def collect_draft_content(
                 source="карточка дела",
             )
         )
+
+    # Контакты и адрес для переписки берутся из данных заявителя. Для
+    # самостоятельной подачи это ожидаемый вариант; отдельный адрес можно
+    # будет добавить позднее, если он отличается.
+    if client:
+        for field_id, label, value in (
+            ("application.correspondence_address", "Адрес для переписки", client.address),
+            ("application.contact.phone", "Телефон для переписки", client.phone),
+            ("application.contact.email", "E-mail для переписки", client.email),
+        ):
+            if value:
+                content.filled.append(
+                    FilledField(
+                        field_id=field_id,
+                        label=label,
+                        value=value,
+                        source="данные заявителя",
+                    )
+                )
+
+    for field_id, label, value in (
+        ("application.mark.colors", "Цвет или цветовое сочетание", application.colors_claimed),
+        ("application.mark.transliteration", "Транслитерация", application.transliteration),
+        ("application.mark.translation", "Перевод", application.translation),
+    ):
+        if value:
+            content.filled.append(
+                FilledField(
+                    field_id=field_id,
+                    label=label,
+                    value=value,
+                    source="данные заявки",
+                )
+            )
 
     # --- классы МКТУ ---
     class_context = await load_class_context(session, application.id)
@@ -412,7 +468,18 @@ def render_docx(
         value = values.get(field_id)
         if value:
             identifiers.append(f"{label}: {value}")
+    country_code = values.get("application.applicant.country_code")
+    if country_code:
+        identifiers.append(f"Код страны (ВОИС ST.3): {country_code}")
     _write_into(_find_cell(table, "ИДЕНТИФИКАТОРЫ"), identifiers)
+
+    # --- (750) адрес и контакты для переписки ---
+    correspondence = [
+        values.get("application.correspondence_address", ""),
+        f"Телефон: {values['application.contact.phone']}" if values.get("application.contact.phone") else "",
+        f"E-mail: {values['application.contact.email']}" if values.get("application.contact.email") else "",
+    ]
+    _write_into(_find_cell(table, "(750)"), [line for line in correspondence if line])
 
     # --- (540) заявляемое обозначение ---
     mark_text = values.get("application.mark.text") or (
@@ -422,6 +489,21 @@ def render_docx(
         anchor = _find_cell(table, "(540)")
         if anchor is not None:
             _write_into(anchor, [mark_text])
+
+    description_lines = [
+        values.get("application.mark.description", ""),
+        f"Транслитерация: {values['application.mark.transliteration']}" if values.get("application.mark.transliteration") else "",
+        f"Перевод: {values['application.mark.translation']}" if values.get("application.mark.translation") else "",
+    ]
+    _write_into(_find_cell(table, "(571)"), [line for line in description_lines if line])
+
+    for marker, field_id in (
+        ("(591)", "application.mark.colors"),
+        ("(550)", "application.mark.kind"),
+    ):
+        value = values.get(field_id)
+        if value:
+            _write_into(_find_cell(table, marker), [value])
 
     # --- (511) перечень товаров и услуг ---
     if content.classes:

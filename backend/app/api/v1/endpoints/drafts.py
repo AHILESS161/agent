@@ -25,6 +25,7 @@ from app.services import file_storage
 from app.services.application_draft import (
     collect_draft_content,
     create_draft,
+    render_docx,
     serialize_draft,
 )
 from app.services.blank_layout import build_form
@@ -82,6 +83,49 @@ async def _load_draft(session: AsyncSession, draft_id: int) -> ApplicationDraft:
     return draft
 
 
+def _ensure_access(application: TrademarkApplicationDraft, user: User) -> None:
+    if user.role is UserRole.admin:
+        return
+    if user.id not in {
+        application.created_by_user_id,
+        application.assigned_lawyer_id,
+        application.assigned_manager_id,
+    }:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к черновику заявки")
+
+
+@router.get(
+    "/applications/{application_id}/draft-preview/download",
+    summary="Скачать текущий черновик заявления без утверждения",
+)
+async def download_draft_preview(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Скачать именно черновую, ещё не утверждённую версию бланка.
+
+    Финальная выгрузка по-прежнему требует утверждения специалистом.
+    Этот endpoint нужен клиенту, чтобы проверить и самостоятельно
+    дополнить DOCX до подачи.
+    """
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
+    content = await collect_draft_content(session, application)
+    payload = render_docx(content, application)
+    filename = f"chernovik-zayavleniya-{application_id}.docx"
+    return Response(
+        content=payload,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            "X-Document-Status": "draft-not-approved",
+        },
+    )
+
+
 @router.post(
     "/applications/{application_id}/draft",
     status_code=status.HTTP_201_CREATED,
@@ -98,7 +142,7 @@ async def generate_draft(
     остаются пустыми, а причина попадает в чек-лист.
     """
     _require(current_user, _WRITE_ROLES, "формирование черновика")
-    application = await _load_application(session, application_id)
+    application = await _load_application(session, application_id, with_client=True)
 
     draft = await create_draft(session, application, user_id=current_user.id)
 
@@ -127,7 +171,7 @@ async def generate_draft(
 async def draft_form(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Показать заявление в структуре официального бланка.
 
@@ -136,6 +180,7 @@ async def draft_form(
     заполнить недостающее прямо здесь.
     """
     application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
     content = await collect_draft_content(session, application)
     rows, field_ids = await load_reconciliation(session, application_id)
 
@@ -161,9 +206,10 @@ async def draft_form(
 async def list_drafts(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    await _load_application(session, application_id)
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
     drafts = (
         (
             await session.execute(

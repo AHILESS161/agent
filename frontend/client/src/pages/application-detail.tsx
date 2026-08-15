@@ -25,6 +25,7 @@ import {
 // поэтому живут в общей вкладке, а не в трёх разных.
 import { LegalAnalysisTab } from "@/components/legal-analysis-tab";
 import { ApplicationDraftTab } from "@/components/application-draft-tab";
+import { ProfessionalFeeEstimate } from "@/components/professional-fee-estimate";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -477,6 +478,7 @@ function InfoRow({ label, value, mono, children }: { label: string; value?: stri
 // ========== MAIN PAGE ==========
 export default function ApplicationDetailPage() {
   const [, params] = useRoute("/applications/:id");
+  const { user } = useAuth();
   const appId = params?.id ? parseInt(params.id) : 0;
   // Меняется после извлечения реквизитов, чтобы вкладка сверки
   // перечитала данные при следующем открытии.
@@ -586,6 +588,12 @@ export default function ApplicationDetailPage() {
               <h2 className="mb-3 text-xl font-semibold">Заявление</h2>
               <ApplicationDraftTab appId={appId} />
             </section>
+            {(user?.role === "admin" || user?.role === "lawyer") && (
+              <section className="border-t border-border pt-7">
+                <h2 className="mb-3 text-xl font-semibold">Пошлины</h2>
+                <ProfessionalFeeEstimate appId={appId} />
+              </section>
+            )}
             <section className="border-t border-border pt-7">
               <h2 className="mb-3 text-xl font-semibold">Готовые документы</h2>
               <DocumentPackagesTab appId={appId} />

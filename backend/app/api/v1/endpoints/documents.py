@@ -76,8 +76,23 @@ async def _load_document(session: AsyncSession, document_id: int) -> SourceDocum
     return document
 
 
-def _require_write_access(user: User) -> None:
-    if user.role not in _WRITE_ROLES:
+def _has_application_access(user: User, application: TrademarkApplicationDraft) -> bool:
+    return user.role is UserRole.admin or user.id in {
+        application.created_by_user_id,
+        application.assigned_lawyer_id,
+        application.assigned_manager_id,
+    }
+
+
+def _require_application_access(user: User, application: TrademarkApplicationDraft) -> None:
+    if not _has_application_access(user, application):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к документам заявки")
+
+
+def _require_write_access(user: User, application: TrademarkApplicationDraft) -> None:
+    if not _has_application_access(user, application) or (
+        user.role not in _WRITE_ROLES and user.role is not UserRole.client
+    ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для изменения документов дела",
@@ -129,8 +144,8 @@ async def upload_document(
     Текст извлекается постранично. Тип документа определяется правилами
     и в любом случае требует подтверждения специалистом.
     """
-    _require_write_access(current_user)
     application = await _load_application(session, application_id)
+    _require_write_access(current_user, application)
 
     content = await file.read()
     filename = file_storage.normalize_upload_filename(file.filename or "upload")
@@ -270,9 +285,10 @@ async def upload_document(
 async def list_documents(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    await _load_application(session, application_id)
+    application = await _load_application(session, application_id)
+    _require_application_access(current_user, application)
     result = await session.execute(
         select(SourceDocument)
         .where(SourceDocument.application_id == application_id)
@@ -286,9 +302,11 @@ async def list_documents(
 async def get_document(
     document_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     document = await _load_document(session, document_id)
+    application = await _load_application(session, document.application_id)
+    _require_application_access(current_user, application)
     return _serialize(document)
 
 
@@ -297,9 +315,11 @@ async def get_document_pages(
     document_id: int,
     page: Optional[int] = Query(default=None, ge=1, description="Только эта страница"),
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    await _load_document(session, document_id)
+    document = await _load_document(session, document_id)
+    application = await _load_application(session, document.application_id)
+    _require_application_access(current_user, application)
     query = select(DocumentPage).where(DocumentPage.document_id == document_id)
     if page is not None:
         query = query.where(DocumentPage.page_number == page)
@@ -333,6 +353,8 @@ async def download_document(
     к хранилищу по URL невозможен.
     """
     document = await _load_document(session, document_id)
+    application = await _load_application(session, document.application_id)
+    _require_application_access(current_user, application)
     try:
         content = file_storage.read_file(document.stored_path)
     except FileNotFoundError as exc:

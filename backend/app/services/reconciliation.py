@@ -118,6 +118,12 @@ async def load_reconciliation(
         "case.applicant.ogrn": (
             application.client.ogrn_or_ogrnip if application.client else None
         ),
+        "case.applicant.legal_address": (
+            application.client.address if application.client else None
+        ),
+        "case.applicant.country_code": (
+            (application.client.country or "RU") if application.client else "RU"
+        ),
     }
     case_values = {key: value for key, value in case_values.items() if value}
 

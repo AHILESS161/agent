@@ -54,7 +54,7 @@ class ClientCreate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, max_length=50)
     address: Optional[str] = None
-    country: Optional[str] = Field(default=None, max_length=100)
+    country: Optional[str] = Field(default="RU", min_length=2, max_length=2)
     inn: Optional[str] = Field(default=None, max_length=20)
     ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
     representatives: Optional[List[ClientRepresentativeCreate]] = None
@@ -70,7 +70,7 @@ class ClientUpdate(BaseModel):
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, max_length=50)
     address: Optional[str] = None
-    country: Optional[str] = Field(default=None, max_length=100)
+    country: Optional[str] = Field(default=None, min_length=2, max_length=2)
     inn: Optional[str] = Field(default=None, max_length=20)
     ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
 

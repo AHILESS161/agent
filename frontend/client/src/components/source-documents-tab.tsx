@@ -33,9 +33,11 @@ interface Props {
   appId: number;
   /** Вызывается после успешного извлечения, чтобы обновить вкладку сверки. */
   onExtracted?: () => void;
+  /** Упрощённые подписи без внутренней терминологии для личного кабинета. */
+  clientMode?: boolean;
 }
 
-export function SourceDocumentsTab({ appId, onExtracted }: Props) {
+export function SourceDocumentsTab({ appId, onExtracted, clientMode = false }: Props) {
   const { toast } = useToast();
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -145,16 +147,18 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
     <div className="space-y-4" data-testid="source-documents-tab">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-semibold">Документы проекта</h3>
+          <h3 className="text-base font-semibold">{clientMode ? "Ваши документы" : "Документы проекта"}</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Добавьте выписку или другой документ, из которого нужно перенести данные.
+            {clientMode
+              ? "Добавьте файл — система распознает текст и предложит данные для заполнения."
+              : "Добавьте выписку или другой документ, из которого нужно перенести данные."}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void load()} data-testid="button-reload-documents">
+          {!clientMode && <Button variant="outline" size="sm" onClick={() => void load()} data-testid="button-reload-documents">
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
             Обновить
-          </Button>
+          </Button>}
           <Button
             size="sm"
             disabled={isUploading}
@@ -166,7 +170,7 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
             ) : (
               <Upload className="w-3.5 h-3.5 mr-1.5" />
             )}
-            {isUploading ? "Загрузка…" : "Загрузить документ"}
+            {isUploading ? "Загрузка…" : clientMode ? "Добавить файл" : "Загрузить документ"}
           </Button>
           <input
             ref={fileInput}
@@ -233,7 +237,7 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
                         {doc.extraction_method === "ocr" && (
                           <Badge variant="outline">Распознано со скана</Badge>
                         )}
-                        {doc.kind_requires_confirmation && (
+                        {!clientMode && doc.kind_requires_confirmation && (
                           <Badge variant="outline">
                             тип требует подтверждения
                           </Badge>
@@ -244,8 +248,9 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
                         {formatSize(doc.file_size)}
                         {doc.page_count ? ` · страниц: ${doc.page_count}` : ""}
                         {" · "}
-                        {PROCESSING_STATUS_LABELS[doc.processing_status] ??
-                          doc.processing_status}
+                        {clientMode && doc.processing_status === "extracted"
+                          ? "Файл обработан"
+                          : PROCESSING_STATUS_LABELS[doc.processing_status] ?? doc.processing_status}
                       </p>
 
                       {failed && doc.error_message && (
@@ -277,7 +282,7 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
                           ) : (
                             <ScanSearch className="w-3.5 h-3.5 mr-1.5" />
                           )}
-                          Извлечь реквизиты
+                          {clientMode ? "Перенести данные" : "Извлечь реквизиты"}
                         </Button>
                       )}
                     </div>
@@ -289,7 +294,7 @@ export function SourceDocumentsTab({ appId, onExtracted }: Props) {
         </div>
       )}
 
-      <AiDisclaimer compact />
+      {!clientMode && <AiDisclaimer compact />}
     </div>
   );
 }

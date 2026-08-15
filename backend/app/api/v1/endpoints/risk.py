@@ -64,6 +64,14 @@ def _require_write_access(user: User) -> None:
         )
 
 
+def _require_client_access(user: User, application: TrademarkApplicationDraft) -> None:
+    if user.role is UserRole.client and application.created_by_user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к анализу заявки",
+        )
+
+
 async def _load_application(
     session: AsyncSession, application_id: int
 ) -> TrademarkApplicationDraft:
@@ -125,8 +133,11 @@ async def run_full(
     абсолютные основания и конфликты, и лишь по их совокупности
     формируется вердикт.
     """
-    _require_write_access(current_user)
     application = await _load_application(session, application_id)
+    if current_user.role is UserRole.client:
+        _require_client_access(current_user, application)
+    else:
+        _require_write_access(current_user)
 
     lock = _full_analysis_lock(application_id)
     if lock.locked():
@@ -137,6 +148,7 @@ async def run_full(
                 "Дождитесь завершения текущего анализа."
             ),
         )
+
 
     async with lock:
         result = await run_full_analysis(
@@ -185,8 +197,11 @@ async def run_analysis(
     и ссылка проверяется дословно. Вывод без подтверждённой цитаты
     отбрасывается, даже если выглядит убедительно.
     """
-    _require_write_access(current_user)
     application = await _load_application(session, application_id)
+    if current_user.role is UserRole.client:
+        _require_client_access(current_user, application)
+    else:
+        _require_write_access(current_user)
 
     assessment = await run_absolute_grounds_analysis(
         session,
@@ -327,7 +342,7 @@ async def run_conflicts(
 async def risk_report(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Собрать последние оценки по абсолютным и относительным основаниям.
 
@@ -335,6 +350,7 @@ async def risk_report(
     основания определяет риск в целом.
     """
     application = await _load_application(session, application_id)
+    _require_client_access(current_user, application)
 
     sections: dict[str, Any] = {}
     for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
@@ -367,6 +383,37 @@ async def risk_report(
             limitations.extend(section.get("limitations", []))
 
     missing_sections = [name for name, section in sections.items() if section is None]
+    section_labels = {
+        "absolute_grounds": "проверка самого обозначения по основаниям отказа",
+        "relative_grounds": "поиск сходных зарегистрированных знаков и заявок",
+    }
+    inconclusive_sections = [
+        section.get("inconclusive_reason") or f"Не завершена {section_labels.get(name, name)}"
+        for name, section in sections.items()
+        if section and section.get("is_inconclusive")
+    ]
+    class_contexts = [
+        section
+        for section in sections.values()
+        if section and section.get("classes_considered")
+    ]
+    classes_confirmed = bool(class_contexts) and all(
+        section.get("classes_confirmed") for section in class_contexts
+    )
+    incomplete_checks = [
+        f"Не выполнена {section_labels.get(name, name)}"
+        for name in missing_sections
+    ] + inconclusive_sections
+    if not classes_confirmed:
+        incomplete_checks.append(
+            "Не подтверждены классы товаров и услуг, поэтому область поиска пока не зафиксирована"
+        )
+    is_complete = not missing_sections and not inconclusive_sections and classes_confirmed
+
+    # Неполная проверка не должна сохраняться на клиентском экране как
+    # зелёное «можно продолжать», даже если завершённая часть имеет low.
+    if not is_complete and overall in {None, "low"}:
+        overall = None
 
     return {
         "application_id": application_id,
@@ -374,8 +421,10 @@ async def risk_report(
         "overall_risk": overall,
         "sections": sections,
         "missing_sections": missing_sections,
+        "incomplete_checks": incomplete_checks,
+        "classes_confirmed": classes_confirmed,
         "limitations": limitations,
-        "is_complete": not missing_sections,
+        "is_complete": is_complete,
         "requires_specialist_review": True,
         "disclaimer": (
             "Результаты сформированы с применением AI и носят предварительный "

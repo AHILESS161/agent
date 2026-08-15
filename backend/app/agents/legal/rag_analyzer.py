@@ -78,6 +78,8 @@ USER_TEMPLATE = """ФАКТЫ ДЕЛА:
 Обозначение: {mark_text}
 Вид знака: {mark_type}
 Описание: {description}
+Заявленные цвета: {colors}
+Изображение приложено: {image_attached}
 Товары и услуги: {goods_services}
 Классы МКТУ: {classes}
 
@@ -191,6 +193,8 @@ class RagAbsoluteGroundsAnalyzer:
             mark_text=facts.get("mark_text") or "не указано",
             mark_type=facts.get("mark_type") or "не указан",
             description=facts.get("description") or "не указано",
+            colors=facts.get("colors") or "не указаны",
+            image_attached="да" if facts.get("image_attached") else "нет",
             goods_services=facts.get("goods_services") or "не указаны",
             classes=facts.get("classes") or "не указаны",
             context=context,

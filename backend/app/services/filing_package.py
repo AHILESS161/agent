@@ -312,6 +312,13 @@ async def _filing_attachments(
     for document in documents:
         if document.kind_requires_confirmation:
             continue
+        if document.document_kind is DocumentKind.mark_image and (
+            application.mark_type not in {MarkType.figurative, MarkType.combined}
+            or application.mark_image_file_id != str(document.id)
+        ):
+            # В пакет попадает только текущая версия изображения и только для
+            # вида знака, которому графическое приложение действительно нужно.
+            continue
         allowed = {DocumentKind.mark_image, DocumentKind.power_of_attorney}
         if application.priority_claim:
             # Для приоритета отдельного enum пока нет. Такой файл сохраняется

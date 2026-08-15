@@ -130,6 +130,15 @@ export const api = {
     form.append("file", file);
     return request<T>("POST", path, form);
   },
+  /** Получить защищённый бинарный файл для предпросмотра. */
+  blob: async (path: string): Promise<Blob> => {
+    const response = await fetch(`/api/v1${path}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw await toApiError(response);
+    return response.blob();
+  },
   /** Скачивание файла с авторизацией (прямая ссылка не сработает). */
   download: async (path: string, filename: string): Promise<void> => {
     const response = await fetch(`/api/v1${path}`, { headers: authHeaders() });

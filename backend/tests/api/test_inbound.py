@@ -59,12 +59,18 @@ class TestIntakeRequiresAuth:
     def test_anonymous_cannot_list_events(self, client):
         assert client.get("/api/v1/inbound/events").status_code == 401
 
-    async def test_client_role_cannot_create_intake(self, client, api_user_factory):
+    async def test_client_role_can_create_only_own_new_intake(self, client, api_user_factory):
         await api_user_factory("client-inbound@test.ru", UserRole.client)
         headers = login_headers(client, "client-inbound@test.ru")
 
         response = client.post("/api/v1/inbound/events", json=INTAKE, headers=headers)
-        assert response.status_code == 403
+        assert response.status_code == 201
+
+        foreign_target = {**INTAKE, "new_client": None, "target_case_id": 999}
+        forbidden = client.post(
+            "/api/v1/inbound/events", json=foreign_target, headers=headers
+        )
+        assert forbidden.status_code == 403
 
 
 @pytest.mark.api

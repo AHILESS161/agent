@@ -21,6 +21,9 @@ import {
   Archive,
   BookOpenCheck,
   RefreshCw,
+  ImageIcon,
+  Upload,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -69,6 +72,22 @@ interface Recommendation {
   risk_assessment: string | null;
   recommended_action: string | null;
   key_risks_json: string[] | null;
+}
+
+interface MarkImageDto {
+  document_id: number;
+  filename: string;
+  file_size: number;
+  mime_type: string;
+  width: number;
+  height: number;
+  format: string;
+  dominant_colors: string[];
+  recognized_text: string;
+  ocr_confidence: number | null;
+  ocr_warning: string | null;
+  visual_search_supported: boolean;
+  visual_search_notice: string;
 }
 
 const SECTION_META: Array<{ id: Section; label: string; icon: typeof Circle }> = [
@@ -180,6 +199,9 @@ function ClientPanel({ title, description, children }: { title: string; descript
 function ClientDataForm({ application, client, onSaved, onNext }: { application: any; client: any; onSaved: () => void; onNext: () => void }) {
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [markImage, setMarkImage] = useState<MarkImageDto | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: client?.fullNameOrCompanyName || "",
     inn: client?.inn || "",
@@ -189,6 +211,7 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     email: client?.email || "",
     phone: client?.phone || "",
     markName: application.markName || "",
+    markText: application.markText || application.markName || "",
     markType: application.markType as MarkType,
     business: application.businessDescription || "",
     goods: application.goodsServicesRaw || "",
@@ -199,10 +222,72 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
   });
 
   const set = (key: keyof typeof form, value: string) => setForm((old) => ({ ...old, [key]: value }));
+  const imageMark = form.markType === "figurative" || form.markType === "combined";
+
+  const refreshPreview = async () => {
+    const blob = await api.blob(`/applications/${application.id}/mark-image/content`);
+    const nextUrl = URL.createObjectURL(blob);
+    setPreviewUrl((previous) => {
+      if (previous) URL.revokeObjectURL(previous);
+      return nextUrl;
+    });
+  };
+
+  useEffect(() => {
+    let active = true;
+    api.get<MarkImageDto>(`/applications/${application.id}/mark-image`)
+      .then(async (image) => {
+        if (!active) return;
+        setMarkImage(image);
+        await refreshPreview();
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [application.id]);
+
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  const uploadMarkImage = async (file?: File) => {
+    if (!file) return;
+    setImageUploading(true);
+    try {
+      // Сервер проверяет соответствие файла виду знака, поэтому сохраняем
+      // выбранный пользователем вид непосредственно перед загрузкой.
+      await api.put(`/applications/${application.id}`, { mark_type: form.markType });
+      const image = await api.upload<MarkImageDto>(
+        `/applications/${application.id}/mark-image`, file,
+      );
+      setMarkImage(image);
+      if (form.markType === "combined" && image.recognized_text.trim()) {
+        set("markText", image.recognized_text.replace(/\s+/g, " ").trim());
+      }
+      await refreshPreview();
+      toast({ title: "Изображение обработано", description: image.recognized_text ? "Проверьте распознанный текст." : "Текст не найден — это нормально для графического знака." });
+    } catch (error) {
+      toast({ title: "Не удалось загрузить изображение", description: messageOf(error, "Проверьте PNG или JPEG"), variant: "destructive" });
+    } finally { setImageUploading(false); }
+  };
+
+  const removeMarkImage = async () => {
+    try {
+      await api.delete(`/applications/${application.id}/mark-image`);
+      setMarkImage(null);
+      setPreviewUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return null; });
+      toast({ title: "Изображение удалено из обозначения" });
+    } catch (error) {
+      toast({ title: "Не удалось удалить изображение", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" });
+    }
+  };
 
   const save = async () => {
     if (!form.name.trim() || !form.markName.trim()) {
       toast({ title: "Заполните обязательные поля", description: "Нужны заявитель и обозначение.", variant: "destructive" });
+      return;
+    }
+    if (imageMark && !markImage) {
+      toast({ title: "Загрузите изображение знака", description: "Оно обязательно для изобразительного и комбинированного обозначения.", variant: "destructive" });
       return;
     }
     setSaving(true);
@@ -214,7 +299,9 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
           country: form.country || "RU", email: form.email.trim() || null, phone: form.phone.trim() || null,
         }) : Promise.resolve(),
         api.put(`/applications/${application.id}`, {
-          mark_name: form.markName.trim(), mark_text: form.markName.trim(), mark_type: form.markType,
+          mark_name: form.markName.trim(),
+          mark_text: form.markType === "figurative" ? "" : (form.markType === "combined" ? form.markText.trim() : form.markName.trim()),
+          mark_type: form.markType,
           business_description: form.business.trim() || null, goods_services_raw: form.goods.trim() || null,
           description_of_mark: form.description.trim() || null, colors_claimed: form.colors.trim() || null,
           transliteration: form.transliteration.trim() || null, translation: form.translation.trim() || null,
@@ -255,6 +342,64 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
             <Select value={form.markType} onValueChange={(value) => set("markType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(Object.keys(MARK_TYPE_LABELS) as MarkType[]).map((type) => <SelectItem key={type} value={type}>{MARK_TYPE_LABELS[type]}</SelectItem>)}</SelectContent></Select>
           </MarkedField>
           <MarkedField label="Обозначение" mode="manual"><Input value={form.markName} onChange={(e) => set("markName", e.target.value)} /></MarkedField>
+          {imageMark && (
+            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="inline-flex items-center gap-1 text-sm font-semibold">
+                    Изображение обозначения
+                    <HelpTip text="Загрузите именно тот вариант логотипа или рисунка, который планируете регистрировать. Для комбинированного знака защищается сочетание изображения и слов." />
+                  </Label>
+                  <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">PNG или JPEG. Мы проверим файл, покажем его и попробуем прочитать слова.</p>
+                </div>
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Обязательно</span>
+              </div>
+
+              {markImage && previewUrl ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]">
+                  <div className="flex min-h-36 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-3">
+                    <img src={previewUrl} alt="Загруженное обозначение" className="max-h-32 max-w-full object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[#11113f]">{markImage.filename}</p>
+                    <p className="mt-1 text-xs text-[#6d6d7d]">{markImage.width} × {markImage.height} px · {markImage.format} · {(markImage.file_size / 1024).toFixed(0)} КБ</p>
+                    {markImage.dominant_colors.length > 0 && (
+                      <div className="mt-3 flex items-center gap-2 text-xs text-[#6d6d7d]">
+                        Основные цвета
+                        {markImage.dominant_colors.map((color) => <span key={color} title={color} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: color }} />)}
+                      </div>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f8f7f4]">
+                        <Upload className="h-4 w-4" /> Заменить
+                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
+                      </label>
+                      <button type="button" onClick={() => void removeMarkImage()} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Удалить</button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center hover:border-[#0d9f9b]">
+                  {imageUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <ImageIcon className="h-7 w-7 text-[#0d9f9b]" />}
+                  <span className="mt-2 text-sm font-semibold text-[#11113f]">{imageUploading ? "Обрабатываем изображение…" : "Выбрать изображение"}</span>
+                  <span className="mt-1 text-xs text-[#6d6d7d]">до 25 МБ</span>
+                  <input disabled={imageUploading} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
+                </label>
+              )}
+
+              {form.markType === "combined" && (
+                <div className="mt-4">
+                  <Label className="inline-flex items-center gap-1 text-sm font-semibold">Слова на логотипе <HelpTip text="Мы используем подтверждённые слова для поиска похожих названий. Исправьте ошибки распознавания и укажите все читаемые словесные элементы." /></Label>
+                  <Input className="mt-2 bg-white" value={form.markText} onChange={(event) => set("markText", event.target.value)} placeholder="Например: Регистр" />
+                  <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">{markImage?.recognized_text ? "Текст предложен OCR — обязательно сверьте его с картинкой." : "Если на изображении есть слова, введите их вручную."}</p>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                <strong>Что проверяется сейчас:</strong> слова на логотипе участвуют в поиске по реестру. Сходство самих картинок пока не сравнивается автоматически и должно быть проверено отдельно.
+              </div>
+            </div>
+          )}
           <MarkedField label="Чем вы занимаетесь" mode="manual"><Textarea rows={3} value={form.business} onChange={(e) => set("business", e.target.value)} placeholder="Например: производство одежды и продажа через интернет-магазин" /></MarkedField>
           <MarkedField label={<span className="inline-flex items-center gap-1">Товары и услуги <HelpTip text="Перечислите то, что вы продаёте или делаете под этим названием. Например: одежда, доставка еды, обучение, разработка программ. От этого зависит объём защиты знака." /></span>} mode="manual"><Textarea rows={3} value={form.goods} onChange={(e) => set("goods", e.target.value)} placeholder="Например: одежда, обувь, розничная торговля" /></MarkedField>
           <details className="rounded-xl border border-[#11113f]/10 bg-white p-4">

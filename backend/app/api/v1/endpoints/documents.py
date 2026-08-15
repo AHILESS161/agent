@@ -22,6 +22,7 @@ from app.infrastructure.database.models import (
     DocumentPage,
     DocumentProcessingStatus,
     ExtractionMethod,
+    MarkType,
     SourceChannel,
     SourceDocument,
     TrademarkApplicationDraft,
@@ -35,6 +36,7 @@ from app.services.document_text_extractor import (
     UnsupportedDocumentType,
     extract_pages_from_bytes,
 )
+from app.services.mark_image import MarkImageError, process_mark_image
 
 logger = get_logger(__name__)
 
@@ -131,9 +133,168 @@ def _serialize(document: SourceDocument) -> dict[str, Any]:
     }
 
 
+def _serialize_mark_image(
+    document: SourceDocument, recognized_text: str = ""
+) -> dict[str, Any]:
+    metadata = document.metadata_json or {}
+    return {
+        "document_id": document.id,
+        "application_id": document.application_id,
+        "filename": document.original_filename,
+        "file_size": document.file_size,
+        "mime_type": document.detected_mime,
+        "width": metadata.get("width"),
+        "height": metadata.get("height"),
+        "format": metadata.get("format"),
+        "color_mode": metadata.get("color_mode"),
+        "dominant_colors": metadata.get("dominant_colors") or [],
+        "perceptual_hash": metadata.get("perceptual_hash"),
+        "recognized_text": recognized_text,
+        "ocr_confidence": metadata.get("ocr_confidence"),
+        "ocr_warning": metadata.get("ocr_warning"),
+        "visual_search_supported": False,
+        "visual_search_notice": (
+            "Система распознаёт слова на изображении и использует их в текстовом "
+            "поиске. Автоматический поиск сходных изображений по реестру пока "
+            "не выполняется."
+        ),
+    }
+
+
+async def _active_mark_image(
+    session: AsyncSession, application: TrademarkApplicationDraft
+) -> SourceDocument | None:
+    raw_id = application.mark_image_file_id
+    if not raw_id or not str(raw_id).isdigit():
+        return None
+    result = await session.execute(
+        select(SourceDocument).where(
+            SourceDocument.id == int(raw_id),
+            SourceDocument.application_id == application.id,
+            SourceDocument.document_kind == DocumentKind.mark_image,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _mark_image_text(session: AsyncSession, document_id: int) -> str:
+    result = await session.execute(
+        select(DocumentPage.text_content)
+        .where(DocumentPage.document_id == document_id)
+        .order_by(DocumentPage.page_number)
+    )
+    return "\n".join(
+        value.strip() for value in result.scalars() if value and value.strip()
+    )
+
+
+async def _supersede_current_mark_image(
+    session: AsyncSession, application: TrademarkApplicationDraft
+) -> None:
+    current = await _active_mark_image(session, application)
+    if current is None:
+        return
+    current.document_kind = DocumentKind.other
+    metadata = dict(current.metadata_json or {})
+    metadata["superseded_as_mark_image"] = True
+    current.metadata_json = metadata
+
+
 # ---------------------------------------------------------------------------
 # Загрузка
 # ---------------------------------------------------------------------------
+
+@router.post(
+    "/applications/{application_id}/mark-image",
+    status_code=status.HTTP_201_CREATED,
+    summary="Загрузить изображение товарного знака",
+)
+async def upload_mark_image(
+    application_id: int,
+    file: UploadFile = File(..., description="Изображение PNG или JPEG"),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Привязать изображение к обозначению и распознать словесные элементы."""
+    application = await _load_application(session, application_id)
+    _require_write_access(current_user, application)
+    if application.mark_type not in {MarkType.figurative, MarkType.combined}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Изображение требуется для изобразительного или комбинированного "
+                "знака. Сначала выберите соответствующий вид знака."
+            ),
+        )
+
+    content = await file.read()
+    filename = file_storage.normalize_upload_filename(file.filename or "mark.png")
+    try:
+        _, detected_mime = file_storage.validate_upload(content, filename)
+        if detected_mime not in {"image/png", "image/jpeg"}:
+            raise file_storage.FileValidationError(
+                "Изображение обозначения должно быть в формате PNG или JPEG"
+            )
+        image = process_mark_image(content, filename)
+        stored = file_storage.save_upload(content, filename)
+    except (file_storage.FileValidationError, MarkImageError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    await _supersede_current_mark_image(session, application)
+    metadata = image.metadata()
+    metadata["ocr_confidence"] = image.ocr_confidence
+    document = SourceDocument(
+        application_id=application.id,
+        client_id=application.client_id,
+        uploaded_by_user_id=current_user.id,
+        original_filename=filename,
+        stored_path=stored.stored_path,
+        declared_content_type=file.content_type,
+        detected_mime=stored.detected_mime,
+        file_size=stored.size,
+        sha256=stored.sha256,
+        source_channel=SourceChannel.manual_upload,
+        document_kind=DocumentKind.mark_image,
+        kind_confidence=1.0,
+        kind_requires_confirmation=False,
+        processing_status=DocumentProcessingStatus.extracted,
+        extraction_method=ExtractionMethod.ocr if image.recognized_text else None,
+        page_count=1,
+        char_count=len(image.recognized_text),
+        metadata_json=metadata,
+    )
+    session.add(document)
+    await session.flush()
+    if image.recognized_text:
+        session.add(
+            DocumentPage(
+                document_id=document.id,
+                page_number=1,
+                text_content=image.recognized_text,
+                char_count=len(image.recognized_text),
+                extraction_method=ExtractionMethod.ocr,
+                ocr_confidence=image.ocr_confidence,
+            )
+        )
+    application.mark_image_file_id = str(document.id)
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="mark_image.upload",
+            entity_type="SourceDocument",
+            entity_id=str(document.id),
+            new_value_json={
+                "filename": filename,
+                "sha256": stored.sha256,
+                "width": image.width,
+                "height": image.height,
+                "ocr_text_found": bool(image.recognized_text),
+            },
+        )
+    )
+    await session.flush()
+    return _serialize_mark_image(document, image.recognized_text)
 
 @router.post(
     "/applications/{application_id}/source-documents",
@@ -287,6 +448,90 @@ async def upload_document(
 # ---------------------------------------------------------------------------
 
 @router.get(
+    "/applications/{application_id}/mark-image",
+    summary="Получить сведения об изображении обозначения",
+)
+async def get_mark_image(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    application = await _load_application(session, application_id)
+    _require_application_access(current_user, application)
+    document = await _active_mark_image(session, application)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Изображение обозначения не загружено",
+        )
+    return _serialize_mark_image(
+        document, await _mark_image_text(session, document.id)
+    )
+
+
+@router.get(
+    "/applications/{application_id}/mark-image/content",
+    summary="Показать изображение обозначения",
+)
+async def view_mark_image(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    application = await _load_application(session, application_id)
+    _require_application_access(current_user, application)
+    document = await _active_mark_image(session, application)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Изображение обозначения не загружено",
+        )
+    try:
+        content = file_storage.read_file(document.stored_path)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Файл отсутствует в хранилище",
+        ) from exc
+    return Response(
+        content=content,
+        media_type=document.detected_mime or "application/octet-stream",
+        headers={"Content-Disposition": "inline"},
+    )
+
+
+@router.delete(
+    "/applications/{application_id}/mark-image",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Отвязать изображение обозначения",
+)
+async def delete_mark_image(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    application = await _load_application(session, application_id)
+    _require_write_access(current_user, application)
+    document = await _active_mark_image(session, application)
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Изображение обозначения не загружено",
+        )
+    await _supersede_current_mark_image(session, application)
+    application.mark_image_file_id = None
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="mark_image.detach",
+            entity_type="SourceDocument",
+            entity_id=str(document.id),
+        )
+    )
+    await session.flush()
+
+@router.get(
     "/applications/{application_id}/source-documents",
     summary="Список документов дела",
 )
@@ -345,6 +590,38 @@ async def confirm_document_kind(
     document = await _load_document(session, document_id)
     application = await _load_application(session, document.application_id)
     _require_write_access(current_user, application)
+
+    if payload.document_kind is DocumentKind.mark_image:
+        if application.mark_type not in {MarkType.figurative, MarkType.combined}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Сначала выберите изобразительный или комбинированный вид знака"
+                ),
+            )
+        if document.detected_mime not in {"image/png", "image/jpeg"}:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Изображение обозначения должно быть в формате PNG или JPEG",
+            )
+        await _supersede_current_mark_image(session, application)
+        application.mark_image_file_id = str(document.id)
+        try:
+            content = file_storage.read_file(document.stored_path)
+            image = process_mark_image(content, document.original_filename)
+            metadata = dict(document.metadata_json or {})
+            metadata.update(image.metadata())
+            metadata["ocr_confidence"] = image.ocr_confidence
+            document.metadata_json = metadata
+            # Отсутствие текста не является ошибкой для графического знака.
+            document.processing_status = DocumentProcessingStatus.extracted
+            document.error_message = None
+        except (FileNotFoundError, MarkImageError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+            ) from exc
+    elif application.mark_image_file_id == str(document.id):
+        application.mark_image_file_id = None
 
     old_kind = document.document_kind.value
     document.document_kind = payload.document_kind

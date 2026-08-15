@@ -102,6 +102,26 @@ async def _findings(session, assessment_id: int) -> list[RiskFinding]:
     )
 
 
+async def test_figurative_mark_does_not_fake_visual_registry_search(
+    async_session, application
+):
+    application.mark_type = MarkType.figurative
+    application.mark_text = ""
+    application.mark_image_file_id = "42"
+    registry = StubRegistry("ПОХОЖИЙ", [25])
+
+    assessment = await run_conflict_search(
+        async_session,
+        application,
+        registry_provider=registry,
+        llm_provider=None,
+    )
+
+    assert assessment.is_inconclusive is True
+    assert "визуальный поиск" in assessment.inconclusive_reason.lower()
+    assert registry.queries == 0
+
+
 class TestCrossLanguageConflict:
     async def test_pair_is_missed_without_the_model(self, async_session, application):
         """Без модели пара не проходит порог — так было до этапа."""

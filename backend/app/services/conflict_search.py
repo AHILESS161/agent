@@ -32,6 +32,7 @@ from app.infrastructure.database.models import (
     AnalysisKind,
     ConflictSearchJob,
     ConflictSearchResult,
+    MarkType,
     RiskAssessment,
     RiskFinding,
     RiskLevel,
@@ -225,6 +226,23 @@ async def run_conflict_search(
         classes_confirmed=class_context.is_confirmed,
         created_by_user_id=user_id,
     )
+
+    if application.mark_type is MarkType.figurative:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "Загруженное изображение сохранено, но визуальный поиск сходных "
+            "изображений по реестру пока не поддерживается."
+        )
+        assessment.missing_data_json = [
+            "Результат специализированного визуального поиска по реестру"
+        ]
+        assessment.limitations_json = [
+            "Текстовый поиск нельзя использовать как замену сравнению графических "
+            "элементов изобразительного знака. Требуется отдельная проверка изображения."
+        ]
+        session.add(assessment)
+        await session.flush()
+        return assessment
 
     if not mark_text:
         assessment.is_inconclusive = True
@@ -553,6 +571,12 @@ async def run_conflict_search(
             "Модель не изменяет рассчитанные системой коэффициенты, но может поднять "
             "карточку на ручную проверку при наличии независимых признаков."
         )
+    if application.mark_type is MarkType.combined:
+        limitations.append(
+            "Для комбинированного знака выполнен поиск по подтверждённым словесным "
+            "элементам. Сходство графики и общего визуального впечатления по изображениям "
+            "реестра автоматически не проверялось."
+        )
 
     missing: list[str] = []
     if not classes:
@@ -600,7 +624,10 @@ async def run_conflict_search(
         assessment.overall_risk = None
         assessment.is_inconclusive = True
         assessment.inconclusive_reason = (
-            "В доступной выдаче не выявлены карточки, достаточные для вывода о риске."
+            "По словесным элементам не найдено достаточных совпадений; визуальное "
+            "сходство комбинированного знака не проверено."
+            if application.mark_type is MarkType.combined
+            else "В доступной выдаче не выявлены карточки, достаточные для вывода о риске."
         )
         assessment.summary = (
             f"По обозначению «{mark_text}» значимые совпадения в доступной выдаче "
@@ -620,6 +647,15 @@ async def run_conflict_search(
     )
     if registry_review is not None and registry_review.summary:
         assessment.summary += f" Комментарий LLM: {registry_review.summary}"
+    if application.mark_type is MarkType.combined:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "Текстовая часть комбинированного знака проверена; визуальное сходство "
+            "изображений требует отдельной проверки."
+        )
+        assessment.missing_data_json = list(assessment.missing_data_json or []) + [
+            "Результат специализированного визуального поиска по реестру"
+        ]
     session.add(assessment)
     await session.flush()
 

@@ -110,6 +110,16 @@ sections:
         label: Цвет или цветовое сочетание
         source: application.mark.colors
         fill: manual
+      - inid: null
+        label: Транслитерация латиницей
+        source: application.mark.transliteration
+        fill: manual
+        hint: Заполняется, если обозначение написано не латиницей.
+      - inid: null
+        label: Перевод обозначения
+        source: application.mark.translation
+        fill: manual
+        hint: Заполняется, если слово имеет перевод на русский язык.
       - inid: "550"
         label: Вид знака
         source: application.mark.kind
@@ -174,4 +184,4 @@ sections:
         fill: manual
         hint: >-
           Размер и порядок уплаты пошлин определяются Положением
-          о пошлинах; в системе не рассчитываются.
+          о пошлинах; предварительный расчёт показывается после анализа.

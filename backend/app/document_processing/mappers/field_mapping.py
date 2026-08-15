@@ -184,13 +184,13 @@ class FieldMappingEngine:
                 }
                 for c in extracted.candidates
             ]
-        elif row.default_value:
-            # Значение по умолчанию — предложение, а не факт из документа.
-            row.status = FieldStatus.needs_review
         elif row.case_value:
             # Значение уже явно сохранено человеком в карточке заявителя.
             # Отсутствие такого значения в выписке не делает поле пустым.
             row.status = FieldStatus.confirmed
+        elif row.default_value:
+            # Значение по умолчанию — предложение, а не факт из документа.
+            row.status = FieldStatus.needs_review
 
         # Решение специалиста окончательно: автоматические правила ниже
         # не должны его перебивать, иначе подтверждённое поле снова

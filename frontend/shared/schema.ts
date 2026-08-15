@@ -62,6 +62,7 @@ export interface Client {
   email: string;
   phone: string;
   address: string;
+  countryCode: string;
   inn: string;
   ogrnOrOgrnip: string;
   createdAt: string;

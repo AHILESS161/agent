@@ -16,6 +16,8 @@ import {
   FileSignature,
   FileText,
   LockKeyhole,
+  Download,
+  ReceiptText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +30,7 @@ import { useCase } from "@/lib/use-cases";
 import { cn } from "@/lib/utils";
 import { HelpTip } from "@/components/help-tip";
 import { useApi } from "@/lib/use-api";
+import { COUNTRY_OPTIONS } from "@/lib/country-codes";
 import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
 import {
   Select,
@@ -179,10 +182,17 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     inn: client?.inn || "",
     ogrn: client?.ogrnOrOgrnip || "",
     address: client?.address || "",
+    country: client?.countryCode || "RU",
+    email: client?.email || "",
+    phone: client?.phone || "",
     markName: application.markName || "",
     markType: application.markType as MarkType,
     business: application.businessDescription || "",
     goods: application.goodsServicesRaw || "",
+    description: application.descriptionOfMark || "",
+    colors: application.colorsClaimed || "",
+    transliteration: application.transliteration || "",
+    translation: application.translation || "",
   });
 
   const set = (key: keyof typeof form, value: string) => setForm((old) => ({ ...old, [key]: value }));
@@ -198,10 +208,13 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
         client ? api.put(`/clients/${client.id}`, {
           full_name_or_company_name: form.name.trim(), inn: form.inn.trim() || null,
           ogrn_or_ogrnip: form.ogrn.trim() || null, address: form.address.trim() || null,
+          country: form.country || "RU", email: form.email.trim() || null, phone: form.phone.trim() || null,
         }) : Promise.resolve(),
         api.put(`/applications/${application.id}`, {
           mark_name: form.markName.trim(), mark_text: form.markName.trim(), mark_type: form.markType,
           business_description: form.business.trim() || null, goods_services_raw: form.goods.trim() || null,
+          description_of_mark: form.description.trim() || null, colors_claimed: form.colors.trim() || null,
+          transliteration: form.transliteration.trim() || null, translation: form.translation.trim() || null,
         }),
       ]);
       toast({ title: "Данные сохранены" });
@@ -222,6 +235,16 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
             <MarkedField label="ОГРН / ОГРНИП" mode={form.ogrn ? "document" : "manual"}><Input value={form.ogrn} onChange={(e) => set("ogrn", e.target.value)} /></MarkedField>
           </div>
           <MarkedField label="Адрес" mode={form.address ? "document" : "manual"}><Input value={form.address} onChange={(e) => set("address", e.target.value)} /></MarkedField>
+          <MarkedField label={<span className="inline-flex items-center gap-1">Код страны <HelpTip text="Двухбуквенный код страны заявителя по стандарту ВОИС ST.3. Для заявителей из России используется RU." /></span>} mode="manual">
+            <select value={form.country} onChange={(event) => set("country", event.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2">
+              {COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name} — {country.code}</option>)}
+            </select>
+          </MarkedField>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <MarkedField label="E-mail для переписки" mode="manual"><Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} /></MarkedField>
+            <MarkedField label="Телефон для переписки" mode="manual"><Input value={form.phone} onChange={(e) => set("phone", e.target.value)} /></MarkedField>
+          </div>
+          <p className="text-xs leading-relaxed text-[#6d6d7d]">Адрес, телефон и e-mail будут использованы в черновике как контакты для переписки с Роспатентом.</p>
         </FormGroup>
 
         <FormGroup title="О товарном знаке" hint="По описанию система предложит классы товаров и услуг и выполнит поиск">
@@ -231,6 +254,18 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
           <MarkedField label="Обозначение" mode="manual"><Input value={form.markName} onChange={(e) => set("markName", e.target.value)} /></MarkedField>
           <MarkedField label="Чем вы занимаетесь" mode="manual"><Textarea rows={3} value={form.business} onChange={(e) => set("business", e.target.value)} placeholder="Например: производство одежды и продажа через интернет-магазин" /></MarkedField>
           <MarkedField label={<span className="inline-flex items-center gap-1">Товары и услуги <HelpTip text="Перечислите то, что вы продаёте или делаете под этим названием. Например: одежда, доставка еды, обучение, разработка программ. От этого зависит объём защиты знака." /></span>} mode="manual"><Textarea rows={3} value={form.goods} onChange={(e) => set("goods", e.target.value)} placeholder="Например: одежда, обувь, розничная торговля" /></MarkedField>
+          <details className="rounded-xl border border-[#11113f]/10 bg-white p-4">
+            <summary className="cursor-pointer font-semibold text-[#11113f]">Дополнительные сведения для заявления</summary>
+            <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">Заполняйте только применимые поля. Они попадут в предпросмотр и скачиваемый DOCX.</p>
+            <div className="mt-4 space-y-4">
+              <MarkedField label="Описание обозначения" mode="manual"><Textarea rows={3} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Опишите словесные и графические элементы знака" /></MarkedField>
+              <MarkedField label="Заявленные цвета" mode="manual"><Input value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Например: тёмно-синий и бирюзовый" /></MarkedField>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <MarkedField label="Транслитерация" mode="manual"><Input value={form.transliteration} onChange={(e) => set("transliteration", e.target.value)} placeholder="Например: REGISTR" /></MarkedField>
+                <MarkedField label="Перевод" mode="manual"><Input value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Если у слова есть перевод" /></MarkedField>
+              </div>
+            </div>
+          </details>
         </FormGroup>
       </div>
       <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={save} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Сохранить и продолжить <ChevronRight className="h-4 w-4" /></Button></div>
@@ -389,6 +424,7 @@ function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draf
         </section>
       </div>
       <ClientDraftPreview appId={appId} analysisComplete={!incomplete} openRequest={draftRequest} onEditData={onEditData} />
+      <ClientFeeEstimate appId={appId} />
       <p className="mt-6 text-sm leading-relaxed text-[#6d6d7d]">Результат сформирован автоматически на основе введённых данных, выбранных классов и доступных реестров. Он помогает принять решение, но не является гарантией регистрации или юридической консультацией.</p>
     </ClientPanel>
   );
@@ -415,6 +451,18 @@ interface DraftForm {
 function ClientDraftPreview({ appId, analysisComplete, openRequest, onEditData }: { appId: number; analysisComplete: boolean; openRequest: number; onEditData: () => void }) {
   const draft = useApi<DraftForm>(`/applications/${appId}/draft-form`);
   const [open, setOpen] = useState(openRequest > 0);
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      await api.download(`/applications/${appId}/draft-preview/download`, `chernovik-zayavleniya-${appId}.docx`);
+      toast({ title: "Черновик скачан", description: "Это рабочий DOCX: проверьте и дополните его перед подачей." });
+    } catch (error) {
+      toast({ title: "Не удалось скачать черновик", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" });
+    } finally { setDownloading(false); }
+  };
 
   useEffect(() => {
     if (!openRequest) return;
@@ -435,10 +483,15 @@ function ClientDraftPreview({ appId, analysisComplete, openRequest, onEditData }
             </p>
           </div>
         </div>
-        <Button variant="outline" className="shrink-0 rounded-full border-[#0d9f9b]/40 bg-white" onClick={() => setOpen((value) => !value)} disabled={draft.isLoading}>
-          {draft.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          {open ? "Скрыть черновик" : "Открыть черновик"}
-        </Button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button variant="outline" className="rounded-full border-[#0d9f9b]/40 bg-white" onClick={() => setOpen((value) => !value)} disabled={draft.isLoading}>
+            {draft.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            {open ? "Скрыть черновик" : "Открыть черновик"}
+          </Button>
+          <Button className="rounded-full bg-[#0d9f9b] hover:bg-[#078984]" onClick={() => void download()} disabled={downloading}>
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Скачать DOCX
+          </Button>
+        </div>
       </div>
 
       {open && draft.data && (
@@ -463,6 +516,48 @@ function ClientDraftPreview({ appId, analysisComplete, openRequest, onEditData }
         </div>
       )}
       {open && draft.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось загрузить черновик: {draft.error} <Button variant="ghost" size="sm" onClick={draft.reload}>Повторить</Button></div>}
+    </section>
+  );
+}
+
+interface FeeEstimate {
+  can_calculate: boolean;
+  class_count: number;
+  class_basis: "confirmed" | "suggested" | "none";
+  payments: Array<{ code: string; title: string; amount: number; when: string }>;
+  filing_total: number | null;
+  registration_total: number | null;
+  total_electronic: number | null;
+  paper_certificate_extra: number;
+  calculated_at: string;
+  source_url: string;
+  warnings: string[];
+}
+
+const rubles = (value: number | null) => value == null ? "—" : `${new Intl.NumberFormat("ru-RU").format(value)} ₽`;
+
+function ClientFeeEstimate({ appId }: { appId: number }) {
+  const fees = useApi<FeeEstimate>(`/applications/${appId}/fees`);
+  return (
+    <section className="mt-6 overflow-hidden rounded-[1.4rem] border border-[#11113f]/10 bg-white">
+      <div className="flex items-start gap-4 p-6">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e8f7f6] text-[#087c78]"><ReceiptText className="h-6 w-6" /></span>
+        <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#087c78]">Стоимость подачи</p><h3 className="mt-1 text-2xl font-semibold text-[#11113f]">Расчёт пошлин Роспатента</h3><p className="mt-2 text-sm leading-relaxed text-[#55556f]">Сумма рассчитана по выбранным классам. Платежи вносятся в два этапа.</p></div>
+      </div>
+      {fees.isLoading && <div className="border-t p-6 text-sm text-[#6d6d7d]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Рассчитываем…</div>}
+      {fees.data && !fees.data.can_calculate && <div className="border-t border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">Сначала подтвердите хотя бы один класс товаров или услуг.</div>}
+      {fees.data?.can_calculate && <div className="border-t border-[#11113f]/10 p-5 sm:p-6">
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">При подаче заявки</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.filing_total)}</p></div>
+          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">После положительного решения</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.registration_total)}</p></div>
+          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">Всего, электронное свидетельство</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_electronic)}</p></div>
+        </div>
+        <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">п. {payment.code}</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
+        <p className="mt-4 text-sm text-[#55556f]">Расчёт для {fees.data.class_count} кл. МКТУ. Бумажное свидетельство по желанию: +{rubles(fees.data.paper_certificate_extra)}.</p>
+        <div className="mt-4 rounded-xl bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">{fees.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>
+        <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs font-semibold text-[#087c78] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
+      </div>}
+      {fees.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось рассчитать пошлины: {fees.error}</div>}
     </section>
   );
 }

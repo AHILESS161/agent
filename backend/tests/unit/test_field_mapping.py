@@ -177,6 +177,17 @@ class TestConflictBetweenRegistryAndCase:
         assert row.case_value == "г. Москва, ул. Пушкина, д. 23"
         assert row.blocks_document_generation is False
 
+    def test_saved_country_code_overrides_default_suggestion(self):
+        result, _ = build_reconciliation(
+            [],
+            case_values={"case.applicant.country_code": "RU"},
+            client_type="sole_proprietor",
+        )
+        row = next(r for r in result if r.case_field == "case.applicant.country_code")
+
+        assert row.case_value == "RU"
+        assert row.status is FieldStatus.confirmed
+
 
 class TestHumanInTheLoop:
     def test_composed_address_always_needs_review(self, rows):

@@ -700,6 +700,9 @@ async def field_reconciliation(
         "case.applicant.legal_address": application.client.address
         if application.client
         else None,
+        "case.applicant.country_code": (
+            (application.client.country or "RU") if application.client else "RU"
+        ),
     }
     case_values = {k: v for k, v in case_values.items() if v}
 

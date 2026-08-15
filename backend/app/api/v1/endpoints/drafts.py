@@ -25,6 +25,7 @@ from app.services import file_storage
 from app.services.application_draft import (
     collect_draft_content,
     create_draft,
+    render_docx,
     serialize_draft,
 )
 from app.services.blank_layout import build_form
@@ -91,6 +92,38 @@ def _ensure_access(application: TrademarkApplicationDraft, user: User) -> None:
         application.assigned_manager_id,
     }:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к черновику заявки")
+
+
+@router.get(
+    "/applications/{application_id}/draft-preview/download",
+    summary="Скачать текущий черновик заявления без утверждения",
+)
+async def download_draft_preview(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Скачать именно черновую, ещё не утверждённую версию бланка.
+
+    Финальная выгрузка по-прежнему требует утверждения специалистом.
+    Этот endpoint нужен клиенту, чтобы проверить и самостоятельно
+    дополнить DOCX до подачи.
+    """
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
+    content = await collect_draft_content(session, application)
+    payload = render_docx(content, application)
+    filename = f"chernovik-zayavleniya-{application_id}.docx"
+    return Response(
+        content=payload,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ),
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
+            "X-Document-Status": "draft-not-approved",
+        },
+    )
 
 
 @router.post(

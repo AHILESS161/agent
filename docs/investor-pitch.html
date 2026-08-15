@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Регистр — инвестиционная презентация</title>
+  <style>
+    :root {
+      --navy: #10103f;
+      --navy-2: #19194f;
+      --teal: #0ca6a0;
+      --teal-soft: #dff5f3;
+      --paper: #f5f2ed;
+      --white: #ffffff;
+      --ink: #14143f;
+      --muted: #686879;
+      --line: rgba(16, 16, 63, .14);
+      --red: #d94f59;
+      --amber: #d69022;
+      --green: #0b8b67;
+      --sans: Inter, "Segoe UI", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      overflow: hidden;
+      background: #08081f;
+      color: var(--ink);
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button { font: inherit; }
+
+    .deck { position: relative; width: 100vw; height: 100vh; }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: none;
+      overflow: auto;
+      padding: clamp(34px, 5vw, 76px) clamp(38px, 7vw, 112px) 72px;
+      background:
+        radial-gradient(circle at 93% 8%, rgba(12,166,160,.12), transparent 24%),
+        var(--paper);
+    }
+    .slide.active { display: grid; animation: enter .28s ease both; }
+    .slide.dark {
+      color: var(--white);
+      background:
+        radial-gradient(circle at 80% 10%, rgba(12,166,160,.22), transparent 28%),
+        linear-gradient(135deg, #09091f 0%, var(--navy) 58%, #15154b 100%);
+    }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .content { align-self: center; width: min(1220px, 100%); margin: 0 auto; }
+    .topline {
+      position: absolute;
+      top: 26px;
+      left: clamp(38px, 7vw, 112px);
+      right: clamp(38px, 7vw, 112px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .dark .topline { color: rgba(255,255,255,.55); }
+
+    .brand { color: inherit; font-weight: 750; letter-spacing: -.04em; text-transform: none; font-size: 21px; }
+    .brand-r {
+      position: relative;
+      display: inline-block;
+      margin-right: .04em;
+      color: inherit;
+    }
+    .brand-r::after {
+      content: "";
+      position: absolute;
+      left: .08em;
+      bottom: .12em;
+      width: .34em;
+      height: .12em;
+      background: var(--paper);
+    }
+    .dark .brand-r::after { background: #0d0d32; }
+    .brand .accent { color: var(--teal); }
+
+    h1, h2, h3, p { margin-top: 0; }
+    h1 { font-size: clamp(52px, 7.2vw, 104px); line-height: .95; letter-spacing: -.065em; margin-bottom: 28px; }
+    h2 { font-size: clamp(34px, 4.5vw, 66px); line-height: 1.02; letter-spacing: -.05em; margin-bottom: 28px; }
+    h3 { font-size: clamp(18px, 1.8vw, 25px); line-height: 1.15; margin-bottom: 10px; }
+    p, li { font-size: clamp(15px, 1.35vw, 20px); line-height: 1.48; }
+    .lead { max-width: 860px; font-size: clamp(20px, 2.3vw, 32px); line-height: 1.35; color: var(--muted); }
+    .dark .lead { color: rgba(255,255,255,.72); }
+    .eyebrow { color: var(--teal); font-size: 13px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; margin-bottom: 18px; }
+    .fine { color: var(--muted); font-size: 12px; line-height: 1.4; }
+    .dark .fine { color: rgba(255,255,255,.52); }
+    .accent-text { color: var(--teal); }
+
+    .grid { display: grid; gap: 18px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .split { display: grid; grid-template-columns: 1.05fr .95fr; gap: clamp(28px, 5vw, 76px); align-items: center; }
+
+    .card {
+      min-height: 150px;
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255,255,255,.72);
+    }
+    .dark .card { border-color: rgba(255,255,255,.13); background: rgba(255,255,255,.055); }
+    .card p:last-child { margin-bottom: 0; }
+    .card .kicker { color: var(--teal); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .12em; }
+
+    .metric { padding: 20px 0; border-top: 2px solid var(--teal); }
+    .metric strong { display: block; font-size: clamp(35px, 4vw, 60px); line-height: 1; letter-spacing: -.05em; }
+    .metric span { display: block; margin-top: 9px; color: var(--muted); font-size: 14px; line-height: 1.35; }
+    .dark .metric span { color: rgba(255,255,255,.64); }
+
+    .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 34px; }
+    .flow-item { position: relative; padding: 18px 16px; border-radius: 16px; background: var(--white); border: 1px solid var(--line); }
+    .flow-item:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 42%; z-index: 2; color: var(--teal); font-weight: 900; }
+    .flow-item b { display: block; margin-bottom: 6px; }
+    .flow-item span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+
+    .checklist { list-style: none; margin: 0; padding: 0; }
+    .checklist li { position: relative; padding: 10px 0 10px 30px; border-bottom: 1px solid var(--line); }
+    .checklist li::before { content: "✓"; position: absolute; left: 0; color: var(--teal); font-weight: 900; }
+    .checklist li.pending::before { content: "○"; color: var(--amber); }
+
+    .bar { display: grid; grid-template-columns: 120px 1fr 70px; gap: 12px; align-items: center; margin: 13px 0; font-size: 13px; }
+    .bar-track { height: 12px; overflow: hidden; border-radius: 999px; background: rgba(16,16,63,.1); }
+    .bar-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), #43c8bb); }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
+    td strong { font-size: 17px; }
+    .dark th, .dark td { border-color: rgba(255,255,255,.13); }
+    .dark th { color: rgba(255,255,255,.52); }
+
+    .pill { display: inline-block; padding: 6px 10px; margin: 3px 4px 3px 0; border-radius: 999px; background: var(--teal-soft); color: #08736f; font-size: 12px; font-weight: 750; }
+    .dark .pill { background: rgba(12,166,160,.17); color: #75ded7; }
+
+    .quote { padding-left: 24px; border-left: 4px solid var(--teal); font-size: clamp(24px, 3vw, 43px); line-height: 1.25; letter-spacing: -.03em; }
+    .callout { padding: 24px; border-radius: 20px; background: var(--navy); color: white; }
+    .callout.teal { background: var(--teal); }
+
+    .ask { font-size: clamp(68px, 10vw, 138px); line-height: .9; letter-spacing: -.07em; margin-bottom: 20px; }
+    .use { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 34px; }
+    .use div { padding-top: 12px; border-top: 2px solid rgba(255,255,255,.24); }
+    .use strong { display: block; color: #62d7cf; font-size: 30px; }
+    .use span { color: rgba(255,255,255,.67); font-size: 13px; }
+
+    .nav {
+      position: fixed;
+      z-index: 10;
+      right: 22px;
+      bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 999px;
+      background: rgba(7,7,29,.88);
+      color: white;
+      backdrop-filter: blur(12px);
+    }
+    .nav button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: transparent; color: white; cursor: pointer; }
+    .nav button:hover { background: rgba(255,255,255,.12); }
+    .counter { min-width: 54px; text-align: center; font-size: 12px; color: rgba(255,255,255,.72); }
+    .progress { position: fixed; z-index: 11; left: 0; bottom: 0; height: 4px; background: var(--teal); transition: width .2s ease; }
+
+    .source-list { columns: 2; column-gap: 40px; padding-left: 20px; }
+    .source-list li { break-inside: avoid; margin-bottom: 12px; font-size: 13px; }
+    a { color: var(--teal); }
+
+    @media (max-width: 850px) {
+      body { overflow: auto; }
+      .deck { height: auto; }
+      .slide { position: relative; display: grid; min-height: 100vh; }
+      .slide:not(.active) { display: none; }
+      .grid-3, .grid-4, .split { grid-template-columns: 1fr; }
+      .grid-2 { grid-template-columns: 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-item:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -15px; }
+      .use { grid-template-columns: repeat(2, 1fr); }
+      .source-list { columns: 1; }
+    }
+
+    @media print {
+      @page { size: 13.333in 7.5in; margin: 0; }
+      body { overflow: visible; background: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .deck { width: auto; height: auto; }
+      .slide, .slide:not(.active) { position: relative; display: grid; width: 13.333in; height: 7.5in; page-break-after: always; overflow: hidden; }
+      .nav, .progress { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide dark active">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егист<span class="accent">р</span></span><span>Pre-seed draft · 2026</span></div>
+      <div class="content">
+        <p class="eyebrow">LegalTech для малого бизнеса</p>
+        <h1>Товарный знак<br><span class="accent-text">без юридического лабиринта</span></h1>
+        <p class="lead">«Регистр» помогает предпринимателю проверить обозначение, понять классы МКТУ, подготовить черновик и заранее увидеть стоимость регистрации.</p>
+        <p class="fine" style="margin-top:42px">Инвестиционная презентация · рабочая версия для обсуждения</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>01 · Проблема</span></div>
+      <div class="content">
+        <p class="eyebrow">Простая задача выглядит сложной</p>
+        <h2>Предприниматель не понимает,<br>что именно он должен решить</h2>
+        <div class="grid grid-3">
+          <div class="card"><p class="kicker">До подачи</p><h3>Название свободно?</h3><p>Поиск выдаёт десятки совпадений, но не объясняет, какие из них опасны.</p></div>
+          <div class="card"><p class="kicker">В заявке</p><h3>Какие классы выбрать?</h3><p>Ошибка в МКТУ означает лишние пошлины или слишком узкую защиту.</p></div>
+          <div class="card"><p class="kicker">В процессе</p><h3>Что и когда оплачивать?</h3><p>Подача, экспертиза и регистрация оплачиваются на разных этапах.</p></div>
+        </div>
+        <p class="quote" style="margin-top:32px">Между бесплатной формой и дорогим сопровождением бюро остаётся незакрытый self-service сегмент.</p>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>02 · Why now</span></div>
+      <div class="content">
+        <p class="eyebrow">Рынок уже массовый</p>
+        <h2>Спрос растёт, а цифровая подача<br>становится базовой инфраструктурой</h2>
+        <div class="grid grid-4">
+          <div class="metric"><strong>156 365</strong><span>заявок на товарные знаки подано в 2025 году</span></div>
+          <div class="metric"><strong>135 363</strong><span>заявки российских заявителей</span></div>
+          <div class="metric"><strong>25 212</strong><span>заявок подано самозанятыми</span></div>
+          <div class="metric"><strong>6,6 млн</strong><span>субъектов МСП в реестре ФНС летом 2026 года</span></div>
+        </div>
+        <p class="lead" style="margin-top:38px">ФИПС, Госуслуги и МСП.РФ уже решают транзакцию. Коммерческая ценность смещается в подготовку, снижение риска и сопровождение решения.</p>
+        <p class="fine">Источники: Роспатент, годовой отчёт 2025; ФНС, Единый реестр МСП, 10.07.2026.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>03 · Решение</span></div>
+      <div class="content">
+        <p class="eyebrow">Один понятный маршрут</p>
+        <h2>От названия до готового черновика</h2>
+        <div class="flow">
+          <div class="flow-item"><b>Данные</b><span>заявитель, обозначение, деятельность</span></div>
+          <div class="flow-item"><b>МКТУ</b><span>классы с объяснением и подтверждением</span></div>
+          <div class="flow-item"><b>Проверка</b><span>реестр, правовые основания, риски</span></div>
+          <div class="flow-item"><b>Черновик</b><span>поля, источники и DOCX</span></div>
+          <div class="flow-item"><b>Стоимость</b><span>пошлины по этапам и следующий шаг</span></div>
+        </div>
+        <div class="grid grid-2" style="margin-top:28px">
+          <div class="callout"><h3>Простой случай</h3><p>Пользователь продолжает самостоятельно и платит только за цифровую подготовку.</p></div>
+          <div class="callout teal"><h3>Сложный случай</h3><p>Дело без потери контекста передаётся администратору и назначенному юристу.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>04 · Продукт сегодня</span></div>
+      <div class="content split">
+        <div>
+          <p class="eyebrow">Работающий MVP</p>
+          <h2>Основной путь уже собран</h2>
+          <ul class="checklist">
+            <li>клиентский и профессиональный интерфейсы</li>
+            <li>OCR и извлечение реквизитов</li>
+            <li>GigaChat / OpenAI-compatible / mock</li>
+            <li>RAG и правовой анализ с источниками</li>
+            <li>поиск регистраций и опубликованных заявок</li>
+            <li>рабочий DOCX и расчёт пошлин</li>
+            <li>передача клиент → администратор → юрист</li>
+          </ul>
+        </div>
+        <div>
+          <div class="card" style="min-height:auto"><p class="kicker">Не выдаём за готовое</p><ul class="checklist"><li class="pending">официальная электронная подача</li><li class="pending">оплата и квитанции</li><li class="pending">статусы после подачи</li><li class="pending">production-инфраструктура</li><li class="pending">полный пакет сложных заявок</li></ul></div>
+          <p class="fine" style="margin-top:15px">704 backend-теста собираются; TypeScript и production-сборка проходят. До продаж требуется юридическая калибровка и P0-hardening.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>05 · Ценность</span></div>
+      <div class="content">
+        <p class="eyebrow">Наш клин на рынке</p>
+        <h2>Мы не продаём AI.<br>Мы продаём <span class="accent-text">понятное решение</span>.</h2>
+        <div class="grid grid-3">
+          <div class="card"><h3>Не стена совпадений</h3><p>Только приоритетные риски, классы и объяснение юридического значения.</p></div>
+          <div class="card"><h3>Не чёрный ящик</h3><p>Источники полей, правовые основания и границы достоверности видны пользователю.</p></div>
+          <div class="card"><h3>Не замена юристу</h3><p>Автоматизация простых дел и ранняя эскалация спорных случаев человеку.</p></div>
+        </div>
+        <p class="quote" style="margin-top:36px">Преимущество — в связке продукта, юридической методики и накопленной обратной связи по решениям.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>06 · Рынок</span></div>
+      <div class="content">
+        <p class="eyebrow">Bottom-up оценка</p>
+        <h2>Достаточный рынок для вертикального бизнеса</h2>
+        <div class="grid grid-3">
+          <div class="card"><p class="kicker">TAM процесса</p><h3 style="font-size:42px">135 тыс.</h3><p>российских заявок в год</p></div>
+          <div class="card"><p class="kicker">SAM</p><h3 style="font-size:42px">34–47 тыс.</h3><p>простых self-service случаев — гипотеза 25–35%</p></div>
+          <div class="card"><p class="kicker">Денежный SAM</p><h3 style="font-size:42px">300–610 млн ₽</h3><p>при чеке 8,9–12,9 тыс. ₽</p></div>
+        </div>
+        <div class="callout" style="margin-top:24px"><h3>SOM на 24 месяца</h3><p><strong style="font-size:30px">1 000–2 500 оплат в год</strong> · менее 2% российского потока · реалистичная цель для проверки повторяемой экономики.</p></div>
+        <p class="fine" style="margin-top:12px">SAM и SOM — управленческие гипотезы. Они должны быть подтверждены платным пилотом.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>07 · Монетизация</span></div>
+      <div class="content">
+        <p class="eyebrow">Land and expand</p>
+        <h2>Низкий порог входа, человек — по необходимости</h2>
+        <table>
+          <thead><tr><th>Продукт</th><th>Цена</th><th>Роль в модели</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Бесплатная проверка</strong></td><td>0 ₽</td><td>SEO, лидогенерация, создание проекта</td></tr>
+            <tr><td><strong>Самостоятельно</strong></td><td>7 900–9 900 ₽</td><td>основной цифровой продукт</td></tr>
+            <tr><td><strong>С проверкой юриста</strong></td><td>19 900–29 900 ₽</td><td>доверие и монетизация сложных случаев</td></tr>
+            <tr><td><strong>Партнёрский пакет</strong></td><td>от 29 000 ₽/мес.</td><td>B2B2C для бухгалтеров и агентств</td></tr>
+            <tr><td><strong>Мониторинг</strong></td><td>490–990 ₽/мес.</td><td>будущий recurring revenue после интеграции</td></tr>
+          </tbody>
+        </table>
+        <p class="fine" style="margin-top:14px">Государственные пошлины всегда отделены от стоимости продукта. Пилот — один тариф 7 900 ₽.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>08 · Go-to-market</span></div>
+      <div class="content">
+        <p class="eyebrow">Не начинать с дорогого performance</p>
+        <h2>Полезный бесплатный инструмент<br>становится первой частью продукта</h2>
+        <div class="grid grid-3">
+          <div class="card"><p class="kicker">Product-led SEO</p><h3>Проверка знака</h3><p>Калькулятор пошлин, подбор МКТУ, разбор риска — каждый результат сохраняется в проект.</p></div>
+          <div class="card"><p class="kicker">B2B2C</p><h3>Партнёрства</h3><p>Бухгалтеры, регистраторы ООО, брендинговые агентства, маркетплейс-экосистемы.</p></div>
+          <div class="card"><p class="kicker">Paid acquisition</p><h3>Только после конверсии</h3><p>Узкие запросы в Яндексе; целевой CAC ≤ 2 500 ₽ и валовая прибыль / CAC ≥ 3.</p></div>
+        </div>
+        <div style="margin-top:24px"><span class="pill">проверить товарный знак</span><span class="pill">подобрать МКТУ</span><span class="pill">рассчитать пошлину</span><span class="pill">бренд для маркетплейса</span></div>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>09 · Конкуренты</span></div>
+      <div class="content">
+        <p class="eyebrow">Не конкурировать с государством в кнопке «Подать»</p>
+        <h2>Свободная позиция — между формой и бюро</h2>
+        <table>
+          <thead><tr><th></th><th>Подача</th><th>Объяснение рисков</th><th>Self-service цена</th><th>Юрист по необходимости</th></tr></thead>
+          <tbody>
+            <tr><td><strong>ФИПС / Госуслуги / МСП.РФ</strong></td><td>●</td><td>○</td><td>бесплатно</td><td>○</td></tr>
+            <tr><td><strong>Поисковая платформа</strong></td><td>○</td><td>частично</td><td>бесплатно</td><td>○</td></tr>
+            <tr><td><strong>Онлайн-регистраторы</strong></td><td>●</td><td>●</td><td>от ~27 тыс. ₽</td><td>●</td></tr>
+            <tr><td><strong>Патентные бюро</strong></td><td>●</td><td>●</td><td>35–60 тыс. ₽+</td><td>ядро услуги</td></tr>
+            <tr style="color:#78e1d9"><td><strong>Регистр</strong></td><td>следующий этап</td><td>● объяснимо</td><td>7,9–9,9 тыс. ₽</td><td>эскалация</td></tr>
+          </tbody>
+        </table>
+        <p class="fine" style="margin-top:15px">Цены — публичные ориентиры, проверенные в августе 2026 года; государственные пошлины не включены.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>10 · Экономика</span></div>
+      <div class="content split">
+        <div>
+          <p class="eyebrow">Целевая unit-экономика</p>
+          <h2>Безубыточность требует масштаба,<br>но не миллионов пользователей</h2>
+          <div class="bar"><span>Средний чек</span><span class="bar-track"><i class="bar-fill" style="width:100%"></i></span><b>10 000 ₽</b></div>
+          <div class="bar"><span>Переменные</span><span class="bar-track"><i class="bar-fill" style="width:30%"></i></span><b>3 000 ₽</b></div>
+          <div class="bar"><span>CAC</span><span class="bar-track"><i class="bar-fill" style="width:25%"></i></span><b>2 500 ₽</b></div>
+          <div class="bar"><span>Вклад</span><span class="bar-track"><i class="bar-fill" style="width:45%"></i></span><b>4 500 ₽</b></div>
+        </div>
+        <div class="callout"><p class="kicker" style="color:#61d9d1">Ориентир</p><h3 style="font-size:62px;letter-spacing:-.06em">165–190</h3><p>оплаченных заказов в месяц для операционной безубыточности при lean-затратах около 9 млн ₽ в год.</p><p class="fine">Финансовая модель требует проверки налогов, возвратов, эквайринга и стоимости юридических партнёров.</p></div>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>11 · Validation plan</span></div>
+      <div class="content">
+        <p class="eyebrow">90 дней до решения</p>
+        <h2>Инвестируем по мере снятия рисков</h2>
+        <div class="grid grid-3">
+          <div class="card"><p class="kicker">Дни 1–30</p><h3>Проблема</h3><p>20 интервью, 10 наблюдаемых тестов, 30 юридически проверенных результатов.</p><p><b>Gate:</b> ≥40% подтверждают ключевую боль.</p></div>
+          <div class="card"><p class="kicker">Дни 31–60</p><h3>Закрытая бета</h3><p>50 реальных дел с ручным контролем и разметкой причин эскалации.</p><p><b>Gate:</b> ≥80% простых дел дают пригодный черновик.</p></div>
+          <div class="card"><p class="kicker">Дни 61–90</p><h3>Платный пилот</h3><p>100–150 квалифицированных пользователей, 20–30 первых оплат.</p><p><b>Gate:</b> конверсия ≥5%, CAC ≤35% чека.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>12 · Защита позиции</span></div>
+      <div class="content">
+        <p class="eyebrow">Moat строится не вокруг модели</p>
+        <h2>Каждое проверенное дело<br>улучшает следующий результат</h2>
+        <div class="flow" style="grid-template-columns:repeat(4,1fr)">
+          <div class="flow-item"><b>Реальные дела</b><span>формулировки, классы, вопросы пользователей</span></div>
+          <div class="flow-item"><b>Решения юриста</b><span>исправления и причины эскалации</span></div>
+          <div class="flow-item"><b>Eval-набор</b><span>регрессия качества промптов и правил</span></div>
+          <div class="flow-item"><b>Лучший продукт</b><span>меньше поддержки, выше доверие и конверсия</span></div>
+        </div>
+        <p class="lead" style="margin-top:38px">Защищаемый актив — связка юридической методики, размеченных решений, UX и партнёрского distribution. LLM остаётся заменяемым провайдером.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>13 · Риски</span></div>
+      <div class="content">
+        <p class="eyebrow">Честная оценка</p>
+        <h2>Главные риски известны и проверяемы</h2>
+        <div class="grid grid-2">
+          <div class="card"><h3>Неполный публичный поиск</h3><p>Решение: режим limited, официальный источник для платного продукта, явные границы.</p></div>
+          <div class="card"><h3>Юридическая ошибка AI</h3><p>Решение: детерминированные оценки, цитаты, eval-набор, выборочный и обязательный HITL.</p></div>
+          <div class="card"><h3>Бесплатные госканалы</h3><p>Решение: не продавать подачу формы; владеть этапом подготовки и принятия решения.</p></div>
+          <div class="card"><h3>Экономика поддержки</h3><p>Решение: измерять обращения на дело и не масштабировать трафик до product fit.</p></div>
+        </div>
+        <p class="fine" style="margin-top:16px">Отдельные P0: production-БД, фоновые задачи, резервные копии, ПДн и серверная проверка принадлежности client_id.</p>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>14 · Запрос</span></div>
+      <div class="content">
+        <p class="eyebrow">Рабочая гипотеза pre-seed</p>
+        <div class="ask">12 млн ₽</div>
+        <p class="lead">12 месяцев runway, чтобы пройти платный пилот, вывести продукт в production и доказать канал привлечения.</p>
+        <div class="use">
+          <div><strong>45%</strong><span>продукт и инфраструктура</span></div>
+          <div><strong>25%</strong><span>маркетинг и партнёрства</span></div>
+          <div><strong>20%</strong><span>юридическая методика и данные</span></div>
+          <div><strong>10%</strong><span>резерв и операционные расходы</span></div>
+        </div>
+        <p class="fine" style="margin-top:30px">Цель раунда: 100+ оплат в месяц к концу периода, подтверждённый CAC, юридический QA и готовность масштабировать до точки безубыточности. Размер раунда требует уточнения после 90-дневного пилота.</p>
+      </div>
+    </section>
+
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>15 · Следующий шаг</span></div>
+      <div class="content">
+        <p class="eyebrow">Инвестиционная логика</p>
+        <h2>Не строить больше,<br>пока не доказана оплата</h2>
+        <p class="quote">Следующие 90 дней должны ответить на три вопроса: платят ли пользователи 7–10 тыс. ₽, удерживается ли CAC ниже 2 500 ₽ и сколько юридического времени требует одно дело.</p>
+        <div class="grid grid-3" style="margin-top:34px">
+          <div class="metric"><strong>≥5%</strong><span>конверсия квалифицированного результата в оплату</span></div>
+          <div class="metric"><strong>&lt;10%</strong><span>возвраты в платном пилоте</span></div>
+          <div class="metric"><strong>&lt;2%</strong><span>критические юридические ошибки на выборке</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide dark">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>Appendix · Источники</span></div>
+      <div class="content">
+        <p class="eyebrow">Проверяемые основания</p>
+        <h2>Источники и оговорки</h2>
+        <ol class="source-list">
+          <li><a href="https://rospatent.gov.ru/content/uploadfiles/docs/032026/RP-Annual-2025-SHORT-1803.pdf">Роспатент в цифрах и фактах — 2025</a></li>
+          <li><a href="https://www.nalog.gov.ru/rn77/news/activities_fts/16636546/">ФНС: Единый реестр МСП, июль 2026</a></li>
+          <li><a href="https://rospatent.gov.ru/ru/news/28-02-2025-zaregistrirovat-tovarnyy-znak-mozhno-na-platforme-msp-rf">Сервис регистрации на МСП.РФ</a></li>
+          <li><a href="https://rospatent.gov.ru/ru/stateservices/gosudarstvennaya-registraciya-tovarnogo-znaka-znaka-obsluzhivaniya-kollektivnogo-znaka-i-vydacha-svidetelstv-na-tovarnyy-znak-znak-obsluzhivaniya-kollektivnyy-znak-ih-dublikatov">Порядок государственной регистрации</a></li>
+          <li><a href="https://rospatent.gov.ru/ru/activities/dues/table">Таблица пошлин Роспатента</a></li>
+          <li><a href="https://onlinepatent.ru/uslugi/">Публичные цены «Онлайн Патента»</a></li>
+        </ol>
+        <p class="fine">Рынок, SAM/SOM, тарифы, CAC и параметры раунда содержат управленческие гипотезы. В презентацию перед отправкой инвестору нужно добавить подтверждённую команду, фактическую выручку/пилот и условия сделки.</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="nav" aria-label="Навигация по презентации">
+    <button id="prev" aria-label="Предыдущий слайд">←</button>
+    <span class="counter"><span id="current">1</span> / <span id="total">17</span></span>
+    <button id="next" aria-label="Следующий слайд">→</button>
+  </div>
+  <div class="progress" id="progress"></div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll('.slide'));
+    const current = document.getElementById('current');
+    const total = document.getElementById('total');
+    const progress = document.getElementById('progress');
+    let index = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+
+    function show(nextIndex) {
+      index = (nextIndex + slides.length) % slides.length;
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === index));
+      current.textContent = String(index + 1);
+      total.textContent = String(slides.length);
+      progress.style.width = `${((index + 1) / slides.length) * 100}%`;
+      history.replaceState(null, '', `#${index + 1}`);
+    }
+
+    document.getElementById('prev').addEventListener('click', () => show(index - 1));
+    document.getElementById('next').addEventListener('click', () => show(index + 1));
+    document.addEventListener('keydown', (event) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(index + 1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(index - 1); }
+      if (event.key === 'Home') show(0);
+      if (event.key === 'End') show(slides.length - 1);
+    });
+    show(index);
+  </script>
+</body>
+</html>

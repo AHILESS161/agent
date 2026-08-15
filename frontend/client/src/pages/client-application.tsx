@@ -18,6 +18,9 @@ import {
   LockKeyhole,
   Download,
   ReceiptText,
+  Archive,
+  BookOpenCheck,
+  RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -425,6 +428,7 @@ function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draf
       </div>
       <ClientDraftPreview appId={appId} analysisComplete={!incomplete} openRequest={draftRequest} onEditData={onEditData} />
       <ClientFeeEstimate appId={appId} />
+      <ClientFilingPackage appId={appId} onEditData={onEditData} />
       <p className="mt-6 text-sm leading-relaxed text-[#6d6d7d]">Результат сформирован автоматически на основе введённых данных, выбранных классов и доступных реестров. Он помогает принять решение, но не является гарантией регистрации или юридической консультацией.</p>
     </ClientPanel>
   );
@@ -558,6 +562,150 @@ function ClientFeeEstimate({ appId }: { appId: number }) {
         <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs font-semibold text-[#087c78] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
       </div>}
       {fees.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось рассчитать пошлины: {fees.error}</div>}
+    </section>
+  );
+}
+
+interface FilingPackageStatus {
+  ready: boolean;
+  blockers: Array<{ code: string; title: string; action: string; section: string }>;
+  warnings: string[];
+  documents: Array<{ filename: string; title: string; folder: string; purpose: string }>;
+  filing_document_count: number;
+  reference_document_count: number;
+  class_numbers: number[];
+  overall_risk: string | null;
+  filing_fee: number | null;
+  registration_fee: number | null;
+  total_fee: number | null;
+}
+
+function ClientFilingPackage({ appId, onEditData }: { appId: number; onEditData: () => void }) {
+  const pack = useApi<FilingPackageStatus>(`/applications/${appId}/filing-package`);
+  const [downloading, setDownloading] = useState(false);
+  const { toast } = useToast();
+
+  const download = async () => {
+    setDownloading(true);
+    try {
+      await api.download(
+        `/applications/${appId}/filing-package/download`,
+        `paket-dlya-podachi-${appId}.zip`,
+      );
+      toast({
+        title: "Полный пакет скачан",
+        description: "Начните с инструкции в папке «02_ДЛЯ_ВАС». В Роспатент направляются только применимые файлы из папки «01_ДЛЯ_ПОДАЧИ».",
+      });
+    } catch (error) {
+      toast({
+        title: "Пакет пока не скачан",
+        description: messageOf(error, "Проверьте незавершённые пункты и попробуйте снова"),
+        variant: "destructive",
+      });
+      pack.reload();
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <section className={cn(
+      "mt-6 overflow-hidden rounded-[1.5rem] border-2",
+      pack.data?.ready ? "border-emerald-300 bg-emerald-50" : "border-amber-200 bg-amber-50",
+    )}>
+      <div className="flex flex-col gap-5 p-6 sm:p-7 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex items-start gap-4">
+          <span className={cn(
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white",
+            pack.data?.ready ? "text-emerald-700" : "text-amber-700",
+          )}>
+            {pack.data?.ready ? <BookOpenCheck className="h-6 w-6" /> : <Archive className="h-6 w-6" />}
+          </span>
+          <div>
+            <p className={cn(
+              "text-xs font-bold uppercase tracking-[0.14em]",
+              pack.data?.ready ? "text-emerald-700" : "text-amber-700",
+            )}>Финальный этап</p>
+            <h3 className="mt-1 text-2xl font-semibold text-[#11113f]">
+              {pack.data?.ready ? "Документы готовы к скачиванию" : "Полный пакет для подачи"}
+            </h3>
+            <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[#55556f]">
+              Один ZIP содержит заявление и необходимые приложения, отдельную папку с расчётом пошлин,
+              результатом проверки, контрольным списком и пошаговой инструкцией по подаче.
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button variant="outline" className="rounded-full bg-white" onClick={pack.reload} disabled={pack.isLoading}>
+            <RefreshCw className={cn("h-4 w-4", pack.isLoading && "animate-spin")} /> Обновить готовность
+          </Button>
+          <Button
+            className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]"
+            disabled={!pack.data?.ready || downloading}
+            onClick={() => void download()}
+          >
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Скачать полный ZIP
+          </Button>
+        </div>
+      </div>
+
+      {pack.isLoading && <div className="border-t border-black/10 bg-white/60 p-6 text-sm text-[#6d6d7d]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Проверяем комплектность документов…</div>}
+      {pack.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось проверить пакет: {pack.error}</div>}
+
+      {pack.data && (
+        <div className="border-t border-black/10 bg-white p-5 sm:p-6">
+          {pack.data.ready ? (
+            <div className="mb-6 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl bg-[#f4f8f7] p-4"><p className="text-xs text-[#6d6d7d]">Для подачи</p><p className="mt-1 text-2xl font-semibold">{pack.data.filing_document_count} файла</p></div>
+              <div className="rounded-xl bg-[#f4f8f7] p-4"><p className="text-xs text-[#6d6d7d]">Инструкции и расчёты</p><p className="mt-1 text-2xl font-semibold">{pack.data.reference_document_count} файла</p></div>
+              <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">К оплате при подаче</p><p className="mt-1 text-2xl font-semibold">{rubles(pack.data.filing_fee)}</p></div>
+            </div>
+          ) : (
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="font-semibold text-amber-950">До готового пакета осталось: {pack.data.blockers.length}</p>
+              <div className="mt-3 space-y-2">
+                {pack.data.blockers.map((item, index) => (
+                  <div key={`${item.code}-${index}`} className="flex items-start gap-3 rounded-lg bg-white px-4 py-3 text-sm">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                    <div><p className="font-semibold text-[#11113f]">{item.title}</p><p className="mt-0.5 text-[#6d6d7d]">{item.action}</p></div>
+                  </div>
+                ))}
+              </div>
+              {pack.data.blockers.some((item) => item.section === "data") && (
+                <Button variant="outline" className="mt-4 rounded-full bg-white" onClick={onEditData}><PencilLine className="h-4 w-4" /> Перейти к данным</Button>
+              )}
+            </div>
+          )}
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <h4 className="font-semibold text-[#11113f]">01 — Для подачи в Роспатент</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Только эти применимые файлы переносятся в официальный сервис.</p>
+              <div className="mt-3 space-y-2">
+                {pack.data.documents.filter((item) => item.folder === "01_ДЛЯ_ПОДАЧИ").map((item) => (
+                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#11113f]/10 p-3">
+                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.purpose}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <h4 className="font-semibold text-[#11113f]">02 — Для вас</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Эти материалы объясняют порядок действий и не прикладываются к заявке.</p>
+              <div className="mt-3 space-y-2">
+                {pack.data.documents.filter((item) => item.folder === "02_ДЛЯ_ВАС").map((item) => (
+                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#11113f]/10 p-3">
+                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.purpose}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {pack.data.warnings.length > 0 && <div className="mt-5 rounded-xl bg-[#f8f7f4] p-4 text-xs leading-relaxed text-[#55556f]">{pack.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>}
+        </div>
+      )}
     </section>
   );
 }

@@ -2,6 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { AiDisclaimer } from "@/components/ai-disclaimer";
 import {
@@ -22,6 +29,14 @@ import {
 } from "lucide-react";
 
 const ACCEPTED = ".pdf,.docx,.txt,.png,.jpg,.jpeg";
+const CONFIRMABLE_KINDS = [
+  "egrul_extract",
+  "egrip_extract",
+  "trademark_application",
+  "power_of_attorney",
+  "mark_image",
+  "other",
+] as const;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -45,6 +60,7 @@ export function SourceDocumentsTab({ appId, onExtracted, clientMode = false }: P
   const [error, setError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [extractingId, setExtractingId] = useState<number | null>(null);
+  const [confirmingKindId, setConfirmingKindId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -130,6 +146,28 @@ export function SourceDocumentsTab({ appId, onExtracted, clientMode = false }: P
         description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
         variant: "destructive",
       });
+    }
+  };
+
+  const handleKindConfirmation = async (documentId: number, documentKind: string) => {
+    setConfirmingKindId(documentId);
+    try {
+      await api.put(`/source-documents/${documentId}/kind`, {
+        document_kind: documentKind,
+      });
+      toast({
+        title: "Тип документа подтверждён",
+        description: "Теперь система понимает, нужно ли включать файл в пакет для подачи.",
+      });
+      await load();
+    } catch (e) {
+      toast({
+        title: "Тип документа не сохранён",
+        description: e instanceof ApiError ? e.message : "Попробуйте ещё раз",
+        variant: "destructive",
+      });
+    } finally {
+      setConfirmingKindId(null);
     }
   };
 
@@ -257,6 +295,32 @@ export function SourceDocumentsTab({ appId, onExtracted, clientMode = false }: P
                         <p className="mt-1.5 text-sm text-destructive">
                           {doc.error_message}
                         </p>
+                      )}
+
+                      {doc.kind_requires_confirmation && (
+                        <div className="mt-3 max-w-md rounded-lg border border-amber-200 bg-amber-50 p-3">
+                          <p className="mb-2 text-sm font-medium text-amber-950">
+                            Что это за файл?
+                          </p>
+                          <Select
+                            disabled={confirmingKindId === doc.id}
+                            onValueChange={(value) => void handleKindConfirmation(doc.id, value)}
+                          >
+                            <SelectTrigger className="bg-white">
+                              <SelectValue placeholder={confirmingKindId === doc.id ? "Сохраняем…" : "Выберите тип документа"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {CONFIRMABLE_KINDS.map((kind) => (
+                                <SelectItem key={kind} value={kind}>
+                                  {DOCUMENT_KIND_LABELS[kind]}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="mt-2 text-xs leading-relaxed text-amber-900/75">
+                            Подтверждение нужно, чтобы изображение знака, доверенность или другое приложение попали в правильную папку итогового архива.
+                          </p>
+                        </div>
                       )}
                     </div>
 

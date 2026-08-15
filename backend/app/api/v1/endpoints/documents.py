@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +18,7 @@ from app.core.security import get_current_user
 from app.document_processing.classifier import classify_document
 from app.infrastructure.database.models import (
     AuditLog,
+    DocumentKind,
     DocumentPage,
     DocumentProcessingStatus,
     ExtractionMethod,
@@ -40,6 +42,12 @@ router = APIRouter(tags=["documents"])
 
 # Роли, которым разрешено загружать и удалять документы.
 _WRITE_ROLES = {UserRole.admin, UserRole.lawyer, UserRole.manager}
+
+
+class DocumentKindUpdate(BaseModel):
+    """Явное решение человека о назначении загруженного файла."""
+
+    document_kind: DocumentKind
 
 
 # ---------------------------------------------------------------------------
@@ -307,6 +315,55 @@ async def get_document(
     document = await _load_document(session, document_id)
     application = await _load_application(session, document.application_id)
     _require_application_access(current_user, application)
+    return _serialize(document)
+
+
+@router.put(
+    "/source-documents/{document_id}/kind",
+    summary="Подтвердить тип загруженного документа",
+)
+async def confirm_document_kind(
+    document_id: int,
+    payload: DocumentKindUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Сохранить назначение файла после решения пользователя или специалиста.
+
+    Для изображений и сканов тип невозможно надёжно вывести из текста. Пока
+    человек не подтвердил назначение, такой файл не должен автоматически
+    становиться приложением к юридически значимой заявке.
+    """
+    if payload.document_kind in {
+        DocumentKind.unknown,
+        DocumentKind.unknown_registry_extract,
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Выберите конкретный тип документа",
+        )
+    document = await _load_document(session, document_id)
+    application = await _load_application(session, document.application_id)
+    _require_write_access(current_user, application)
+
+    old_kind = document.document_kind.value
+    document.document_kind = payload.document_kind
+    document.kind_requires_confirmation = False
+    metadata = dict(document.metadata_json or {})
+    metadata["kind_confirmed_by_user_id"] = current_user.id
+    document.metadata_json = metadata
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="document.kind_confirmed",
+            entity_type="SourceDocument",
+            entity_id=str(document.id),
+            old_value_json={"document_kind": old_kind},
+            new_value_json={"document_kind": payload.document_kind.value},
+        )
+    )
+    await session.flush()
     return _serialize(document)
 
 

@@ -109,6 +109,7 @@ def _record_payload(record: Any, similarity: Any) -> dict[str, Any]:
         "registration_date": record.registration_date,
         "application_number": record.application_number,
         "registration_number": record.registration_number,
+        "image_available": bool(record.image_url),
         "similarity": similarity.as_dict(),
     }
 

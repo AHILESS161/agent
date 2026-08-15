@@ -202,3 +202,29 @@ async def test_invalid_engine_handshake_is_reported() -> None:
             await provider.search_marks(SearchQuery(mark_text="Регистр"))
     finally:
         await client.aclose()
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_public_provider_fetches_only_trusted_images() -> None:
+    png = b"\x89PNG\r\n\x1a\nimage"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/media/mark.png"
+        return httpx.Response(
+            200, content=png, headers={"content-type": "image/png"}, request=request
+        )
+
+    client = httpx.AsyncClient(
+        base_url="https://searchplatform.rospatent.gov.ru/",
+        transport=httpx.MockTransport(handler),
+    )
+    provider = RospatentPublicSearchProvider(client=client, min_interval=0)
+    try:
+        content, mime_type = await provider.fetch_image("/media/mark.png")
+        assert content == png
+        assert mime_type == "image/png"
+        with pytest.raises(ValueError, match="Недоверенный"):
+            await provider.fetch_image("https://example.test/mark.png")
+    finally:
+        await client.aclose()

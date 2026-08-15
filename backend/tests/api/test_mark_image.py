@@ -6,11 +6,19 @@ import io
 
 import pytest
 from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.v1.endpoints import documents
-from app.infrastructure.database.models import UserRole
+from app.infrastructure.database.models import (
+    AnalysisKind,
+    RiskAssessment,
+    RiskFinding,
+    RiskLevel,
+    UserRole,
+)
 from app.services import file_storage
 from app.services.mark_image import MarkImageResult
+from app.services.visual_mark_similarity import cache_registry_image
 from tests.conftest import login_headers
 
 
@@ -130,3 +138,46 @@ def test_mark_image_requires_authorization(client, mark_case):
     assert client.get(
         f"/api/v1/applications/{application_id}/mark-image"
     ).status_code == 401
+
+
+@pytest.mark.api
+async def test_registry_match_image_is_served_from_protected_cache(
+    client, mark_case, async_engine
+):
+    headers, application_id = mark_case
+    cache_key = cache_registry_image(_png(), "image/png")
+    factory = async_sessionmaker(
+        bind=async_engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with factory() as session:
+        assessment = RiskAssessment(
+            application_id=application_id,
+            analysis_kind=AnalysisKind.relative_grounds,
+        )
+        session.add(assessment)
+        await session.flush()
+        finding = RiskFinding(
+            assessment_id=assessment.id,
+            category="conflicting_mark",
+            level=RiskLevel.medium,
+            explanation="Визуально похожая карточка",
+            verification_json={
+                "image_comparison": {
+                    "cache_key": cache_key,
+                    "mime_type": "image/png",
+                    "score": 0.8,
+                }
+            },
+        )
+        session.add(finding)
+        await session.commit()
+        finding_id = finding.id
+
+    assert client.get(
+        f"/api/v1/risk-findings/{finding_id}/registry-image"
+    ).status_code == 401
+    response = client.get(
+        f"/api/v1/risk-findings/{finding_id}/registry-image", headers=headers
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")

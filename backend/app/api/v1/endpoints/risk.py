@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,7 @@ from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
     serialize_assessment,
 )
+from app.services.visual_mark_similarity import read_cached_registry_image
 
 logger = get_logger(__name__)
 
@@ -66,6 +67,20 @@ def _require_write_access(user: User) -> None:
 
 def _require_client_access(user: User, application: TrademarkApplicationDraft) -> None:
     if user.role is UserRole.client and application.created_by_user_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к анализу заявки",
+        )
+
+
+def _require_application_access(user: User, application: TrademarkApplicationDraft) -> None:
+    if user.role is UserRole.admin:
+        return
+    if user.id not in {
+        application.created_by_user_id,
+        application.assigned_lawyer_id,
+        application.assigned_manager_id,
+    }:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нет доступа к анализу заявки",
@@ -503,6 +518,49 @@ async def get_analysis_history(
         ],
         "total": len(assessments),
     }
+
+
+@router.get(
+    "/risk-findings/{finding_id}/registry-image",
+    summary="Показать изображение найденного знака из защищённого кэша",
+)
+async def registry_finding_image(
+    finding_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    row = (
+        await session.execute(
+            select(RiskFinding, RiskAssessment)
+            .join(RiskAssessment, RiskAssessment.id == RiskFinding.assessment_id)
+            .where(RiskFinding.id == finding_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Вывод не найден")
+    finding, assessment = row
+    application = await _load_application(session, assessment.application_id)
+    _require_application_access(current_user, application)
+    comparison = (finding.verification_json or {}).get("image_comparison") or {}
+    cache_key = comparison.get("cache_key")
+    mime_type = comparison.get("mime_type")
+    if not cache_key or mime_type not in {"image/png", "image/jpeg"}:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Изображение найденного знака недоступно",
+        )
+    try:
+        content = read_cached_registry_image(str(cache_key))
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Кэш изображения нужно обновить повторным анализом",
+        ) from exc
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.post(

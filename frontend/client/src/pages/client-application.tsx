@@ -56,12 +56,23 @@ interface ClassSuggestion {
   approved: boolean | null;
 }
 
+interface RiskFindingSummary {
+  id: number;
+  explanation: string;
+  recommendation?: string;
+  level?: string;
+  verification?: {
+    registry_record?: { mark_text?: string; classes?: Array<number | string>; owner?: string };
+    image_comparison?: { score: number } | null;
+  };
+}
+
 interface RiskReport {
   overall_risk: "low" | "medium" | "high" | "critical" | null;
   is_complete: boolean;
   incomplete_checks?: string[];
   sections: Record<string, {
-    findings?: Array<{ description: string; recommendation?: string; level?: string }>;
+    findings?: RiskFindingSummary[];
     is_inconclusive?: boolean;
     inconclusive_reason?: string | null;
   } | null>;
@@ -551,10 +562,11 @@ function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draf
     ? report.incomplete_checks
     : sectionReasons;
   const visibleRisks = adverseFindings.length > 0
-    ? adverseFindings.slice(0, 5).map((item) => item.description)
+    ? adverseFindings.slice(0, 5).map((item) => item.explanation)
     : !incomplete && risk && risk !== "low"
       ? (memo?.key_risks_json || []).slice(0, 5)
       : [];
+  const visualMatches = findings.filter((item) => item.verification?.image_comparison);
   return (
     <ClientPanel title="Результат проверки" description="Главный вывод, выбранные классы и риски, которые важно учесть до подачи.">
       <section className={cn("rounded-[1.5rem] border p-6 sm:p-8", presentation.tone)}>
@@ -571,12 +583,53 @@ function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draf
           </div>
         </section>
       </div>
+      {visualMatches.length > 0 && (
+        <section className="mt-6 rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6">
+          <h3 className="text-xl font-semibold">Похожие изображения</h3>
+          <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Мы сравнили ваш знак с изображениями найденных карточек. Процент помогает расставить приоритеты, но окончательное сходство оценивает эксперт.</p>
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {visualMatches.slice(0, 6).map((finding) => <ClientVisualMatch key={finding.id} appId={appId} finding={finding} />)}
+          </div>
+        </section>
+      )}
       <ClientDraftPreview appId={appId} analysisComplete={!incomplete} openRequest={draftRequest} onEditData={onEditData} />
       <ClientFeeEstimate appId={appId} />
       <ClientFilingPackage appId={appId} onEditData={onEditData} />
       <p className="mt-6 text-sm leading-relaxed text-[#6d6d7d]">Результат сформирован автоматически на основе введённых данных, выбранных классов и доступных реестров. Он помогает принять решение, но не является гарантией регистрации или юридической консультацией.</p>
     </ClientPanel>
   );
+}
+
+function ClientVisualMatch({ appId, finding }: { appId: number; finding: RiskFindingSummary }) {
+  const comparison = finding.verification?.image_comparison;
+  const record = finding.verification?.registry_record;
+  return (
+    <article className="rounded-2xl border border-[#11113f]/10 bg-[#f8f7f4] p-4">
+      <div className="grid grid-cols-2 gap-3">
+        <ProtectedImage path={`/applications/${appId}/mark-image/content`} label="Ваш знак" />
+        <ProtectedImage path={`/risk-findings/${finding.id}/registry-image`} label="Найденный знак" />
+      </div>
+      <div className="mt-3 flex items-start justify-between gap-3">
+        <div><p className="font-semibold text-[#11113f]">{record?.mark_text || "Знак без словесного элемента"}</p><p className="mt-1 text-xs text-[#6d6d7d]">МКТУ {(record?.classes || []).join(", ") || "не указаны"}</p></div>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{Math.round((comparison?.score || 0) * 100)}%</span>
+      </div>
+    </article>
+  );
+}
+
+function ProtectedImage({ path, label }: { path: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    api.blob(path).then((blob) => {
+      if (!active) return;
+      objectUrl = URL.createObjectURL(blob);
+      setUrl(objectUrl);
+    }).catch(() => undefined);
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [path]);
+  return <div><p className="mb-1 text-[11px] font-semibold text-[#6d6d7d]">{label}</p><div className="flex h-32 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-2">{url ? <img src={url} alt={label} className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-[#6d6d7d]">Нет изображения</span>}</div></div>;
 }
 
 interface DraftField {

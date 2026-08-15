@@ -111,6 +111,14 @@ async def collect_draft_content(
     )
     by_path = {row.field_path: row for row in rows}
 
+    client = application.client
+    case_values = {
+        "case.applicant.full_name": client.full_name_or_company_name if client else None,
+        "case.applicant.inn": client.inn if client else None,
+        "case.applicant.ogrn": client.ogrn_or_ogrnip if client else None,
+        "case.applicant.legal_address": client.address if client else None,
+    }
+
     engine = FieldMappingEngine()
     for spec in engine.config.get("mappings", []):
         target = spec.get("application_field")
@@ -122,9 +130,22 @@ async def collect_draft_content(
         required = bool(spec.get("required_for_application", False))
 
         row = by_path.get(registry_field) if registry_field else None
+        case_value = case_values.get(spec.get("case_field"))
 
         if row is None:
-            if spec.get("default_value"):
+            if case_value:
+                # Пользователь уже проверил и сохранил значение в карточке
+                # заявителя. Оно не обязано присутствовать в выписке (адрес
+                # ИП, например, обычно скрыт в открытой ЕГРИП).
+                content.filled.append(
+                    FilledField(
+                        field_id=target,
+                        label=label,
+                        value=str(case_value),
+                        source="введено пользователем",
+                    )
+                )
+            elif spec.get("default_value"):
                 # Значение по умолчанию — предложение, а не факт.
                 content.skipped.append(
                     SkippedField(

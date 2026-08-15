@@ -91,6 +91,27 @@ def _require_write_access(user: User) -> None:
         )
 
 
+def _require_intake_access(user: User, payload: IntakeRequest) -> None:
+    """Клиент может создать только собственную новую заявку.
+
+    Привязка к существующему клиенту или чужому делу остаётся операцией
+    сотрудника: иначе идентификатор в запросе позволил бы затронуть чужие данные.
+    """
+    if user.role is not UserRole.client:
+        _require_write_access(user)
+        return
+    if (
+        not payload.create_case
+        or payload.new_client is None
+        or payload.client_id is not None
+        or payload.target_case_id is not None
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Клиент может создать только новую заявку со своими данными",
+        )
+
+
 async def _load_event(session: AsyncSession, event_id: int) -> InboundEvent:
     event = (
         await session.execute(
@@ -122,7 +143,7 @@ async def create_intake(
     Повторная отправка того же обращения не создаёт дубликат: ключ
     идемпотентности вычисляется из содержимого, если не передан явно.
     """
-    _require_write_access(current_user)
+    _require_intake_access(current_user, payload)
 
     result = await inbound.register_event(
         session,

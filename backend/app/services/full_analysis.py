@@ -131,16 +131,18 @@ async def _save_memo(
 
     # Связь findings ленивая: в async-сессии её нельзя трогать
     # напрямую, поэтому выводы читаются отдельным запросом.
-    def _explanations(assessment_id: int) -> Any:
+    def _risk_explanations(assessment_id: int) -> Any:
+        """Только неблагоприятные выводы, а не перечень пройденных проверок."""
         return select(RiskFinding.explanation).where(
-            RiskFinding.assessment_id == assessment_id
+            RiskFinding.assessment_id == assessment_id,
+            RiskFinding.level.in_((RiskLevel.medium, RiskLevel.high, RiskLevel.critical)),
         )
 
     absolute_risks = list(
-        (await session.execute(_explanations(absolute.id))).scalars().all()
+        (await session.execute(_risk_explanations(absolute.id))).scalars().all()
     )
     relative_risks = list(
-        (await session.execute(_explanations(relative.id))).scalars().all()
+        (await session.execute(_risk_explanations(relative.id))).scalars().all()
     )
 
     memo.recommended_action = _ACTION_BY_VERDICT.get(

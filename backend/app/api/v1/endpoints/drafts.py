@@ -82,6 +82,17 @@ async def _load_draft(session: AsyncSession, draft_id: int) -> ApplicationDraft:
     return draft
 
 
+def _ensure_access(application: TrademarkApplicationDraft, user: User) -> None:
+    if user.role is UserRole.admin:
+        return
+    if user.id not in {
+        application.created_by_user_id,
+        application.assigned_lawyer_id,
+        application.assigned_manager_id,
+    }:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к черновику заявки")
+
+
 @router.post(
     "/applications/{application_id}/draft",
     status_code=status.HTTP_201_CREATED,
@@ -98,7 +109,7 @@ async def generate_draft(
     остаются пустыми, а причина попадает в чек-лист.
     """
     _require(current_user, _WRITE_ROLES, "формирование черновика")
-    application = await _load_application(session, application_id)
+    application = await _load_application(session, application_id, with_client=True)
 
     draft = await create_draft(session, application, user_id=current_user.id)
 
@@ -127,7 +138,7 @@ async def generate_draft(
 async def draft_form(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Показать заявление в структуре официального бланка.
 
@@ -136,6 +147,7 @@ async def draft_form(
     заполнить недостающее прямо здесь.
     """
     application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
     content = await collect_draft_content(session, application)
     rows, field_ids = await load_reconciliation(session, application_id)
 
@@ -161,9 +173,10 @@ async def draft_form(
 async def list_drafts(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    await _load_application(session, application_id)
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
     drafts = (
         (
             await session.execute(

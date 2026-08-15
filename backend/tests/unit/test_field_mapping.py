@@ -164,6 +164,19 @@ class TestConflictBetweenRegistryAndCase:
         rows = {r.case_field: r for r in result}
         assert rows["case.applicant.inn"].status is not FieldStatus.conflict
 
+    def test_case_only_address_is_already_confirmed(self):
+        """Сохранённый пользователем адрес ИП не нужно требовать повторно."""
+        result, _ = build_reconciliation(
+            [],
+            case_values={"case.applicant.legal_address": "г. Москва, ул. Пушкина, д. 23"},
+            client_type="sole_proprietor",
+        )
+        row = next(r for r in result if r.case_field == "case.applicant.legal_address")
+
+        assert row.status is FieldStatus.confirmed
+        assert row.case_value == "г. Москва, ул. Пушкина, д. 23"
+        assert row.blocks_document_generation is False
+
 
 class TestHumanInTheLoop:
     def test_composed_address_always_needs_review(self, rows):

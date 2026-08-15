@@ -153,6 +153,15 @@ def _is_owner(app: TrademarkApplicationDraft, user: User) -> bool:
     }
 
 
+def _ensure_access(app: TrademarkApplicationDraft, user: User) -> None:
+    """Не позволять пользователю читать или менять чужое дело по прямому URL."""
+    if user.role is not UserRole.admin and not _is_owner(app, user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к этой заявке",
+        )
+
+
 def _visible_to(query, user: User):
     """Ограничить выборку делами, доступными пользователю.
 
@@ -301,10 +310,11 @@ async def delete_application(
 async def get_application(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ApplicationResponse:
     """Get full application details."""
     app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
     return ApplicationResponse.model_validate(app)
 
 
@@ -318,6 +328,7 @@ async def update_application(
 ) -> ApplicationResponse:
     """Update an application draft (only editable in draft/info_requested/info_received states)."""
     app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
 
     old_val = {"status": app.status.value}
     for field, value in payload.model_dump(exclude_none=True).items():
@@ -347,10 +358,11 @@ async def validate_application(
     application_id: int,
     stage: ApplicationStage = Query(default=ApplicationStage.intake),
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ApplicationValidationResult:
     """Run completeness engine against the application for the given stage."""
     app = await _get_app_or_404(application_id, session, load_client=True)
+    _ensure_access(app, current_user)
 
     # Eagerly load client representatives for completeness checks
     if app.client:
@@ -649,9 +661,11 @@ async def suggest_classes(
 async def get_classes(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ClassSuggestionResponse:
     """Get all class suggestions for an application."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
     result = await session.execute(
         select(NiceClassSuggestion).where(NiceClassSuggestion.application_id == application_id)
     )
@@ -769,9 +783,13 @@ async def approve_class(
     payload: ClassApprovalRequest,
     request: Request,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_roles("admin", "lawyer")),
+    current_user: User = Depends(get_current_user),
 ) -> NiceClassSuggestionResponse:
     """Lawyer approves or rejects a class suggestion."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    if current_user.role not in {UserRole.admin, UserRole.lawyer, UserRole.client}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Недостаточно прав")
     result = await session.execute(
         select(NiceClassSuggestion).where(
             NiceClassSuggestion.id == class_id,
@@ -991,9 +1009,11 @@ async def review_conflict(
 async def get_recommendation(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Get the latest recommendation memo for an application."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
     result = await session.execute(
         select(RecommendationMemo)
         .where(RecommendationMemo.application_id == application_id)

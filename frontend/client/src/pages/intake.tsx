@@ -31,6 +31,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError, DOCUMENT_KIND_LABELS } from "@/lib/api";
 import { useCases } from "@/lib/use-cases";
+import { useAuth } from "@/lib/auth";
+import { HelpTip } from "@/components/help-tip";
 import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import {
@@ -95,6 +97,7 @@ interface Attached {
 
 export default function IntakePage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const cases = useCases();
@@ -129,6 +132,7 @@ export default function IntakePage() {
   const [submissionKey] = useState(() => crypto.randomUUID());
 
   const clients = Object.values(cases.data?.clientsById ?? {});
+  const clientPortal = user?.role === "client";
 
   // Заполнить поле, только если оно ещё пустое: правки юриста важнее
   // предзаполнения и не должны затираться следующим документом.
@@ -280,7 +284,7 @@ export default function IntakePage() {
 
       setCaseId(newCaseId);
       toast({
-        title: `Дело №${newCaseId} создано`,
+        title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
         description: uploaded
           ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
@@ -304,14 +308,14 @@ export default function IntakePage() {
             <div className="flex items-center gap-3">
               <CheckCircle2 className="w-6 h-6 text-emerald-600" />
               <div>
-                <p className="text-sm font-medium">Дело №{caseId} создано</p>
+                <p className="text-sm font-medium">{clientPortal ? `Заявка №${caseId} создана` : `Дело №${caseId} создано`}</p>
                 <p className="text-xs text-muted-foreground">
-                  Дальше — проверка извлечённых реквизитов на этапе «Данные».
+                  Дальше проверьте данные и добавьте недостающие документы.
                 </p>
               </div>
             </div>
             <Button size="sm" onClick={() => setLocation(`/applications/${caseId}`)}>
-              Открыть дело
+              Открыть заявку
               <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
             </Button>
           </CardContent>
@@ -325,9 +329,11 @@ export default function IntakePage() {
       <div className="flex flex-col justify-between gap-5 border-b border-border pb-7 sm:flex-row sm:items-end">
         <div>
           <p className="mb-2 text-sm font-semibold uppercase tracking-[0.14em] text-primary">Новый товарный знак</p>
-          <h1 className="text-4xl font-semibold sm:text-5xl">Создание проекта</h1>
+          <h1 className="text-4xl font-semibold sm:text-5xl">{clientPortal ? "Начнём с главного" : "Создание проекта"}</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Три шага: документы, заявитель и обозначение. Все данные можно изменить позже.
+            {clientPortal
+              ? "Добавьте документ или заполните короткую форму. Всё можно сохранить и дополнить позже."
+              : "Три шага: документы, заявитель и обозначение. Все данные можно изменить позже."}
           </p>
         </div>
         <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
@@ -425,7 +431,7 @@ export default function IntakePage() {
         title="Укажите заявителя"
         description="Создайте нового заявителя или выберите существующего из базы."
       >
-          <div className="inline-flex rounded-lg bg-muted p-1">
+          {!clientPortal && <div className="inline-flex rounded-lg bg-muted p-1">
             <button
               type="button"
               className={cn(
@@ -446,7 +452,7 @@ export default function IntakePage() {
             >
               Выбрать из базы
             </button>
-          </div>
+          </div>}
 
           {useExistingClient ? (
             <div className="mt-6">
@@ -559,7 +565,7 @@ export default function IntakePage() {
         description="Укажите обозначение и коротко расскажите, для каких товаров или услуг оно нужно."
       >
           <Field
-            label="Вид знака"
+            label={clientPortal ? <span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает название. Изобразительный — картинку. Комбинированный — название и изображение вместе." /></span> : "Вид знака"}
             hint={
               markType === "word"
                 ? "Словесный знак — только текст, без изображения."
@@ -616,7 +622,7 @@ export default function IntakePage() {
             />
           </Field>
 
-          <Field label="Товары и услуги (если клиент перечислил)">
+          <Field label={clientPortal ? <span className="inline-flex items-center gap-1">Что вы продаёте или какие услуги оказываете <HelpTip text="По этому перечню система подберёт классы МКТУ — группы товаров и услуг, для которых будет действовать защита товарного знака." /></span> : "Товары и услуги (если клиент перечислил)"}>
             <Textarea
               value={goodsServices}
               onChange={(e) => setGoodsServices(e.target.value)}
@@ -628,7 +634,7 @@ export default function IntakePage() {
 
           <Separator className="my-2" />
 
-          <details className="rounded-lg border border-border px-4 py-3 text-sm">
+          {!clientPortal && <details className="rounded-lg border border-border px-4 py-3 text-sm">
             <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">
               Сведения об обращении (необязательно)
             </summary>
@@ -651,7 +657,7 @@ export default function IntakePage() {
                 />
               </Field>
             </div>
-          </details>
+          </details>}
       </ProjectStep>
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
@@ -662,7 +668,7 @@ export default function IntakePage() {
           ) : (
             <CheckCircle2 className="w-4 h-4 mr-2" />
           )}
-          Создать проект
+          {clientPortal ? "Создать заявку" : "Создать проект"}
         </Button>
       </div>
     </div>
@@ -707,7 +713,7 @@ function Field({
   hint,
   children,
 }: {
-  label: string;
+  label: React.ReactNode;
   hint?: string;
   children: React.ReactNode;
 }) {

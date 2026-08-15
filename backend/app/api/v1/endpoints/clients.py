@@ -16,6 +16,7 @@ from app.infrastructure.database.models import (
     ClientRepresentative,
     TrademarkApplicationDraft,
     User,
+    UserRole,
 )
 from app.infrastructure.database.session import get_session
 from app.schemas.clients import (
@@ -47,6 +48,11 @@ async def _get_client_or_404(client_id: int, session: AsyncSession) -> Client:
     return client
 
 
+def _ensure_client_access(client: Client, user: User) -> None:
+    if user.role is UserRole.client and client.created_by_user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к заявителю")
+
+
 # ---------------------------------------------------------------------------
 # List / create
 # ---------------------------------------------------------------------------
@@ -57,16 +63,22 @@ async def list_clients(
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> PaginatedResponse[ClientResponse]:
     """List all clients (paginated)."""
-    total_result = await session.execute(select(func.count(Client.id)))
+    access_filter = (
+        Client.created_by_user_id == current_user.id
+        if current_user.role is UserRole.client
+        else True
+    )
+    total_result = await session.execute(select(func.count(Client.id)).where(access_filter))
     total = total_result.scalar_one()
 
     offset = (page - 1) * page_size
     result = await session.execute(
         select(Client)
         .options(selectinload(Client.representatives))
+        .where(access_filter)
         .offset(offset)
         .limit(page_size)
         .order_by(Client.id)
@@ -120,10 +132,11 @@ async def create_client(
 async def get_client(
     client_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> ClientResponse:
     """Get a single client by ID."""
     client = await _get_client_or_404(client_id, session)
+    _ensure_client_access(client, current_user)
     return ClientResponse.model_validate(client)
 
 
@@ -136,6 +149,7 @@ async def update_client(
 ) -> ClientResponse:
     """Update a client's details."""
     client = await _get_client_or_404(client_id, session)
+    _ensure_client_access(client, current_user)
 
     old_val = {"full_name_or_company_name": client.full_name_or_company_name}
     for field, value in payload.model_dump(exclude_none=True).items():

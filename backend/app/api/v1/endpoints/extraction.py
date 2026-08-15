@@ -99,6 +99,27 @@ def _require_write_access(user: User) -> None:
         )
 
 
+def _require_client_application_access(user: User, application: TrademarkApplicationDraft) -> None:
+    """Для клиентской роли разрешены действия только в собственной заявке."""
+    if user.role is UserRole.client and application.created_by_user_id != user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к данным заявки")
+
+
+async def _application_for_document(
+    session: AsyncSession, document: SourceDocument
+) -> TrademarkApplicationDraft:
+    application = (
+        await session.execute(
+            select(TrademarkApplicationDraft).where(
+                TrademarkApplicationDraft.id == document.application_id
+            )
+        )
+    ).scalar_one_or_none()
+    if application is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Заявка документа не найдена")
+    return application
+
+
 async def _load_document(session: AsyncSession, document_id: int) -> SourceDocument:
     result = await session.execute(
         select(SourceDocument).where(SourceDocument.id == document_id)
@@ -212,8 +233,12 @@ async def extract_fields(
     Повторный запуск заменяет предыдущий результат: подтверждённые
     специалистом поля при этом сохраняются, чтобы его работа не терялась.
     """
-    _require_write_access(current_user)
     document = await _load_document(session, document_id)
+    application = await _application_for_document(session, document)
+    if current_user.role is UserRole.client:
+        _require_client_application_access(current_user, application)
+    else:
+        _require_write_access(current_user)
 
     pattern_set = _EXTRACTABLE.get(document.document_kind)
     if pattern_set is None:
@@ -303,7 +328,7 @@ async def extract_fields(
 async def list_extracted_fields(
     document_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     await _load_document(session, document_id)
     result = await session.execute(
@@ -358,6 +383,7 @@ async def add_manual_field(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Дело {application_id} не найдено",
         )
+    _require_client_application_access(current_user, application)
 
     existing = (
         await session.execute(
@@ -602,7 +628,7 @@ async def delete_field(
 async def field_reconciliation(
     application_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Таблица сопоставления для специалиста.
 
@@ -623,6 +649,7 @@ async def field_reconciliation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Дело {application_id} не найдено",
         )
+    _require_client_application_access(current_user, application)
 
     fields_result = await session.execute(
         select(ExtractedField)
@@ -668,6 +695,9 @@ async def field_reconciliation(
         else None,
         "case.applicant.inn": application.client.inn if application.client else None,
         "case.applicant.ogrn": application.client.ogrn_or_ogrnip
+        if application.client
+        else None,
+        "case.applicant.legal_address": application.client.address
         if application.client
         else None,
     }

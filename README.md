@@ -59,6 +59,8 @@ docker compose exec api python -m app.seed.init_db
 | Логин | Пароль | Роль |
 |---|---|---|
 | `lawyer@demo.ru` | `demo123` | Специалист (юрист) |
+| `bogdan@demo.ru` | `demo123` | Юрист Богдан |
+| `dasha@demo.ru` | `demo123` | Юрист Даша |
 | `admin@demo.ru` | `demo123` | Администратор |
 | `client@demo.ru` | `demo123` | Клиент |
 

@@ -3,6 +3,7 @@ Database initialisation and demo seed data for the Trademark Registration System
 
 Usage:
     python -m app.seed.init_db
+    python -m app.seed.init_db --users-only
 
 Creates all tables and populates them with realistic demo data:
 - 4 users (admin, lawyer, manager, client)
@@ -14,6 +15,7 @@ Creates all tables and populates them with realistic demo data:
 
 from __future__ import annotations
 
+import argparse
 import logging
 import sys
 from datetime import datetime, timedelta, timezone
@@ -104,7 +106,7 @@ def _ago(days: int = 0, hours: int = 0, minutes: int = 0) -> datetime:
 # ---------------------------------------------------------------------------
 
 def seed_users(session: Session) -> dict[str, User]:
-    """Create 4 demo users and return them keyed by role name."""
+    """Create demo users and return the primary account for every role."""
     users_data = [
         {
             "email": "admin@demo.ru",
@@ -115,6 +117,18 @@ def seed_users(session: Session) -> dict[str, User]:
         {
             "email": "lawyer@demo.ru",
             "full_name": "Иванова Елена Викторовна",
+            "role": UserRole.lawyer,
+            "password": "demo123",
+        },
+        {
+            "email": "bogdan@demo.ru",
+            "full_name": "Богдан",
+            "role": UserRole.lawyer,
+            "password": "demo123",
+        },
+        {
+            "email": "dasha@demo.ru",
+            "full_name": "Дарья (Даша)",
             "role": UserRole.lawyer,
             "password": "demo123",
         },
@@ -137,7 +151,7 @@ def seed_users(session: Session) -> dict[str, User]:
         existing = session.query(User).filter_by(email=data["email"]).first()
         if existing:
             log.info(f"  User {data['email']} already exists — skipping")
-            result[data["role"].value] = existing
+            result.setdefault(data["role"].value, existing)
             continue
 
         user = User(
@@ -148,7 +162,7 @@ def seed_users(session: Session) -> dict[str, User]:
             is_active=True,
         )
         session.add(user)
-        result[data["role"].value] = user
+        result.setdefault(data["role"].value, user)
         log.info(f"  Created user: {data['email']} ({data['role'].value})")
 
     session.flush()
@@ -864,7 +878,18 @@ def seed_audit_log(
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    log.info("=== Initialising database and seeding demo data ===")
+    parser = argparse.ArgumentParser(description="Prepare demo data")
+    parser.add_argument(
+        "--users-only",
+        action="store_true",
+        help="Create demo accounts without adding sample clients and applications",
+    )
+    args = parser.parse_args()
+    log.info(
+        "=== Initialising database and seeding demo accounts ==="
+        if args.users_only
+        else "=== Initialising database and seeding demo data ==="
+    )
 
     engine = _build_sync_engine()
 
@@ -884,38 +909,41 @@ def main() -> None:
             log.info("\nSeeding users...")
             users = seed_users(session)
 
-            log.info("\nSeeding clients...")
-            clients = seed_clients(session)
+            if not args.users_only:
+                log.info("\nSeeding clients...")
+                clients = seed_clients(session)
 
-            log.info("\nSeeding applications...")
-            apps = seed_applications(session, clients, users)
+                log.info("\nSeeding applications...")
+                apps = seed_applications(session, clients, users)
 
-            log.info("\nSeeding NICE class suggestions...")
-            seed_nice_class_suggestions(session, apps)
+                log.info("\nSeeding NICE class suggestions...")
+                seed_nice_class_suggestions(session, apps)
 
-            log.info("\nSeeding goods/services items...")
-            seed_goods_services(session, apps)
+                log.info("\nSeeding goods/services items...")
+                seed_goods_services(session, apps)
 
-            log.info("\nSeeding legal reviews...")
-            seed_legal_reviews(session, apps, users)
+                log.info("\nSeeding legal reviews...")
+                seed_legal_reviews(session, apps, users)
 
-            log.info("\nSeeding conflict search results...")
-            seed_conflict_results(session, apps)
+                log.info("\nSeeding conflict search results...")
+                seed_conflict_results(session, apps)
 
-            log.info("\nSeeding recommendation memos...")
-            seed_recommendations(session, apps, users)
+                log.info("\nSeeding recommendation memos...")
+                seed_recommendations(session, apps, users)
 
-            log.info("\nSeeding notifications...")
-            seed_notifications(session, apps, users)
+                log.info("\nSeeding notifications...")
+                seed_notifications(session, apps, users)
 
-            log.info("\nSeeding audit log...")
-            seed_audit_log(session, apps, users)
+                log.info("\nSeeding audit log...")
+                seed_audit_log(session, apps, users)
 
             session.commit()
             log.info("\n✓ Database seeded successfully!")
             log.info("\nDemo credentials:")
             log.info("  admin@demo.ru   / demo123  (Администратор)")
             log.info("  lawyer@demo.ru  / demo123  (Юрист)")
+            log.info("  bogdan@demo.ru  / demo123  (Юрист Богдан)")
+            log.info("  dasha@demo.ru   / demo123  (Юрист Даша)")
             log.info("  manager@demo.ru / demo123  (Менеджер)")
             log.info("  client@demo.ru  / demo123  (Клиент)")
 

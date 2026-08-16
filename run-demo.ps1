@@ -21,8 +21,8 @@ try {
     Write-Host "`n[1/4] Миграции базы данных..." -ForegroundColor Cyan
     & $python -m alembic upgrade head
 
-    Write-Host "`n[2/4] Демо-данные (пользователи, клиенты, заявки)..." -ForegroundColor Cyan
-    & $python -m app.seed.init_db
+    Write-Host "`n[2/4] Демо-аккаунты без фейковых клиентов и заявок..." -ForegroundColor Cyan
+    & $python -m app.seed.init_db --users-only
 
     Write-Host "`n[3/4] Индексация базы знаний (нужна для правового анализа)..." -ForegroundColor Cyan
     & $python -m scripts.ingest_knowledge
@@ -51,6 +51,8 @@ Write-Host " API-доки:   http://localhost:8000/docs" -ForegroundColor Green
 Write-Host "----------------------------------------------------------------" -ForegroundColor Green
 Write-Host " Вход (любой из):" -ForegroundColor Green
 Write-Host "   lawyer@demo.ru  / demo123   — специалист (юрист)"
+Write-Host "   bogdan@demo.ru  / demo123   — юрист Богдан"
+Write-Host "   dasha@demo.ru   / demo123   — юрист Даша"
 Write-Host "   manager@demo.ru / demo123   — менеджер"
 Write-Host "   admin@demo.ru   / demo123   — администратор"
 Write-Host "================================================================`n" -ForegroundColor Green

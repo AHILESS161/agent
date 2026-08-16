@@ -78,6 +78,8 @@ curl http://localhost:8000/ready
 | Логин | Пароль | Роль |
 |---|---|---|
 | `lawyer@demo.ru` | `demo123` | Специалист (юрист) |
+| `bogdan@demo.ru` | `demo123` | Юрист Богдан |
+| `dasha@demo.ru` | `demo123` | Юрист Даша |
 | `admin@demo.ru` | `demo123` | Администратор |
 | `manager@demo.ru` | `demo123` | Менеджер |
 | `client@demo.ru` | `demo123` | Клиент |

@@ -141,6 +141,35 @@
     .bar-track { height: 12px; overflow: hidden; border-radius: 999px; background: rgba(16,16,63,.1); }
     .bar-fill { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), #43c8bb); }
 
+    .funnel-chart { display: grid; gap: 12px; }
+    .funnel-row { display: grid; grid-template-columns: 132px 1fr 112px; gap: 14px; align-items: center; }
+    .funnel-row > span { color: var(--muted); font-size: 13px; }
+    .funnel-shape { height: 42px; display: flex; align-items: center; padding: 0 18px; border-radius: 12px; background: linear-gradient(90deg, var(--teal), #42c7ba); color: white; font-weight: 800; }
+    .funnel-row:nth-child(2) .funnel-shape { width: 58%; }
+    .funnel-row:nth-child(3) .funnel-shape { width: 24%; min-width: 112px; }
+    .funnel-row b { font-size: 17px; }
+
+    .conversion-chart { display: grid; grid-template-columns: 1fr 28px 1fr 28px 1fr 28px 1fr; align-items: center; gap: 8px; margin-top: 24px; }
+    .conversion-step { padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: white; }
+    .conversion-step strong { display: block; color: var(--teal); font-size: 25px; }
+    .conversion-step span { color: var(--muted); font-size: 12px; }
+    .conversion-arrow { text-align: center; color: var(--teal); font-size: 20px; font-weight: 900; }
+
+    .image-pipeline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 24px; }
+    .image-stage { position: relative; min-height: 108px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.78); }
+    .image-stage:not(:last-child)::after { content: "→"; position: absolute; right: -12px; top: 40%; z-index: 2; color: var(--teal); font-weight: 900; }
+    .image-stage b { display: block; margin-bottom: 8px; }
+    .image-stage span { color: var(--muted); font-size: 12px; line-height: 1.35; }
+    .visual-score { display: flex; align-items: center; gap: 18px; margin-top: 20px; padding: 16px 18px; border-radius: 18px; background: var(--navy); color: white; }
+    .visual-score strong { color: #62d7cf; font-size: 42px; letter-spacing: -.05em; }
+    .visual-score span { font-size: 14px; line-height: 1.4; }
+
+    .allocation-bar { display: flex; height: 28px; overflow: hidden; margin-top: 28px; border-radius: 999px; }
+    .allocation-bar span:nth-child(1) { width: 45%; background: #0ca6a0; }
+    .allocation-bar span:nth-child(2) { width: 25%; background: #3fc7ba; }
+    .allocation-bar span:nth-child(3) { width: 20%; background: #7474b8; }
+    .allocation-bar span:nth-child(4) { width: 10%; background: #d69022; }
+
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 13px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .09em; }
@@ -202,7 +231,84 @@
       @page { size: 13.333in 7.5in; margin: 0; }
       body { overflow: visible; background: white; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
       .deck { width: auto; height: auto; }
-      .slide, .slide:not(.active) { position: relative; display: grid; width: 13.333in; height: 7.5in; page-break-after: always; overflow: hidden; }
+      .slide, .slide:not(.active) {
+        position: relative;
+        display: grid;
+        width: 13.333in;
+        height: 7.5in;
+        padding: 46px 66px 40px;
+        page-break-after: always;
+        overflow: hidden;
+      }
+      .content { width: 100%; max-width: none; }
+      .slide.active { animation: none; }
+      .slide:not(:first-child) .content { align-self: start; margin-top: 24px; }
+      .topline { top: 18px; left: 66px; right: 66px; font-size: 9px; }
+      .brand { font-size: 16px; }
+      h1 { font-size: 68px; margin-bottom: 18px; }
+      h2 { font-size: 42px; margin-bottom: 18px; }
+      h3 { font-size: 17px; margin-bottom: 7px; }
+      p, li { font-size: 13px; line-height: 1.35; }
+      .lead { font-size: 20px; line-height: 1.3; }
+      .eyebrow { margin-bottom: 11px; font-size: 10px; }
+      .fine { font-size: 9px; line-height: 1.3; }
+      .grid { gap: 12px; }
+      .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      .split { grid-template-columns: 1.05fr .95fr; }
+      .card { min-height: 0; padding: 15px; border-radius: 15px; }
+      .card .kicker { font-size: 9px; }
+      .metric { padding: 13px 0; }
+      .metric strong { font-size: 40px; }
+      .metric span { margin-top: 6px; font-size: 11px; }
+      .flow { gap: 7px; margin-top: 22px; }
+      .flow { grid-template-columns: repeat(5, 1fr); }
+      .flow-item { padding: 13px 11px; border-radius: 12px; }
+      .flow-item:not(:last-child)::after { content: "→"; right: -8px; top: 42%; bottom: auto; }
+      .flow-item span { font-size: 10px; }
+      .checklist li { padding: 6px 0 6px 24px; }
+      .callout { padding: 16px; border-radius: 15px; }
+      .quote { padding-left: 17px; font-size: 21px; line-height: 1.2; }
+      table { font-size: 11px; }
+      th, td { padding: 8px 9px; }
+      th { font-size: 9px; }
+      td strong { font-size: 13px; }
+      .pill { padding: 4px 8px; font-size: 9px; }
+      .bar { grid-template-columns: 92px 1fr 58px; margin: 9px 0; font-size: 10px; }
+      .bar-track { height: 9px; }
+      .ask { margin-bottom: 14px; font-size: 86px; }
+      .use { gap: 10px; margin-top: 22px; }
+      .use { grid-template-columns: repeat(4, 1fr); }
+      .use strong { font-size: 23px; }
+      .use span { font-size: 10px; }
+      .source-list li { margin-bottom: 8px; font-size: 10px; }
+      .source-list { columns: 2; }
+      .image-pipeline { gap: 7px; margin-top: 18px; }
+      .image-stage { min-height: 82px; padding: 12px; border-radius: 12px; }
+      .image-stage span { font-size: 10px; }
+      .visual-score { margin-top: 14px; padding: 12px 15px; }
+      .visual-score strong { font-size: 32px; }
+      .visual-score span { font-size: 11px; }
+      .conversion-chart { margin-top: 17px; }
+      .conversion-step { padding: 10px; border-radius: 12px; }
+      .conversion-step strong { font-size: 20px; }
+      .conversion-step span { font-size: 9px; }
+      .funnel-chart { gap: 9px; }
+      .funnel-row { grid-template-columns: 105px 1fr 90px; gap: 10px; }
+      .funnel-shape { height: 31px; padding: 0 12px; border-radius: 9px; }
+      .funnel-row > span { font-size: 10px; }
+      .funnel-row b { font-size: 13px; }
+      .allocation-bar { height: 20px; margin-top: 18px; }
+      .solution-slide h2, .product-slide h2 { margin-bottom: 10px; }
+      .solution-slide .flow { margin-top: 12px; }
+      .solution-slide .flow-item { padding: 9px 10px; }
+      .solution-slide .grid { margin-top: 10px !important; }
+      .solution-slide .callout { padding: 11px 14px; }
+      .product-slide p, .product-slide li { font-size: 11px; line-height: 1.25; }
+      .product-slide .checklist li { padding-top: 4px; padding-bottom: 4px; }
+      [style*="margin-top:38px"], [style*="margin-top:36px"], [style*="margin-top:34px"], [style*="margin-top:32px"] { margin-top: 20px !important; }
+      [style*="margin-top:30px"], [style*="margin-top:28px"], [style*="margin-top:24px"] { margin-top: 16px !important; }
       .nav, .progress { display: none; }
     }
   </style>
@@ -244,12 +350,11 @@
           <div class="metric"><strong>25 212</strong><span>заявок подано самозанятыми</span></div>
           <div class="metric"><strong>6,6 млн</strong><span>субъектов МСП в реестре ФНС летом 2026 года</span></div>
         </div>
-        <p class="lead" style="margin-top:38px">ФИПС, Госуслуги и МСП.РФ уже решают транзакцию. Коммерческая ценность смещается в подготовку, снижение риска и сопровождение решения.</p>
-        <p class="fine">Источники: Роспатент, годовой отчёт 2025; ФНС, Единый реестр МСП, 10.07.2026.</p>
+        <p class="lead" style="margin-top:38px">Подача становится инфраструктурой. Коммерческая ценность смещается в подготовку и снижение риска.</p>
       </div>
     </section>
 
-    <section class="slide">
+    <section class="slide solution-slide">
       <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>03 · Решение</span></div>
       <div class="content">
         <p class="eyebrow">Один понятный маршрут</p>
@@ -262,13 +367,13 @@
           <div class="flow-item"><b>Стоимость</b><span>пошлины по этапам и следующий шаг</span></div>
         </div>
         <div class="grid grid-2" style="margin-top:28px">
-          <div class="callout"><h3>Простой случай</h3><p>Пользователь продолжает самостоятельно и платит только за цифровую подготовку.</p></div>
-          <div class="callout teal"><h3>Сложный случай</h3><p>Дело без потери контекста передаётся администратору и назначенному юристу.</p></div>
+          <div class="callout"><h3>Простой случай</h3><p>Самостоятельный путь и цифровая подготовка.</p></div>
+          <div class="callout teal"><h3>Сложный случай</h3><p>Передача администратору и юристу с полным контекстом.</p></div>
         </div>
       </div>
     </section>
 
-    <section class="slide">
+    <section class="slide product-slide">
       <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>04 · Продукт сегодня</span></div>
       <div class="content split">
         <div>
@@ -277,6 +382,7 @@
           <ul class="checklist">
             <li>клиентский и профессиональный интерфейсы</li>
             <li>OCR и извлечение реквизитов</li>
+            <li>изобразительные и комбинированные знаки</li>
             <li>GigaChat / OpenAI-compatible / mock</li>
             <li>RAG и правовой анализ с источниками</li>
             <li>поиск регистраций и опубликованных заявок</li>
@@ -286,13 +392,29 @@
         </div>
         <div>
           <div class="card" style="min-height:auto"><p class="kicker">Не выдаём за готовое</p><ul class="checklist"><li class="pending">официальная электронная подача</li><li class="pending">оплата и квитанции</li><li class="pending">статусы после подачи</li><li class="pending">production-инфраструктура</li><li class="pending">полный пакет сложных заявок</li></ul></div>
-          <p class="fine" style="margin-top:15px">704 backend-теста собираются; TypeScript и production-сборка проходят. До продаж требуется юридическая калибровка и P0-hardening.</p>
+          <p class="fine" style="margin-top:15px">717 backend-тестов проходят; TypeScript и production-сборка проходят. До продаж требуется юридическая калибровка и P0-hardening.</p>
         </div>
       </div>
     </section>
 
+    <section class="slide">
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>05 · Изображения</span></div>
+      <div class="content">
+        <p class="eyebrow">Не только словесные знаки</p>
+        <h2>Работаем с изображениями и комбинированными обозначениями</h2>
+        <div class="image-pipeline">
+          <div class="image-stage"><b>Загрузка</b><span>PNG/JPEG, безопасное хранение и предпросмотр</span></div>
+          <div class="image-stage"><b>Распознавание</b><span>OCR находит словесный элемент внутри логотипа</span></div>
+          <div class="image-stage"><b>Поиск</b><span>классы МКТУ и текст формируют приоритетную выдачу</span></div>
+          <div class="image-stage"><b>Сравнение</b><span>форма, яркостная структура, цвета и пропорции</span></div>
+          <div class="image-stage"><b>Решение</b><span>пара изображений, процент сходства и ручная проверка</span></div>
+        </div>
+        <div class="visual-score"><strong>0–100%</strong><span><b>Предварительное визуальное ранжирование уже работает.</b><br>Для чисто изобразительного знака полный обратный поиск по всему реестру остаётся следующим этапом развития.</span></div>
+      </div>
+    </section>
+
     <section class="slide dark">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>05 · Ценность</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>06 · Ценность</span></div>
       <div class="content">
         <p class="eyebrow">Наш клин на рынке</p>
         <h2>Мы не продаём AI.<br>Мы продаём <span class="accent-text">понятное решение</span>.</h2>
@@ -306,22 +428,24 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>06 · Рынок</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>07 · Рынок</span></div>
       <div class="content">
         <p class="eyebrow">Bottom-up оценка</p>
         <h2>Достаточный рынок для вертикального бизнеса</h2>
-        <div class="grid grid-3">
-          <div class="card"><p class="kicker">TAM процесса</p><h3 style="font-size:42px">135 тыс.</h3><p>российских заявок в год</p></div>
-          <div class="card"><p class="kicker">SAM</p><h3 style="font-size:42px">34–47 тыс.</h3><p>простых self-service случаев — гипотеза 25–35%</p></div>
-          <div class="card"><p class="kicker">Денежный SAM</p><h3 style="font-size:42px">300–610 млн ₽</h3><p>при чеке 8,9–12,9 тыс. ₽</p></div>
+        <div class="split" style="grid-template-columns:1.2fr .8fr">
+          <div class="funnel-chart">
+            <div class="funnel-row"><span>TAM процесса</span><div class="funnel-shape">Российский поток</div><b>135 тыс.</b></div>
+            <div class="funnel-row"><span>SAM</span><div class="funnel-shape">Self-service</div><b>34–47 тыс.</b></div>
+            <div class="funnel-row"><span>SOM 24 мес.</span><div class="funnel-shape">Цель</div><b>1–2,5 тыс.</b></div>
+          </div>
+          <div class="callout"><p class="kicker" style="color:#61d9d1">Денежный SAM</p><h3 style="font-size:42px">300–610 млн ₽</h3><p>в год при среднем чеке 8,9–12,9 тыс. ₽.</p></div>
         </div>
-        <div class="callout" style="margin-top:24px"><h3>SOM на 24 месяца</h3><p><strong style="font-size:30px">1 000–2 500 оплат в год</strong> · менее 2% российского потока · реалистичная цель для проверки повторяемой экономики.</p></div>
         <p class="fine" style="margin-top:12px">SAM и SOM — управленческие гипотезы. Они должны быть подтверждены платным пилотом.</p>
       </div>
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>07 · Монетизация</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>08 · Монетизация</span></div>
       <div class="content">
         <p class="eyebrow">Land and expand</p>
         <h2>Низкий порог входа, человек — по необходимости</h2>
@@ -340,7 +464,7 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>08 · Go-to-market</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>09 · Go-to-market</span></div>
       <div class="content">
         <p class="eyebrow">Не начинать с дорогого performance</p>
         <h2>Полезный бесплатный инструмент<br>становится первой частью продукта</h2>
@@ -349,12 +473,17 @@
           <div class="card"><p class="kicker">B2B2C</p><h3>Партнёрства</h3><p>Бухгалтеры, регистраторы ООО, брендинговые агентства, маркетплейс-экосистемы.</p></div>
           <div class="card"><p class="kicker">Paid acquisition</p><h3>Только после конверсии</h3><p>Узкие запросы в Яндексе; целевой CAC ≤ 2 500 ₽ и валовая прибыль / CAC ≥ 3.</p></div>
         </div>
-        <div style="margin-top:24px"><span class="pill">проверить товарный знак</span><span class="pill">подобрать МКТУ</span><span class="pill">рассчитать пошлину</span><span class="pill">бренд для маркетплейса</span></div>
+        <div class="conversion-chart">
+          <div class="conversion-step"><strong>1 000</strong><span>целевых визитов</span></div><div class="conversion-arrow">→</div>
+          <div class="conversion-step"><strong>200</strong><span>сохранённых проверок</span></div><div class="conversion-arrow">→</div>
+          <div class="conversion-step"><strong>50</strong><span>готовых проектов</span></div><div class="conversion-arrow">→</div>
+          <div class="conversion-step"><strong>≥10</strong><span>оплат · гипотеза пилота</span></div>
+        </div>
       </div>
     </section>
 
     <section class="slide dark">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>09 · Конкуренты</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>10 · Конкуренты</span></div>
       <div class="content">
         <p class="eyebrow">Не конкурировать с государством в кнопке «Подать»</p>
         <h2>Свободная позиция — между формой и бюро</h2>
@@ -373,7 +502,7 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>10 · Экономика</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>11 · Экономика</span></div>
       <div class="content split">
         <div>
           <p class="eyebrow">Целевая unit-экономика</p>
@@ -388,7 +517,7 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>11 · Validation plan</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>12 · Validation plan</span></div>
       <div class="content">
         <p class="eyebrow">90 дней до решения</p>
         <h2>Инвестируем по мере снятия рисков</h2>
@@ -401,7 +530,7 @@
     </section>
 
     <section class="slide dark">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>12 · Защита позиции</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>13 · Защита позиции</span></div>
       <div class="content">
         <p class="eyebrow">Moat строится не вокруг модели</p>
         <h2>Каждое проверенное дело<br>улучшает следующий результат</h2>
@@ -416,7 +545,7 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>13 · Риски</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>14 · Риски</span></div>
       <div class="content">
         <p class="eyebrow">Честная оценка</p>
         <h2>Главные риски известны и проверяемы</h2>
@@ -431,11 +560,12 @@
     </section>
 
     <section class="slide dark">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>14 · Запрос</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>15 · Запрос</span></div>
       <div class="content">
         <p class="eyebrow">Рабочая гипотеза pre-seed</p>
         <div class="ask">12 млн ₽</div>
         <p class="lead">12 месяцев runway, чтобы пройти платный пилот, вывести продукт в production и доказать канал привлечения.</p>
+        <div class="allocation-bar" aria-label="Распределение инвестиций"><span></span><span></span><span></span><span></span></div>
         <div class="use">
           <div><strong>45%</strong><span>продукт и инфраструктура</span></div>
           <div><strong>25%</strong><span>маркетинг и партнёрства</span></div>
@@ -447,7 +577,7 @@
     </section>
 
     <section class="slide">
-      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>15 · Следующий шаг</span></div>
+      <div class="topline"><span class="brand"><span class="brand-r">Р</span>егистр</span><span>16 · Следующий шаг</span></div>
       <div class="content">
         <p class="eyebrow">Инвестиционная логика</p>
         <h2>Не строить больше,<br>пока не доказана оплата</h2>

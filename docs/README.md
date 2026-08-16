@@ -15,6 +15,7 @@
 | [`target-audience-and-positioning.md`](target-audience-and-positioning.md) | основная аудитория и продуктовая модель |
 | [`business-go-to-market.md`](business-go-to-market.md) | коммерческий потенциал, тарифы, продвижение и экономика |
 | [`investor-pitch.html`](investor-pitch.html) | интерактивная инвестиционная презентация, печать в PDF |
+| [`investor-pitch.pdf`](investor-pitch.pdf) | готовая инвестиционная презентация 16:9 без обрезания слайдов |
 | [`ux-audit-2026-08.md`](ux-audit-2026-08.md) | изменения клиентского и профессионального интерфейсов |
 | [`roadmap.md`](roadmap.md) | выполненное, оставшиеся задачи и внешние зависимости |
 | [`frontend-audit.md`](frontend-audit.md) | переход от mock-интерфейса к реальному API |

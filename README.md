@@ -161,6 +161,7 @@ cd frontend && npm run check && npm run build
 | [`docs/current-state.md`](docs/current-state.md) | единая точка правды о текущем продукте |
 | [`docs/business-go-to-market.md`](docs/business-go-to-market.md) | бизнес-модель и план продвижения |
 | [`docs/investor-pitch.html`](docs/investor-pitch.html) | интерактивная презентация для инвесторов |
+| [`docs/investor-pitch.pdf`](docs/investor-pitch.pdf) | готовая PDF-презентация для инвесторов |
 | [`docs/document-extraction.md`](docs/document-extraction.md) | пайплайн, паттерны, маппинг, политика LLM |
 | [`docs/demo-deployment.md`](docs/demo-deployment.md) | запуск, туннель, чек-лист безопасности |
 | [`docs/rospatent-open-api.md`](docs/rospatent-open-api.md) | публичный и официальный поиск, поля реестра в анализе и контекст для LLM |

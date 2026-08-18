@@ -20,6 +20,7 @@
 | [`investor-pitch.pdf`](investor-pitch.pdf) | готовая инвестиционная презентация 16:9 без обрезания слайдов |
 | [`ux-audit-2026-08.md`](ux-audit-2026-08.md) | изменения клиентского и профессионального интерфейсов |
 | [`office-action-responses.md`](office-action-responses.md) | уведомления Роспатента, доказательства и безопасный LLM-черновик ответа |
+| [`professional-client-parity.md`](professional-client-parity.md) | паритет возможностей клиента и юриста, оставшиеся разрывы и приоритеты |
 | [`release-notes-2026-08-17.md`](release-notes-2026-08-17.md) | реализация замечаний по итогам клиентского тестирования |
 | [`roadmap.md`](roadmap.md) | выполненное, оставшиеся задачи и внешние зависимости |
 | [`frontend-audit.md`](frontend-audit.md) | переход от mock-интерфейса к реальному API |

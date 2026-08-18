@@ -25,6 +25,7 @@ import {
 import { LegalAnalysisTab } from "@/components/legal-analysis-tab";
 import { ApplicationDraftTab } from "@/components/application-draft-tab";
 import { ProfessionalFeeEstimate } from "@/components/professional-fee-estimate";
+import { OfficeActionResponse } from "@/components/office-action-response";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -39,6 +40,7 @@ import {
   History, CheckCircle2, XCircle, AlertTriangle, ChevronDown,
   Send, Download, Eye, Clock, ArrowRight, Gavel, Upload, ClipboardList, Loader2, AlertCircle,
   Check, X, Minus, ClipboardCheck, FileSignature,
+  MessageSquareText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -531,7 +533,7 @@ export default function ApplicationDetailPage() {
       </div>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-2 overflow-hidden rounded-lg border border-border bg-card p-0 lg:grid-cols-6">
+        <TabsList className="grid h-auto w-full grid-cols-2 overflow-hidden rounded-lg border border-border bg-card p-0 md:grid-cols-4 xl:grid-cols-7">
           {[
             { value: "overview", label: "Карточка", hint: "сведения", icon: Info },
             { value: "data", label: "Данные", hint: "документы и сверка", icon: ClipboardCheck },
@@ -539,6 +541,7 @@ export default function ApplicationDetailPage() {
             { value: "application", label: "Заявка", hint: "черновик заявления", icon: FileSignature },
             { value: "fees", label: "Пошлины", hint: "расчёт к оплате", icon: FileCheck },
             { value: "documents", label: "Документы", hint: "готовые файлы", icon: Download },
+            { value: "response", label: "Ответ", hint: "переписка с Роспатентом", icon: MessageSquareText },
           ].map(tab => (
             <TabsTrigger
               key={tab.value}
@@ -603,6 +606,9 @@ export default function ApplicationDetailPage() {
               <h2 className="mb-3 text-xl font-semibold">Готовые документы</h2>
               <DocumentPackagesTab appId={appId} />
             </section>
+          </TabsContent>
+          <TabsContent value="response">
+            <OfficeActionResponse appId={appId} audience="professional" />
           </TabsContent>
         </div>
       </Tabs>

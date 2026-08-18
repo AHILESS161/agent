@@ -77,6 +77,7 @@ export interface Application {
   markType: MarkType;
   markName: string;
   markText: string;
+  markImageFileId: string;
   colorsClaimed: string;
   transliteration: string;
   translation: string;

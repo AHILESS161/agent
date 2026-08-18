@@ -11,8 +11,11 @@
 
 from __future__ import annotations
 
+import inspect
 from functools import lru_cache
 from typing import Any
+
+_llm_provider_instance: Any | None = None
 
 
 def _get_llm_provider() -> Any:
@@ -22,6 +25,10 @@ def _get_llm_provider() -> Any:
     LLMProviderFactory, поэтому переменные окружения всегда побеждают
     значения по умолчанию внутри фабрики.
     """
+    global _llm_provider_instance
+    if _llm_provider_instance is not None:
+        return _llm_provider_instance
+
     from app.core.config import settings
     from app.infrastructure.llm.factory import LLMProviderFactory
 
@@ -35,9 +42,30 @@ def _get_llm_provider() -> Any:
         "auth_url": getattr(settings, "GIGACHAT_AUTH_URL", None),
         "verify_ssl": getattr(settings, "GIGACHAT_VERIFY_SSL", True),
         "ca_bundle_file": getattr(settings, "GIGACHAT_CA_BUNDLE_FILE", None),
+        "min_request_interval": getattr(
+            settings, "GIGACHAT_MIN_REQUEST_INTERVAL", 1.25
+        ),
+        "max_retries": getattr(settings, "GIGACHAT_MAX_RETRIES", 5),
     }
     # Убираем None, чтобы PROVIDER_DEFAULTS фабрики могли их подставить.
-    return LLMProviderFactory.create({k: v for k, v in config.items() if v is not None})
+    _llm_provider_instance = LLMProviderFactory.create(
+        {k: v for k, v in config.items() if v is not None}
+    )
+    return _llm_provider_instance
+
+
+async def close_llm_provider() -> None:
+    """Закрыть общий HTTP-клиент и сбросить OAuth-кэш при остановке."""
+    global _llm_provider_instance
+    provider = _llm_provider_instance
+    _llm_provider_instance = None
+    if provider is None:
+        return
+    close = getattr(provider, "aclose", None)
+    if callable(close):
+        result = close()
+        if inspect.isawaitable(result):
+            await result
 
 
 @lru_cache(maxsize=1)
@@ -90,6 +118,7 @@ __all__ = [
     "_get_llm_provider",
     "_get_prompt_registry",
     "_get_registry_provider",
+    "close_llm_provider",
     "get_llm_provider",
     "get_prompt_registry",
     "get_registry_provider",

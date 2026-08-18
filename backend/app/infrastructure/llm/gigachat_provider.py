@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import ssl
 import time
 from typing import Any
@@ -12,6 +13,10 @@ from uuid import uuid4
 import httpx
 
 from app.infrastructure.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
+
+
+class GigaChatStructuredOutputError(ValueError):
+    """GigaChat returned an incomplete or invalid structured response."""
 
 
 class GigaChatProvider(BaseLLMProvider):
@@ -25,6 +30,8 @@ class GigaChatProvider(BaseLLMProvider):
         auth_url: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
         scope: str = "GIGACHAT_API_PERS",
         timeout: float = 120.0,
+        min_request_interval: float = 1.25,
+        max_retries: int = 5,
         verify_ssl: bool = True,
         ca_bundle_file: str | None = None,
         default_system_prompt: str | None = None,
@@ -40,6 +47,8 @@ class GigaChatProvider(BaseLLMProvider):
         self.auth_url = auth_url
         self.scope = scope
         self.timeout = timeout
+        self.min_request_interval = max(0.0, min_request_interval)
+        self.max_retries = max(1, max_retries)
         self.default_system_prompt = default_system_prompt
         ssl_verification: bool | ssl.SSLContext = verify_ssl
         if verify_ssl and ca_bundle_file:
@@ -57,6 +66,11 @@ class GigaChatProvider(BaseLLMProvider):
         self._access_token: str | None = None
         self._access_token_expires_at = 0.0
         self._token_lock = asyncio.Lock()
+        # Полный анализ делает несколько вызовов модели. Все они проходят через
+        # одну очередь, чтобы параллельные HTTP-запросы пользователя не создавали
+        # всплеск, на который GigaChat отвечает 429.
+        self._request_lock = asyncio.Lock()
+        self._last_request_at = 0.0
 
     def _build_messages(self, messages: list[LLMMessage]) -> list[dict[str, str]]:
         result: list[dict[str, str]] = []
@@ -111,48 +125,65 @@ class GigaChatProvider(BaseLLMProvider):
             return self._access_token
 
     async def _post(self, payload: dict[str, Any]) -> dict[str, Any]:
-        max_attempts = 3
         force_token_refresh = False
         token_was_refreshed = False
         retryable_statuses = {429, 500, 502, 503, 504}
 
-        for attempt in range(max_attempts):
-            try:
-                token = await self._get_access_token(force_refresh=force_token_refresh)
-                force_token_refresh = False
-                response = await self._client.post(
-                    "/chat/completions",
-                    headers={
-                        "Accept": "application/json",
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-            except (httpx.TimeoutException, httpx.NetworkError):
-                if attempt == max_attempts - 1:
-                    raise
-                await asyncio.sleep(0.5 * (2**attempt))
-                continue
-
-            if response.status_code == 401 and not token_was_refreshed:
-                self._access_token = None
-                self._access_token_expires_at = 0
-                force_token_refresh = True
-                token_was_refreshed = True
-                continue
-
-            if response.status_code in retryable_statuses and attempt < max_attempts - 1:
-                retry_after = response.headers.get("Retry-After")
+        async with self._request_lock:
+            for attempt in range(self.max_retries):
+                since_last = time.monotonic() - self._last_request_at
+                if since_last < self.min_request_interval:
+                    await asyncio.sleep(self.min_request_interval - since_last)
                 try:
-                    delay = min(float(retry_after), 5.0) if retry_after else 0.5 * (2**attempt)
-                except ValueError:
-                    delay = 0.5 * (2**attempt)
-                await asyncio.sleep(delay)
-                continue
+                    token = await self._get_access_token(
+                        force_refresh=force_token_refresh
+                    )
+                    force_token_refresh = False
+                    response = await self._client.post(
+                        "/chat/completions",
+                        headers={
+                            "Accept": "application/json",
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    self._last_request_at = time.monotonic()
+                except (httpx.TimeoutException, httpx.NetworkError):
+                    if attempt == self.max_retries - 1:
+                        raise
+                    await asyncio.sleep(min(2.0 * (2**attempt), 30.0))
+                    continue
 
-            response.raise_for_status()
-            return response.json()
+                if response.status_code == 401 and not token_was_refreshed:
+                    self._access_token = None
+                    self._access_token_expires_at = 0
+                    force_token_refresh = True
+                    token_was_refreshed = True
+                    continue
+
+                if (
+                    response.status_code in retryable_statuses
+                    and attempt < self.max_retries - 1
+                ):
+                    retry_after = response.headers.get("Retry-After")
+                    fallback = min(2.0 * (2**attempt), 30.0)
+                    try:
+                        delay = (
+                            min(max(float(retry_after), 0.0), 30.0)
+                            if retry_after
+                            else fallback
+                        )
+                    except ValueError:
+                        delay = fallback
+                    # Небольшой jitter не даёт нескольким процессам повторить
+                    # запрос одновременно после одного и того же лимита.
+                    jitter = random.uniform(0.0, min(0.5, delay * 0.2))
+                    await asyncio.sleep(delay + jitter)
+                    continue
+
+                response.raise_for_status()
+                return response.json()
 
         raise RuntimeError("GigaChat request failed after retries")
 
@@ -162,6 +193,17 @@ class GigaChatProvider(BaseLLMProvider):
             return str(raw["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError("Unexpected GigaChat response shape") from exc
+
+    @staticmethod
+    def _ensure_not_truncated(raw: dict[str, Any]) -> None:
+        try:
+            finish_reason = str(raw["choices"][0].get("finish_reason") or "").casefold()
+        except (KeyError, IndexError, TypeError):
+            return
+        if finish_reason in {"length", "max_tokens", "token_limit"}:
+            raise GigaChatStructuredOutputError(
+                "GigaChat truncated the structured response at the token limit"
+            )
 
     @staticmethod
     def _parse_json(text: str) -> dict[str, Any]:
@@ -209,7 +251,7 @@ class GigaChatProvider(BaseLLMProvider):
             "model": self.model,
             "messages": self._build_messages(messages),
             "temperature": temperature,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "response_format": {
                 "type": "json_schema",
                 "schema": output_schema,
@@ -234,7 +276,13 @@ class GigaChatProvider(BaseLLMProvider):
                 *payload["messages"],
             ]
             raw = await self._post(payload)
-        return self._parse_json(self._extract_text(raw))
+        try:
+            self._ensure_not_truncated(raw)
+            return self._parse_json(self._extract_text(raw))
+        except (json.JSONDecodeError, GigaChatStructuredOutputError) as exc:
+            raise GigaChatStructuredOutputError(
+                "GigaChat returned incomplete structured JSON"
+            ) from exc
 
     async def aclose(self) -> None:
         if self._owns_client:

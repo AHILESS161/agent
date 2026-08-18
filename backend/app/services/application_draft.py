@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 
 import docx
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.shared import Inches, Pt
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,10 +32,12 @@ from app.infrastructure.database.models import (
     DraftStatus,
     ExtractedField,
     FieldStatus,
+    SourceDocument,
     TrademarkApplicationDraft,
 )
 from app.document_processing.mappers.field_mapping import FieldMappingEngine
 from app.services.class_analysis import load_class_context
+from app.services.file_storage import read_file
 
 logger = get_logger(__name__)
 
@@ -396,6 +400,19 @@ def _write_into(cell, lines: list[str]) -> bool:
     return True
 
 
+def _check_box(table, row_index: int, cell_index: int) -> bool:
+    """Поставить однозначную отметку X в квадрате официального бланка."""
+    if row_index >= len(table.rows) or cell_index >= len(table.rows[row_index].cells):
+        return False
+    cell = table.rows[row_index].cells[cell_index]
+    paragraph = cell.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = paragraph.add_run("X")
+    run.bold = True
+    run.font.size = Pt(9)
+    return True
+
+
 def _fill_goods_table(table, classes: list[tuple[str, str]]) -> bool:
     """Заполнить перечень товаров: класс и наименование (код 511)."""
     header = None
@@ -423,8 +440,132 @@ def _fill_goods_table(table, classes: list[tuple[str, str]]) -> bool:
     return written > 0
 
 
+def _fill_mark_block(
+    cell,
+    *,
+    mark_text: str,
+    description_lines: list[str],
+) -> None:
+    """Заполнить объединённый блок (540)/(571) двумя реальными колонками.
+
+    В официальном шаблоне левая и правая области обозначены табуляцией внутри
+    одной объединённой ячейки. Добавление обычного абзаца помещает содержимое
+    ниже обеих подписей. Вложенная таблица без служебного текста сохраняет
+    требуемую геометрию: обозначение слева, описание справа.
+    """
+    block = cell.add_table(rows=1, cols=2)
+    block.autofit = False
+    left, right = block.rows[0].cells
+    left.width = Inches(3.45)
+    right.width = Inches(3.45)
+
+    left_paragraph = left.paragraphs[0]
+    left_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    if mark_text:
+        run = left_paragraph.add_run(mark_text)
+        run.font.size = Pt(30)
+        run.bold = True
+
+    right_paragraph = right.paragraphs[0]
+    if description_lines:
+        right_paragraph.add_run("\n".join(description_lines))
+
+
+def _fill_mark_image_box(
+    table,
+    mark_image: bytes,
+    *,
+    application_id: int | None,
+) -> None:
+    """Вставить изображение в специальный квадрат под полем (540)."""
+    # В официальном шаблоне это строка с фиксированной высотой 3856 twips,
+    # а квадрат занимает колонки 1–15. Он не имеет текстового якоря, поэтому
+    # адресуется по устойчивой структуре самой утверждённой формы.
+    if len(table.rows) <= 19 or len(table.rows[19].cells) <= 1:
+        return
+    box = table.rows[19].cells[1]
+    paragraph = box.paragraphs[0]
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(mark_image)) as image:
+            ratio = image.width / max(image.height, 1)
+        max_width, max_height = 2.65, 2.42
+        width = min(max_width, max_height * ratio)
+        height = width / max(ratio, 0.01)
+        paragraph.add_run().add_picture(
+            io.BytesIO(mark_image),
+            width=Inches(width),
+            height=Inches(height),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Не удалось вставить изображение обозначения в квадрат DOCX",
+            application_id=application_id,
+            error=str(exc),
+        )
+
+
+def _safe_claimed_colors(claimed: str | None, mark_image: bytes | None) -> str | None:
+    """Не переносить в заявление цвет, противоречащий самому изображению."""
+    if not claimed or not mark_image:
+        return claimed
+    try:
+        from PIL import Image, ImageStat
+
+        with Image.open(io.BytesIO(mark_image)).convert("RGB") as image:
+            image.thumbnail((256, 256))
+            saturation = ImageStat.Stat(
+                image.convert("HSV").getchannel("S")
+            ).mean[0]
+        if saturation < 12:
+            normalized = claimed.casefold()
+            neutral = ("черн", "бел", "сер", "black", "white", "gray", "grey")
+            if not any(token in normalized for token in neutral):
+                logger.warning(
+                    "Заявленный цвет не перенесён: изображение фактически монохромное",
+                    claimed=claimed,
+                )
+                return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Не удалось проверить соответствие заявленного цвета", error=str(exc))
+    return claimed
+
+
+async def load_mark_image_content(
+    session: AsyncSession, application: TrademarkApplicationDraft
+) -> bytes | None:
+    """Загрузить активное изображение обозначения из защищённого хранилища."""
+    raw_id = application.mark_image_file_id
+    if not raw_id or not str(raw_id).isdigit():
+        return None
+    document = (
+        await session.execute(
+            select(SourceDocument).where(
+                SourceDocument.id == int(raw_id),
+                SourceDocument.application_id == application.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        return None
+    try:
+        return read_file(document.stored_path)
+    except (FileNotFoundError, ValueError):
+        logger.warning(
+            "Активное изображение обозначения не найдено в хранилище",
+            application_id=application.id,
+            document_id=document.id,
+        )
+        return None
+
+
 def render_docx(
-    content: DraftContent, application: TrademarkApplicationDraft
+    content: DraftContent,
+    application: TrademarkApplicationDraft,
+    mark_image: bytes | None = None,
+    include_goods_attachment: bool = False,
 ) -> bytes:
     """Заполнить официальный бланк заявки подтверждёнными данными.
 
@@ -445,6 +586,18 @@ def render_docx(
         raise FileNotFoundError(f"Бланк заявления не найден: {TEMPLATE_PATH}")
 
     document = docx.Document(str(TEMPLATE_PATH))
+
+    # Служебная надпись «Приложение № 1…» относится к публикации формы,
+    # а не к заполняемому заявлению. В выгружаемый пользователем документ она
+    # и содержимое колонтитулов не попадают.
+    for paragraph in list(document.paragraphs):
+        if paragraph.text.strip().startswith("Приложение № 1"):
+            paragraph._element.getparent().remove(paragraph._element)
+    for section in document.sections:
+        for container in (section.header, section.footer):
+            for paragraph in container.paragraphs:
+                paragraph.clear()
+
     table = document.tables[0]
 
     values = {item.field_id: item.value for item in content.filled}
@@ -485,29 +638,58 @@ def render_docx(
     mark_text = values.get("application.mark.text") or (
         application.mark_text or application.mark_name or ""
     )
-    if mark_text:
-        anchor = _find_cell(table, "(540)")
-        if anchor is not None:
-            _write_into(anchor, [mark_text])
-
     description_lines = [
         values.get("application.mark.description", ""),
         f"Транслитерация: {values['application.mark.transliteration']}" if values.get("application.mark.transliteration") else "",
         f"Перевод: {values['application.mark.translation']}" if values.get("application.mark.translation") else "",
     ]
-    _write_into(_find_cell(table, "(571)"), [line for line in description_lines if line])
+    anchor = _find_cell(table, "(540)")
+    if anchor is not None:
+        _fill_mark_block(
+            anchor,
+            mark_text=mark_text,
+            description_lines=[line for line in description_lines if line],
+        )
+    if mark_image:
+        _fill_mark_image_box(
+            table,
+            mark_image,
+            application_id=getattr(application, "id", None),
+        )
 
-    for marker, field_id in (
-        ("(591)", "application.mark.colors"),
-        ("(550)", "application.mark.kind"),
-    ):
-        value = values.get(field_id)
-        if value:
-            _write_into(_find_cell(table, marker), [value])
+    colors = _safe_claimed_colors(values.get("application.mark.colors"), mark_image)
+    if colors:
+        _write_into(_find_cell(table, "(591)"), [colors])
+        _check_box(table, 23, 1)
+
+    # Вид знака известен системе и отмечается в самом квадрате формы, а не
+    # повторяется свободным текстом под заголовком (550).
+    mark_type = (
+        application.mark_type.value
+        if getattr(application, "mark_type", None) is not None
+        else None
+    )
+    mark_type_boxes = {
+        "word": (26, 15),
+        "figurative": (26, 26),
+        "3d": (30, 1),
+        "sound": (30, 23),
+        "color": (32, 1),
+        "combined": (34, 1),
+        "other": (36, 1),
+    }
+    if mark_type in mark_type_boxes:
+        _check_box(table, *mark_type_boxes[mark_type])
+
+    # Загруженное обозначение входит в состав электронной заявки.
+    if mark_image or mark_type in {"sound", "3d"}:
+        _check_box(table, 90, 1)
 
     # --- (511) перечень товаров и услуг ---
     if content.classes:
         _fill_goods_table(table, content.classes)
+        if include_goods_attachment:
+            _check_box(table, 93, 1)
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -521,7 +703,11 @@ async def create_draft(
 ) -> ApplicationDraft:
     """Сформировать новую версию чернового заявления."""
     content = await collect_draft_content(session, application)
-    payload = render_docx(content, application)
+    payload = render_docx(
+        content,
+        application,
+        mark_image=await load_mark_image_content(session, application),
+    )
 
     from app.services import file_storage
 

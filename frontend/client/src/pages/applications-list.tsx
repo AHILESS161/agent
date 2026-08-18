@@ -3,9 +3,8 @@ import { Link, useSearch } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useCases } from "@/lib/use-cases";
 import {
-  STATUS_LABELS, STATUS_COLORS, MARK_TYPE_LABELS,
-  PRIORITY_LABELS, PRIORITY_COLORS,
-  type ApplicationStatus, type CasePriority,
+  STATUS_LABELS, STATUS_COLORS,
+  type ApplicationStatus,
 } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -132,9 +131,7 @@ export default function ApplicationsListPage() {
                 <TableHead className="w-16">№</TableHead>
                 <TableHead>Обозначение</TableHead>
                 <TableHead className="hidden md:table-cell">Клиент</TableHead>
-                <TableHead className="hidden lg:table-cell">Тип</TableHead>
                 <TableHead>Статус</TableHead>
-                <TableHead>Приоритет</TableHead>
                 <TableHead className="hidden md:table-cell">Исполнитель</TableHead>
                 <TableHead className="hidden lg:table-cell">Обновлено</TableHead>
                 <TableHead className="w-20"></TableHead>
@@ -156,20 +153,10 @@ export default function ApplicationsListPage() {
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {client?.shortName}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
-                      {MARK_TYPE_LABELS[app.markType]}
-                    </TableCell>
                     <TableCell>
                       <Badge className={cn("text-[10px] whitespace-nowrap", STATUS_COLORS[app.status])}>
                         {STATUS_LABELS[app.status]}
                       </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <PrioritySelect
-                        appId={app.id}
-                        value={app.priority}
-                        onChanged={reload}
-                      />
                     </TableCell>
                     <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
                       {app.assigneeId ? `Пользователь #${app.assigneeId}` : "—"}
@@ -203,7 +190,7 @@ export default function ApplicationsListPage() {
               })}
               {filtered.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                     Заявки не найдены
                   </TableCell>
                 </TableRow>
@@ -216,61 +203,6 @@ export default function ApplicationsListPage() {
   );
 }
 
-/**
- * Срочность дела: меняется прямо в списке.
- *
- * Это срочность в работе поверенного, а не конвенционный приоритет
- * заявки по статье 1495 — тот определяется датой подачи.
- */
-function PrioritySelect({
-  appId,
-  value,
-  onChanged,
-}: {
-  appId: number;
-  value: CasePriority;
-  onChanged: () => void;
-}) {
-  const { toast } = useToast();
-  const [isSaving, setIsSaving] = useState(false);
-
-  const change = async (next: string) => {
-    setIsSaving(true);
-    try {
-      await api.put(`/applications/${appId}`, { priority: next });
-      onChanged();
-    } catch (e) {
-      toast({
-        title: "Не удалось изменить приоритет",
-        description: e instanceof ApiError ? e.message : "Неизвестная ошибка",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <Select value={value} onValueChange={(v) => void change(v)} disabled={isSaving}>
-      <SelectTrigger
-        className={cn(
-          "h-7 w-[104px] text-[11px] border-0 focus:ring-0",
-          PRIORITY_COLORS[value],
-        )}
-        data-testid={`priority-${appId}`}
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {(Object.keys(PRIORITY_LABELS) as CasePriority[]).map((key) => (
-          <SelectItem key={key} value={key} className="text-xs">
-            {PRIORITY_LABELS[key]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 
 /**
  * Удаление дела.

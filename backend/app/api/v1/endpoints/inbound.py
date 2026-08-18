@@ -81,6 +81,7 @@ class IntakeRequest(BaseModel):
     mark_type: Optional[MarkType] = None
     business_description: Optional[str] = Field(default=None, max_length=5000)
     goods_services: Optional[str] = Field(default=None, max_length=5000)
+    description_of_mark: Optional[str] = Field(default=None, max_length=5000)
 
 
 def _require_write_access(user: User) -> None:
@@ -188,6 +189,7 @@ async def create_intake(
                 mark_type=payload.mark_type,
                 business_description=payload.business_description,
                 goods_services=payload.goods_services,
+                description_of_mark=payload.description_of_mark,
                 user_id=current_user.id,
             )
             created_case_id = application.id

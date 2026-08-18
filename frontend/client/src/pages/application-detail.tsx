@@ -19,7 +19,6 @@ import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
   DocumentPackagesTab,
-  StatusHistoryTab,
 } from "@/components/case-tabs";
 // Классы МКТУ, абсолютные основания и конфликты — части одной проверки,
 // поэтому живут в общей вкладке, а не в трёх разных.
@@ -532,12 +531,14 @@ export default function ApplicationDetailPage() {
       </div>
 
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-4 overflow-hidden rounded-lg border border-border bg-card p-0">
+        <TabsList className="grid h-auto w-full grid-cols-2 overflow-hidden rounded-lg border border-border bg-card p-0 lg:grid-cols-6">
           {[
             { value: "overview", label: "Карточка", hint: "сведения", icon: Info },
             { value: "data", label: "Данные", hint: "документы и сверка", icon: ClipboardCheck },
             { value: "review", label: "Экспертиза", hint: "классы и риски", icon: Shield },
-            { value: "result", label: "Результат", hint: "заявление и файлы", icon: FileSignature },
+            { value: "application", label: "Заявка", hint: "черновик заявления", icon: FileSignature },
+            { value: "fees", label: "Пошлины", hint: "расчёт к оплате", icon: FileCheck },
+            { value: "documents", label: "Документы", hint: "готовые файлы", icon: Download },
           ].map(tab => (
             <TabsTrigger
               key={tab.value}
@@ -583,24 +584,24 @@ export default function ApplicationDetailPage() {
             </section>
           </TabsContent>
           <TabsContent value="review"><LegalAnalysisTab appId={appId} /></TabsContent>
-          <TabsContent value="result" className="space-y-8">
+          <TabsContent value="application" className="space-y-8">
             <section>
               <h2 className="mb-3 text-xl font-semibold">Заявление</h2>
               <ApplicationDraftTab appId={appId} />
             </section>
+          </TabsContent>
+          <TabsContent value="fees">
             {(user?.role === "admin" || user?.role === "lawyer") && (
-              <section className="border-t border-border pt-7">
+              <section>
                 <h2 className="mb-3 text-xl font-semibold">Пошлины</h2>
                 <ProfessionalFeeEstimate appId={appId} />
               </section>
             )}
-            <section className="border-t border-border pt-7">
+          </TabsContent>
+          <TabsContent value="documents">
+            <section>
               <h2 className="mb-3 text-xl font-semibold">Готовые документы</h2>
               <DocumentPackagesTab appId={appId} />
-            </section>
-            <section className="border-t border-border pt-7">
-              <h2 className="mb-3 text-xl font-semibold">История дела</h2>
-              <StatusHistoryTab appId={appId} />
             </section>
           </TabsContent>
         </div>

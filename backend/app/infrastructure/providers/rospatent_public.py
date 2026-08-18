@@ -18,6 +18,7 @@ import asyncio
 import json
 import time
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -33,6 +34,7 @@ from app.infrastructure.providers.rospatent import _as_text, _parse_classes
 _ENGINE_SEPARATOR = "\x1e"
 _NAMESPACE = "/search"
 _EVENT_PREFIX = f"42{_NAMESPACE},"
+_MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
 class RospatentPublicProtocolError(RuntimeError):
@@ -382,6 +384,31 @@ class RospatentPublicSearchProvider:
 
     async def get_record(self, record_id: str) -> RegistryRecord | None:
         return self._record_cache.get(record_id)
+
+    async def fetch_image(self, image_url: str) -> tuple[bytes, str]:
+        """Скачать публичное изображение карточки без произвольного SSRF."""
+        absolute = urljoin(self.base_url, image_url)
+        base_host = (urlparse(self.base_url).hostname or "").casefold()
+        parsed = urlparse(absolute)
+        host = (parsed.hostname or "").casefold()
+        if parsed.scheme != "https" or not (
+            host == base_host or host.endswith(".rospatent.gov.ru")
+        ):
+            raise ValueError("Недоверенный адрес изображения реестра")
+        async with self._client.stream(
+            "GET",
+            absolute,
+            headers={"Accept": "image/png,image/jpeg"},
+            follow_redirects=False,
+        ) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "").split(";", 1)[0]
+            content = bytearray()
+            async for chunk in response.aiter_bytes():
+                content.extend(chunk)
+                if len(content) > _MAX_IMAGE_BYTES:
+                    raise ValueError("Изображение реестра превышает 8 МБ")
+        return bytes(content), content_type
 
     async def submit_application(self, payload: SubmissionPayload) -> SubmissionResult:
         del payload

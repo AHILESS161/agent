@@ -15,13 +15,13 @@ export function BrandWordmark({
   return (
     <span className={cn("brand-wordmark inline-flex items-baseline", className)} aria-label="Регистр">
       <svg
-        viewBox="0 0 48 64"
+        viewBox="0 0 54 64"
         aria-hidden="true"
-        className="mr-[0.02em] h-[0.94em] w-[0.7em] self-center overflow-visible"
+        className="mr-[0.01em] h-[0.94em] w-[0.76em] self-center overflow-visible"
         fill="currentColor"
       >
         <path d="M1 2h11v60H1z" />
-        <path d="M14.5 2H29c11.4 0 18 6.2 18 17 0 10.8-6.6 17-18 17H14.5V26h14c5 0 7.5-2.3 7.5-7s-2.5-7-7.5-7h-14z" />
+        <path d="M18 2h14c12.2 0 20 6.4 20 17s-7.8 17-20 17H18V26h13.5c5.7 0 8.5-2.3 8.5-7s-2.8-7-8.5-7H18z" />
       </svg>
       <span>егист</span>
       <span className={accentEnd ? "text-primary" : undefined}>р</span>

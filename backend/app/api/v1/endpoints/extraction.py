@@ -717,7 +717,12 @@ async def field_reconciliation(
     # Поля, заведённые специалистом сверх маппинга, тоже должны быть
     # видны в сверке — иначе созданное вручную значение исчезает
     # из интерфейса сразу после сохранения.
-    mapped_paths = {row.registry_field for row in rows if row.registry_field}
+    mapped_paths = {
+        path
+        for row in rows
+        for path in (row.registry_field, row.case_field, row.application_field)
+        if path
+    }
     custom = [
         f
         for f in stored

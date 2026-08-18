@@ -7,7 +7,10 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
+from PIL import Image
 
 from app.infrastructure.database.models import (
     ApplicationStatus,
@@ -17,12 +20,17 @@ from app.infrastructure.database.models import (
     MarkType,
     NiceClassSuggestion,
     RiskFinding,
+    SourceDocument,
+    DocumentKind,
+    DocumentProcessingStatus,
+    SourceChannel,
     TrademarkApplicationDraft,
 )
 from app.infrastructure.llm.mock_provider import MockLLMProvider
 from app.infrastructure.providers.base import RegistryRecord
 from app.agents.legal.registry_context import RegistryContextReview
 from app.services.conflict_search import run_conflict_search
+from app.services import file_storage
 from sqlalchemy import select
 
 
@@ -100,6 +108,75 @@ async def _findings(session, assessment_id: int) -> list[RiskFinding]:
         .scalars()
         .all()
     )
+
+
+async def test_figurative_mark_does_not_fake_visual_registry_search(
+    async_session, application
+):
+    application.mark_type = MarkType.figurative
+    application.mark_text = ""
+    application.mark_image_file_id = "42"
+    registry = StubRegistry("ПОХОЖИЙ", [25])
+
+    assessment = await run_conflict_search(
+        async_session,
+        application,
+        registry_provider=registry,
+        llm_provider=None,
+    )
+
+    assert assessment.is_inconclusive is True
+    assert "визуальный поиск" in assessment.inconclusive_reason.lower()
+    assert registry.queries == 0
+
+
+async def test_combined_mark_compares_registry_card_image(
+    async_session, application, tmp_path, monkeypatch
+):
+    stream = io.BytesIO()
+    Image.new("RGB", (100, 60), "teal").save(stream, format="PNG")
+    content = stream.getvalue()
+    monkeypatch.setattr(file_storage.settings, "FILE_STORAGE_PATH", str(tmp_path / "images"))
+    stored = file_storage.save_upload(content, "applicant.png")
+    document = SourceDocument(
+        application_id=application.id,
+        client_id=application.client_id,
+        original_filename="applicant.png",
+        stored_path=stored.stored_path,
+        detected_mime="image/png",
+        file_size=len(content),
+        sha256=stored.sha256,
+        document_kind=DocumentKind.mark_image,
+        kind_requires_confirmation=False,
+        processing_status=DocumentProcessingStatus.extracted,
+        source_channel=SourceChannel.manual_upload,
+    )
+    async_session.add(document)
+    await async_session.flush()
+    application.mark_type = MarkType.combined
+    application.mark_image_file_id = str(document.id)
+
+    class ImageRegistry(StubRegistry):
+        def __init__(self):
+            super().__init__("ЯБЛОКО", [25])
+            self._record.image_url = "https://searchplatform.rospatent.gov.ru/logo.png"
+
+        async def fetch_image(self, image_url):
+            assert image_url.endswith("logo.png")
+            return content, "image/png"
+
+    assessment = await run_conflict_search(
+        async_session,
+        application,
+        registry_provider=ImageRegistry(),
+        llm_provider=None,
+    )
+    findings = await _findings(async_session, assessment.id)
+
+    comparison = findings[0].verification_json["image_comparison"]
+    assert comparison["score"] == 1.0
+    assert assessment.verification_json["visual_records_compared"] == 1
+    assert assessment.is_inconclusive is False
 
 
 class TestCrossLanguageConflict:

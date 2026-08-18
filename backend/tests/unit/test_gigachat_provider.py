@@ -8,7 +8,10 @@ import pytest
 
 from app.infrastructure.llm.base import LLMMessage
 from app.infrastructure.llm.factory import LLMProviderFactory
-from app.infrastructure.llm.gigachat_provider import GigaChatProvider
+from app.infrastructure.llm.gigachat_provider import (
+    GigaChatProvider,
+    GigaChatStructuredOutputError,
+)
 
 
 def _response(request: httpx.Request, status: int, data: dict) -> httpx.Response:
@@ -55,7 +58,8 @@ async def test_generate_gets_and_reuses_oauth_token() -> None:
         transport=httpx.MockTransport(chat_handler),
     )
     provider = GigaChatProvider(
-        authorization_key="auth-key", client=chat_client, auth_client=auth_client
+        authorization_key="auth-key", client=chat_client, auth_client=auth_client,
+        min_request_interval=0,
     )
     try:
         first = await provider.generate([LLMMessage(role="user", content="Тест")])
@@ -98,7 +102,8 @@ async def test_structured_generation_uses_json_schema() -> None:
         transport=httpx.MockTransport(chat_handler),
     )
     provider = GigaChatProvider(
-        authorization_key="auth-key", client=chat_client, auth_client=auth_client
+        authorization_key="auth-key", client=chat_client, auth_client=auth_client,
+        min_request_interval=0,
     )
     schema = {"type": "object", "properties": {"risk": {"type": "string"}}}
     try:
@@ -146,7 +151,8 @@ async def test_generate_retries_transient_timeout() -> None:
         transport=httpx.MockTransport(chat_handler),
     )
     provider = GigaChatProvider(
-        authorization_key="auth-key", client=chat_client, auth_client=auth_client
+        authorization_key="auth-key", client=chat_client, auth_client=auth_client,
+        min_request_interval=0,
     )
     try:
         result = await provider.generate([LLMMessage(role="user", content="test")])
@@ -156,6 +162,102 @@ async def test_generate_retries_transient_timeout() -> None:
 
     assert result.content == "ok"
     assert chat_calls == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_generate_retries_429_using_retry_after(monkeypatch) -> None:
+    chat_calls = 0
+    delays: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        delays.append(delay)
+
+    monkeypatch.setattr(
+        "app.infrastructure.llm.gigachat_provider.asyncio.sleep", fake_sleep
+    )
+
+    def auth_handler(request: httpx.Request) -> httpx.Response:
+        return _response(
+            request, 200,
+            {"access_token": "token", "expires_at": int(time.time() + 1800)},
+        )
+
+    def chat_handler(request: httpx.Request) -> httpx.Response:
+        nonlocal chat_calls
+        chat_calls += 1
+        if chat_calls == 1:
+            return httpx.Response(
+                429,
+                json={"message": "too many requests"},
+                headers={"Retry-After": "7"},
+                request=request,
+            )
+        return _response(
+            request, 200,
+            {"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]},
+        )
+
+    auth_client = httpx.AsyncClient(transport=httpx.MockTransport(auth_handler))
+    chat_client = httpx.AsyncClient(
+        base_url="https://api.giga.chat/v1",
+        transport=httpx.MockTransport(chat_handler),
+    )
+    provider = GigaChatProvider(
+        authorization_key="auth-key", client=chat_client, auth_client=auth_client,
+        min_request_interval=0,
+    )
+    try:
+        result = await provider.generate([LLMMessage(role="user", content="test")])
+    finally:
+        await chat_client.aclose()
+        await auth_client.aclose()
+
+    assert result.content == "ok"
+    assert chat_calls == 2
+    assert delays and delays[0] >= 7
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_structured_generation_reports_truncated_json() -> None:
+    def auth_handler(request: httpx.Request) -> httpx.Response:
+        return _response(
+            request, 200,
+            {"access_token": "token", "expires_at": int(time.time() + 1800)},
+        )
+
+    def chat_handler(request: httpx.Request) -> httpx.Response:
+        return _response(
+            request, 200,
+            {
+                "choices": [
+                    {
+                        "message": {"content": '{"risk":"hi'},
+                        "finish_reason": "length",
+                    }
+                ]
+            },
+        )
+
+    auth_client = httpx.AsyncClient(transport=httpx.MockTransport(auth_handler))
+    chat_client = httpx.AsyncClient(
+        base_url="https://api.giga.chat/v1",
+        transport=httpx.MockTransport(chat_handler),
+    )
+    provider = GigaChatProvider(
+        authorization_key="auth-key", client=chat_client, auth_client=auth_client,
+        min_request_interval=0,
+    )
+    try:
+        with pytest.raises(GigaChatStructuredOutputError, match="incomplete"):
+            await provider.generate_structured(
+                [LLMMessage(role="user", content="test")],
+                {"type": "object"},
+            )
+    finally:
+        await chat_client.aclose()
+        await auth_client.aclose()
 
 
 @pytest.mark.unit

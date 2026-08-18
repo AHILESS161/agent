@@ -25,6 +25,7 @@ from app.infrastructure.database.models import (
     AnalysisCitation,
     AnalysisKind,
     CitationStatus,
+    MarkType,
     RiskAssessment,
     RiskFinding,
     RiskLevel,
@@ -56,6 +57,8 @@ class AnalysisContext:
     goods_services: str | None
     classes: str | None
     classes_confirmed: bool = False
+    colors: str | None = None
+    image_attached: bool = False
 
     @classmethod
     def from_application(
@@ -70,6 +73,8 @@ class AnalysisContext:
             goods_services=application.goods_services_raw,
             classes=class_context.describe() if class_context else None,
             classes_confirmed=bool(class_context and class_context.is_confirmed),
+            colors=application.colors_claimed,
+            image_attached=bool(application.mark_image_file_id),
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -79,6 +84,8 @@ class AnalysisContext:
             "description": self.description,
             "goods_services": self.goods_services,
             "classes": self.classes,
+            "colors": self.colors,
+            "image_attached": self.image_attached,
         }
 
     @property
@@ -122,13 +129,26 @@ async def run_absolute_grounds_analysis(
     # --- недостаточно данных дела ---
     if not context.is_sufficient:
         assessment.is_inconclusive = True
-        assessment.inconclusive_reason = (
-            "Недостаточно подтверждённых данных для вывода."
-        )
-        assessment.missing_data_json = ["Заявляемое обозначение не указано"]
-        assessment.limitations_json = [
-            "Анализ не проводился: в деле отсутствует обозначение"
-        ]
+        if application.mark_type is MarkType.figurative and context.image_attached:
+            assessment.inconclusive_reason = (
+                "Изображение загружено, но текстовая языковая модель не может "
+                "надёжно оценить его графические элементы."
+            )
+            assessment.missing_data_json = [
+                "Визуальное описание и проверка изображения специалистом"
+            ]
+            assessment.limitations_json = [
+                "Файл обработан и сохранён, однако само изображение не передаётся "
+                "текстовой модели как доказательство охраноспособности."
+            ]
+        else:
+            assessment.inconclusive_reason = (
+                "Недостаточно подтверждённых данных для вывода."
+            )
+            assessment.missing_data_json = ["Заявляемое обозначение не указано"]
+            assessment.limitations_json = [
+                "Анализ не проводился: в деле отсутствует обозначение"
+            ]
         session.add(assessment)
         await session.flush()
         return assessment
@@ -185,6 +205,12 @@ async def run_absolute_grounds_analysis(
     # вход, и это должно быть видно в отчёте, а не подразумеваться.
     limitations = list(result.limitations)
     missing = list(result.missing_data)
+    if application.mark_type in {MarkType.figurative, MarkType.combined}:
+        limitations.append(
+            "Изображение обозначения принято и его словесные элементы распознаны OCR, "
+            "но текстовая модель оценивает только подтверждённый текст, описание и "
+            "заявленные цвета, а не графику как таковую."
+        )
     if not class_context.has_any:
         limitations.append(
             "Классы МКТУ по делу не определены. Различительная способность "

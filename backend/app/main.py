@@ -39,6 +39,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.error("Схема БД не готова", error=schema_error)
     yield
     logger.info("Shutting down")
+    from app.api.dependencies import close_llm_provider
+
+    await close_llm_provider()
     await close_db()
 
 

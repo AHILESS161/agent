@@ -12,7 +12,7 @@
  * юрист подтверждает каждое поле перед попаданием в заявление.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +46,7 @@ import {
   Upload,
 } from "lucide-react";
 
-const ACCEPTED = ".pdf,.docx,.txt,.png,.jpg,.jpeg";
+const ACCEPTED = ".pdf,.docx,.txt,.png,.jpg,.jpeg,.mp3,.wav";
 
 type ClientType = "company" | "sole_proprietor" | "individual";
 
@@ -120,6 +120,7 @@ export default function IntakePage() {
   const [markType, setMarkType] = useState<MarkType>("word");
   const [businessDescription, setBusinessDescription] = useState("");
   const [goodsServices, setGoodsServices] = useState("");
+  const [markDescription, setMarkDescription] = useState("");
 
   // Обращение (необязательное).
   const [sender, setSender] = useState("");
@@ -130,6 +131,42 @@ export default function IntakePage() {
   // Ключ идемпотентности на одно заполнение формы: повторный клик
   // не создаст дубль, а следующее дело получит новый ключ.
   const [submissionKey] = useState(() => crypto.randomUUID());
+
+  const draftKey = `registr:intake-draft:${user?.id ?? "guest"}`;
+  const saveDraft = (showNotice = false) => {
+    localStorage.setItem(draftKey, JSON.stringify({
+      useExistingClient, clientId, clientType, name, inn, ogrn, address,
+      markName, markType, businessDescription, goodsServices, markDescription, sender, bodyText,
+    }));
+    if (showNotice) toast({ title: "Черновик сохранён", description: "Текстовые поля сохранятся в этом браузере. Файлы после перезагрузки нужно выбрать заново." });
+  };
+
+  useEffect(() => {
+    const raw = localStorage.getItem(draftKey);
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      setUseExistingClient(Boolean(draft.useExistingClient));
+      setClientId(draft.clientId || "");
+      setClientType(draft.clientType || "company");
+      setName(draft.name || "");
+      setInn(draft.inn || "");
+      setOgrn(draft.ogrn || "");
+      setAddress(draft.address || "");
+      setMarkName(draft.markName || "");
+      setMarkType(draft.markType || "word");
+      setBusinessDescription(draft.businessDescription || "");
+      setGoodsServices(draft.goodsServices || "");
+      setMarkDescription(draft.markDescription || "");
+      setSender(draft.sender || "");
+      setBodyText(draft.bodyText || "");
+    } catch { localStorage.removeItem(draftKey); }
+  }, [draftKey]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => saveDraft(false), 500);
+    return () => window.clearTimeout(timer);
+  }, [useExistingClient, clientId, clientType, name, inn, ogrn, address, markName, markType, businessDescription, goodsServices, markDescription, sender, bodyText]);
 
   const clients = Object.values(cases.data?.clientsById ?? {});
   const clientPortal = user?.role === "client";
@@ -145,6 +182,17 @@ export default function IntakePage() {
   };
 
   const readDocument = async (file: File) => {
+    const extension = file.name.toLowerCase().split(".").pop();
+    if (extension === "mp3" || extension === "wav") {
+      setAttached((prev) => [...prev, { file, documentKind: "mark_audio", autofilled: false, warning: null }]);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    if ((extension === "png" || extension === "jpg" || extension === "jpeg") && (markType === "figurative" || markType === "combined")) {
+      setAttached((prev) => [...prev, { file, documentKind: "mark_image", autofilled: false, warning: null }]);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
     setIsReading(true);
     try {
       const result = await api.upload<PrefillResponse>(
@@ -210,6 +258,10 @@ export default function IntakePage() {
     setAttached((prev) => prev.filter((_, i) => i !== index));
   };
 
+  const setAttachmentKind = (index: number, documentKind: string) => {
+    setAttached((prev) => prev.map((item, i) => i === index ? { ...item, documentKind } : item));
+  };
+
   const validate = (): string | null => {
     if (useExistingClient) {
       if (!clientId) return "Выберите клиента или заполните данные нового.";
@@ -254,6 +306,7 @@ export default function IntakePage() {
         mark_type: markType,
         business_description: businessDescription.trim() || null,
         goods_services: goodsServices.trim() || null,
+        description_of_mark: markDescription.trim() || null,
       });
 
       const newCaseId = event.created_case_id ?? event.target_case_id;
@@ -266,14 +319,21 @@ export default function IntakePage() {
       let uploaded = 0;
       for (const item of attached) {
         try {
-          const doc = await api.upload<{ id: number; processing_status: string }>(
-            `/applications/${newCaseId}/source-documents`,
+          const endpoint = item.documentKind === "mark_image"
+            ? `/applications/${newCaseId}/mark-image`
+            : `/applications/${newCaseId}/source-documents`;
+          const doc = await api.upload<{ id?: number; document_id?: number; processing_status?: string }>(
+            endpoint,
             item.file,
           );
           uploaded += 1;
           // Извлечение имеет смысл только для распознанных выписок.
-          if (doc.processing_status === "extracted") {
-            await api.post(`/source-documents/${doc.id}/extract`).catch(() => {
+          const documentId = doc.id ?? doc.document_id;
+          if (documentId && item.documentKind === "passport") {
+            await api.put(`/source-documents/${documentId}/kind`, { document_kind: "passport" });
+          }
+          if (documentId && doc.processing_status === "extracted" && item.documentKind !== "mark_image") {
+            await api.post(`/source-documents/${documentId}/extract`).catch(() => {
               // Для типов без правил извлечения — это норма, не ошибка.
             });
           }
@@ -283,6 +343,7 @@ export default function IntakePage() {
       }
 
       setCaseId(newCaseId);
+      localStorage.removeItem(draftKey);
       toast({
         title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
         description: uploaded
@@ -346,7 +407,7 @@ export default function IntakePage() {
       <ProjectStep
         n={1}
         title="Добавьте документы"
-        description="Необязательно. Выписка ЕГРЮЛ или ЕГРИП заполнит реквизиты заявителя."
+        description="Необязательно. Добавьте выписку ЕГРЮЛ/ЕГРИП, паспорт физлица, изображение или аудиозапись знака."
       >
           <div
             className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary/35 bg-primary/[0.035] px-6 py-9 text-center transition-colors hover:border-primary/60 hover:bg-primary/[0.055]"
@@ -369,7 +430,7 @@ export default function IntakePage() {
               {isReading ? "Читаем документ…" : "Выбрать документ"}
             </Button>
             <p className="text-sm text-muted-foreground">
-              PDF, DOCX, TXT, PNG или JPG · до 25 МБ
+              PDF, DOCX, TXT, PNG, JPG, MP3 или WAV · до 25 МБ
             </p>
           </div>
           <input
@@ -403,6 +464,12 @@ export default function IntakePage() {
                         <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
                         {item.warning}
                       </p>
+                    )}
+                    {/\.(png|jpe?g)$/i.test(item.file.name) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setAttachmentKind(index, "mark_image")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind === "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это изображение знака</button>
+                        <button type="button" onClick={() => setAttachmentKind(index, clientType === "individual" ? "passport" : "other")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind !== "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это документ заявителя</button>
+                      </div>
                     )}
                   </div>
                   {item.autofilled && (
@@ -632,6 +699,21 @@ export default function IntakePage() {
             />
           </Field>
 
+          <Field label="Описание обозначения" hint="Описание попадёт в черновик заявления; его можно отредактировать позже.">
+            <div className="mb-2 flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => {
+              const text = markName.trim();
+              const generated = markType === "word"
+                ? `Словесное обозначение «${text}», выполненное стандартными символами русского алфавита.`
+                : markType === "combined"
+                  ? `Комбинированное обозначение содержит словесный элемент «${text}» и графические элементы, приведённые в приложенном изображении.`
+                  : markType === "sound"
+                    ? "Звуковое обозначение. Последовательность звуков приведена в приложенной аудиозаписи; текстовое описание звучания требует проверки."
+                    : `Обозначение «${text}»; существенные элементы приведены в приложенных материалах.`;
+              setMarkDescription(generated);
+            }}><Sparkles className="h-4 w-4" /> Сформировать автоматически</Button></div>
+            <Textarea value={markDescription} onChange={(event) => setMarkDescription(event.target.value)} rows={3} placeholder="Система предложит описание, которое можно уточнить" />
+          </Field>
+
           <Separator className="my-2" />
 
           {!clientPortal && <details className="rounded-lg border border-border px-4 py-3 text-sm">
@@ -661,7 +743,10 @@ export default function IntakePage() {
       </ProjectStep>
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
-        <p className="hidden text-sm text-muted-foreground sm:block">После создания откроется карточка проекта</p>
+        <div className="flex items-center gap-3">
+          <Button variant="outline" onClick={() => saveDraft(true)} disabled={isSaving}>Сохранить черновик</Button>
+          <p className="hidden text-sm text-muted-foreground xl:block">Поля также сохраняются автоматически</p>
+        </div>
         <Button size="lg" onClick={() => void submit()} disabled={isSaving} data-testid="button-create-case">
           {isSaving ? (
             <Loader2 className="w-4 h-4 mr-2 animate-spin" />

@@ -32,6 +32,7 @@ from app.infrastructure.database.models import (
     AnalysisKind,
     ConflictSearchJob,
     ConflictSearchResult,
+    MarkType,
     RiskAssessment,
     RiskFinding,
     RiskLevel,
@@ -50,10 +51,15 @@ from app.agents.legal.semantic_similarity import (
     describe,
     needs_semantic_check,
 )
-from app.document_processing.similarity import assess, with_semantic
+from app.document_processing.similarity import assess, with_image_visual, with_semantic
 from app.infrastructure.providers.base import SearchQuery
 from app.infrastructure.rag.store import knowledge_base_version
 from app.services.class_analysis import load_class_context
+from app.services.visual_mark_similarity import (
+    MAX_VISUAL_IMAGE_CHECKS,
+    applicant_image,
+    compare_registry_candidates,
+)
 
 logger = get_logger(__name__)
 
@@ -67,7 +73,7 @@ MIN_SIMILARITY = 0.3
 # идёт по парам, и без ограничения большая выдача обошлась бы дорого;
 # пары берутся в порядке убывания однородности товаров — там смысловое
 # совпадение опаснее всего.
-MAX_SEMANTIC_CHECKS = 12
+MAX_SEMANTIC_CHECKS = 4
 
 # Контрольный поиск вне выбранных классов нужен для общеизвестных знаков и
 # случаев однородности товаров из разных классов. Он выполняется только после
@@ -225,6 +231,23 @@ async def run_conflict_search(
         classes_confirmed=class_context.is_confirmed,
         created_by_user_id=user_id,
     )
+
+    if application.mark_type is MarkType.figurative:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "Загруженное изображение сохранено, но визуальный поиск сходных "
+            "изображений по реестру пока не поддерживается."
+        )
+        assessment.missing_data_json = [
+            "Результат специализированного визуального поиска по реестру"
+        ]
+        assessment.limitations_json = [
+            "Текстовый поиск нельзя использовать как замену сравнению графических "
+            "элементов изобразительного знака. Требуется отдельная проверка изображения."
+        ]
+        session.add(assessment)
+        await session.flush()
+        return assessment
 
     if not mark_text:
         assessment.is_inconclusive = True
@@ -385,6 +408,36 @@ async def run_conflict_search(
     scored, semantic_verdicts = await _apply_semantic_layer(
         scored, mark_text, llm_provider, goods_known=bool(classes)
     )
+    visual_comparisons: dict[str, Any] = {}
+    visual_errors: list[str] = []
+    if application.mark_type is MarkType.combined and application.mark_image_file_id:
+        source_image = await applicant_image(session, application)
+        if source_image:
+            visual_candidates = [
+                record
+                for record, _ in sorted(
+                    scored,
+                    key=lambda pair: (
+                        _class_priority(pair[0], classes),
+                        pair[0].status in {"registered", "pending"},
+                        pair[1].mark_similarity,
+                    ),
+                    reverse=True,
+                )
+                if record.image_url
+            ][:MAX_VISUAL_IMAGE_CHECKS]
+            visual_comparisons, visual_errors = await compare_registry_candidates(
+                source_image, visual_candidates, registry_provider
+            )
+            scored = [
+                (
+                    record,
+                    with_image_visual(similarity, visual_comparisons[record.record_id].score)
+                    if record.record_id in visual_comparisons
+                    else similarity,
+                )
+                for record, similarity in scored
+            ]
     translated = [variant for variant in variants if variant.kind == "translation"]
     if semantic_verdicts or translated:
         assessment.llm_used = True
@@ -431,6 +484,12 @@ async def run_conflict_search(
             "translation": application.translation,
             "colors_claimed": application.colors_claimed,
             "priority_claim": application.priority_claim,
+            "visual_records_compared": len(visual_comparisons),
+            "visual_comparison_method": (
+                "dhash+ahash+color_histogram+aspect_ratio"
+                if visual_comparisons
+                else None
+            ),
         },
     )
     if registry_review is not None:
@@ -553,10 +612,24 @@ async def run_conflict_search(
             "Модель не изменяет рассчитанные системой коэффициенты, но может поднять "
             "карточку на ручную проверку при наличии независимых признаков."
         )
+    if application.mark_type is MarkType.combined and visual_comparisons:
+        limitations.append(
+            "Для комбинированного знака изображения доступных карточек были "
+            "предварительно сопоставлены по форме, яркостной структуре, цветам и "
+            "соотношению сторон. Это первичное ранжирование, а не заключение эксперта."
+        )
+    elif application.mark_type is MarkType.combined:
+        limitations.append(
+            "Для комбинированного знака выполнен поиск по подтверждённым словесным "
+            "элементам. Сходство графики и общего визуального впечатления по изображениям "
+            "реестра автоматически не проверялось."
+        )
 
     missing: list[str] = []
     if not classes:
         missing.append("Перечень классов МКТУ")
+    if application.mark_type is MarkType.combined and not visual_comparisons:
+        missing.append("Изображения карточек для визуального сопоставления")
 
     assessment.limitations_json = limitations
     assessment.missing_data_json = missing
@@ -594,13 +667,24 @@ async def run_conflict_search(
             "пп.40–45 Правил № 482; п.6 ст.1483 ГК РФ; "
             "п.162 Постановления Пленума ВС РФ № 10"
         ),
+        "visual_records_available": sum(bool(record.image_url) for record in records.values()),
+        "visual_records_compared": len(visual_comparisons),
+        "visual_comparison_errors": visual_errors[:10],
+        "visual_comparison_method": (
+            "dhash+ahash+color_histogram+aspect_ratio"
+            if visual_comparisons
+            else None
+        ),
     }
 
     if not conflicts:
         assessment.overall_risk = None
         assessment.is_inconclusive = True
         assessment.inconclusive_reason = (
-            "В доступной выдаче не выявлены карточки, достаточные для вывода о риске."
+            "По словесным элементам не найдено достаточных совпадений; визуальное "
+            "сходство комбинированного знака не проверено."
+            if application.mark_type is MarkType.combined and not visual_comparisons
+            else "В доступной выдаче не выявлены карточки, достаточные для вывода о риске."
         )
         assessment.summary = (
             f"По обозначению «{mark_text}» значимые совпадения в доступной выдаче "
@@ -620,6 +704,15 @@ async def run_conflict_search(
     )
     if registry_review is not None and registry_review.summary:
         assessment.summary += f" Комментарий LLM: {registry_review.summary}"
+    if application.mark_type is MarkType.combined and not visual_comparisons:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "Текстовая часть комбинированного знака проверена; визуальное сходство "
+            "изображений требует отдельной проверки."
+        )
+        assessment.missing_data_json = list(assessment.missing_data_json or []) + [
+            "Результат специализированного визуального поиска по реестру"
+        ]
     session.add(assessment)
     await session.flush()
 
@@ -632,6 +725,12 @@ async def run_conflict_search(
             f"{similarity.visual:.2f}, смысловое {similarity.semantic:.2f}, "
             f"однородность товаров {similarity.goods:.2f}."
         )
+        image_comparison = visual_comparisons.get(record.record_id)
+        if image_comparison is not None:
+            explanation += (
+                " Предварительное сходство самих изображений "
+                f"{image_comparison.score:.2f}; результат требует визуальной проверки."
+            )
         if similarity.reasons:
             explanation += " Основания: " + "; ".join(similarity.reasons) + "."
 
@@ -724,7 +823,11 @@ async def run_conflict_search(
                         "registration_number": record.registration_number,
                         "filing_date": record.filing_date,
                         "registration_date": record.registration_date,
+                        "image_url": record.image_url,
                     },
+                    "image_comparison": (
+                        image_comparison.as_dict() if image_comparison else None
+                    ),
                     "found_by": found_by.get(record.record_id, "original"),
                     "search_scope": search_scope.get(record.record_id),
                     "similarity": similarity.as_dict(),

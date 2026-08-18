@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.infrastructure.database.models import UserRole
+from app.infrastructure.database.models import MarkType, UserRole
 from app.services import file_storage
 from tests.conftest import login_headers
 
@@ -235,7 +235,7 @@ class TestExportRequiresApproval:
 class TestOfficialBlank:
     """Черновик — это заполненный бланк Роспатента, а не своя форма."""
 
-    def _render(self, filled, classes=None):
+    def _render(self, filled, classes=None, mark_image=None, mark_type="word", include_goods_attachment=False):
         from app.services.application_draft import (
             DraftContent,
             FilledField,
@@ -253,8 +253,15 @@ class TestOfficialBlank:
             id = 1
             mark_text = "ЗВЁЗДОЧКА"
             mark_name = "ЗВЁЗДОЧКА"
+            mark_type = None
 
-        return render_docx(content, _App())
+        _App.mark_type = MarkType(mark_type)
+        return render_docx(
+            content,
+            _App(),
+            mark_image=mark_image,
+            include_goods_attachment=include_goods_attachment,
+        )
 
     def _document(self, payload):
         import io
@@ -293,8 +300,84 @@ class TestOfficialBlank:
 
     def test_mark_lands_in_field_540(self):
         payload = self._render({"application.mark.text": "ЗВЁЗДОЧКА"})
-        text = self._document(payload).tables[0].rows[17].cells[2].text
+        document = self._document(payload)
+        cell = document.tables[0].rows[17].cells[2]
+        assert len(cell.tables) == 1
+        mark_cell = cell.tables[0].rows[0].cells[0]
+        text = mark_cell.text
         assert "ЗВЁЗДОЧКА" in text
+        mark_runs = [
+            run
+            for paragraph in mark_cell.paragraphs
+            for run in paragraph.runs
+            if "ЗВЁЗДОЧКА" in run.text
+        ]
+        assert mark_runs
+        assert any(run.bold and run.font.size and run.font.size.pt >= 30 for run in mark_runs)
+
+    def test_image_lands_in_dedicated_box_below_540_and_description_in_571(self):
+        import io
+
+        from PIL import Image
+
+        image = io.BytesIO()
+        Image.new("RGB", (800, 400), "navy").save(image, format="JPEG")
+        payload = self._render(
+            {"application.mark.description": "Комбинированное обозначение"},
+            mark_image=image.getvalue(),
+        )
+        document = self._document(payload)
+        outer = document.tables[0].rows[17].cells[2]
+        left, right = outer.tables[0].rows[0].cells
+        image_box = document.tables[0].rows[19].cells[1]
+        assert not left._tc.xpath(".//w:drawing")
+        assert image_box._tc.xpath(".//w:drawing")
+        assert "Комбинированное обозначение" in right.text
+        assert not right._tc.xpath(".//w:drawing")
+
+    def test_known_checkboxes_are_filled_automatically(self):
+        import io
+
+        from PIL import Image
+
+        image = io.BytesIO()
+        Image.new("RGB", (800, 400), "navy").save(image, format="JPEG")
+        document = self._document(self._render(
+            {"application.mark.colors": "тёмно-синий"},
+            classes=[("25", "Одежда")],
+            mark_image=image.getvalue(),
+            mark_type="combined",
+            include_goods_attachment=True,
+        ))
+        table = document.tables[0]
+        assert "X" in table.rows[34].cells[1].text  # комбинированный знак
+        assert "X" in table.rows[23].cells[1].text  # цветное исполнение
+        assert "X" in table.rows[90].cells[1].text  # изображение приложено
+        assert "X" in table.rows[93].cells[1].text  # отдельный перечень товаров
+
+    def test_color_claim_conflicting_with_monochrome_image_is_not_filed(self):
+        import io
+
+        from PIL import Image
+
+        image = io.BytesIO()
+        Image.new("RGB", (800, 400), "black").save(image, format="JPEG")
+        document = self._document(self._render(
+            {"application.mark.colors": "КРАСНЫЙ"},
+            mark_image=image.getvalue(),
+            mark_type="combined",
+        ))
+        table = document.tables[0]
+        assert "X" not in table.rows[23].cells[1].text
+        assert "КРАСНЫЙ" not in table.rows[23].cells[2].text
+
+    def test_publication_caption_and_headers_are_removed(self):
+        document = self._document(self._render({"application.mark.text": "ЗВЁЗДОЧКА"}))
+        body_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        assert "Приложение № 1" not in body_text
+        for section in document.sections:
+            assert not "".join(p.text for p in section.header.paragraphs).strip()
+            assert not "".join(p.text for p in section.footer.paragraphs).strip()
 
     def test_classes_fill_the_goods_table(self):
         payload = self._render({}, classes=[("25", "Одежда; обувь")])

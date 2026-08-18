@@ -3,12 +3,52 @@ import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, Check, Eye, EyeOff, Loader2, LockKeyhole, ShieldCheck } from "lucide-react";
+import {
+  AlertCircle,
+  BriefcaseBusiness,
+  Check,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  ShieldCheck,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 import { BrandWordmark } from "@/components/brand-wordmark";
 
-const DEMO_USERS = [
-  { email: "lawyer@demo.ru", label: "Юрист" },
-  { email: "admin@demo.ru", label: "Администратор" },
+type DemoRole = "client" | "lawyer" | "admin";
+
+const DEMO_ROLES = [
+  {
+    id: "client" as const,
+    label: "Клиент",
+    description: "Создать и отслеживать заявку",
+    email: "client@demo.ru",
+    icon: UserRound,
+    order: 1,
+  },
+  {
+    id: "admin" as const,
+    label: "Администратор",
+    description: "Распределять заявки и управлять системой",
+    email: "admin@demo.ru",
+    icon: UsersRound,
+    order: 3,
+  },
+  {
+    id: "lawyer" as const,
+    label: "Юрист",
+    description: "Проверять заявки и заключения",
+    email: null,
+    icon: BriefcaseBusiness,
+    order: 2,
+  },
+];
+
+const DEMO_LAWYERS = [
+  { email: "bogdan@demo.ru", label: "Богдан" },
+  { email: "dasha@demo.ru", label: "Даша" },
 ];
 const DEMO_PASSWORD = "demo123";
 
@@ -20,6 +60,8 @@ export default function LoginPage() {
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [demoRole, setDemoRole] = useState<DemoRole | null>(null);
+  const [demoEmail, setDemoEmail] = useState<string | null>(null);
 
   const submit = async (loginEmail: string, loginPassword: string) => {
     setError("");
@@ -32,6 +74,21 @@ export default function LoginPage() {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const chooseDemoRole = (role: DemoRole, accountEmail: string | null) => {
+    setDemoRole(role);
+    setDemoEmail(accountEmail);
+    setEmail(accountEmail || "");
+    setPassword(DEMO_PASSWORD);
+    setError("");
+  };
+
+  const chooseLawyer = (accountEmail: string) => {
+    setDemoEmail(accountEmail);
+    setEmail(accountEmail);
+    setPassword(DEMO_PASSWORD);
+    setError("");
   };
 
   return (
@@ -69,9 +126,9 @@ export default function LoginPage() {
         </div>
       </section>
 
-      <section className="flex items-center justify-center bg-[#08090b] p-5 sm:p-10">
-        <div className="w-full max-w-[500px] rounded-xl bg-[#fbfaf8] p-7 shadow-2xl sm:p-10">
-          <div className="mb-9 flex border-b border-border text-center text-sm">
+      <section className="flex items-center justify-center bg-[#08090b] p-5 sm:p-8 xl:p-10">
+        <div className="w-full max-w-[620px] rounded-[18px] bg-[#fbfaf8] p-6 shadow-2xl sm:p-8 xl:p-9">
+          <div className="mb-6 flex border-b border-border text-center text-sm">
             <div className="relative flex-1 pb-4 font-medium text-[#17104f] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
@@ -84,7 +141,7 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
 
           <form
-            className="mt-7 space-y-5"
+            className="mt-5 space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
               void submit(email, password);
@@ -153,26 +210,76 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-7 border-t border-border pt-6">
-            <p className="mb-3 text-center text-xs text-muted-foreground">Быстрый вход в демо-стенд</p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_USERS.map((user) => (
-                <Button
-                  key={user.email}
-                  type="button"
-                  variant="outline"
-                  disabled={isSubmitting}
-                  onClick={() => {
-                    setEmail(user.email);
-                    setPassword(DEMO_PASSWORD);
-                    void submit(user.email, DEMO_PASSWORD);
-                  }}
-                  data-testid={`demo-${user.email.split("@")[0]}`}
-                >
-                  {user.label}
-                </Button>
-              ))}
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="text-center text-sm font-medium text-[#17104f]">Или выберите тип аккаунта</p>
+            <p className="mt-1 text-center text-xs text-muted-foreground">Для быстрого входа в демо-стенд</p>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+              {DEMO_ROLES.map((role) => {
+                const Icon = role.icon;
+                const selected = demoRole === role.id;
+                return (
+                  <button
+                    key={role.id}
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => chooseDemoRole(role.id, role.email)}
+                    style={{ order: role.order }}
+                    className={`rounded-xl border px-3 py-3 text-left transition ${
+                      selected
+                        ? "border-primary bg-primary/10 shadow-sm"
+                        : "border-border bg-white hover:border-primary/50 hover:bg-primary/[0.04]"
+                    }`}
+                    aria-pressed={selected}
+                    data-testid={`demo-role-${role.id}`}
+                  >
+                    <Icon className={`h-5 w-5 ${selected ? "text-primary" : "text-[#17104f]"}`} />
+                    <span className="mt-2 block text-sm font-semibold text-[#17104f]">{role.label}</span>
+                    <span className="mt-1 hidden text-[11px] leading-snug text-muted-foreground sm:block">{role.description}</span>
+                  </button>
+                );
+              })}
             </div>
+
+            {demoRole === "lawyer" && (
+              <div className="mt-3 rounded-xl border border-primary/25 bg-primary/[0.05] p-3">
+                <p className="mb-2 text-xs font-medium text-[#17104f]">Выберите юриста</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {DEMO_LAWYERS.map((lawyer) => (
+                    <button
+                      key={lawyer.email}
+                      type="button"
+                      disabled={isSubmitting}
+                      onClick={() => chooseLawyer(lawyer.email)}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        demoEmail === lawyer.email
+                          ? "border-primary bg-primary text-white"
+                          : "border-border bg-white text-[#17104f] hover:border-primary/50"
+                      }`}
+                      aria-pressed={demoEmail === lawyer.email}
+                      data-testid={`demo-${lawyer.email.split("@")[0]}`}
+                    >
+                      {lawyer.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <Button
+              type="button"
+              className="mt-3 h-11 w-full"
+              disabled={isSubmitting || !demoEmail}
+              onClick={() => demoEmail && void submit(demoEmail, DEMO_PASSWORD)}
+              data-testid="button-demo-login"
+            >
+              {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {demoRole === "lawyer" && demoEmail
+                ? `Войти как ${DEMO_LAWYERS.find((item) => item.email === demoEmail)?.label}`
+                : demoRole
+                  ? `Войти как ${DEMO_ROLES.find((item) => item.id === demoRole)?.label.toLowerCase()}`
+                  : "Сначала выберите аккаунт"}
+            </Button>
           </div>
 
           <p className="mt-7 flex items-center justify-center gap-2 text-xs text-muted-foreground">

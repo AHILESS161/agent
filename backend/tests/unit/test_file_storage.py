@@ -18,6 +18,8 @@ PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 200
 JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"0" * 200
 DOCX_BYTES = b"PK\x03\x04" + b"word/document.xml" + b"0" * 200
 TXT_BYTES = "Выписка из ЕГРЮЛ".encode("utf-8")
+MP3_BYTES = b"ID3" + b"\x04\x00\x00" + b"0" * 200
+WAV_BYTES = b"RIFF" + (200).to_bytes(4, "little") + b"WAVEfmt " + b"0" * 200
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +39,8 @@ class TestMimeDetection:
             (PDF_BYTES, "a.pdf", "application/pdf"),
             (PNG_BYTES, "a.png", "image/png"),
             (JPEG_BYTES, "a.jpg", "image/jpeg"),
+            (MP3_BYTES, "a.mp3", "audio/mpeg"),
+            (WAV_BYTES, "a.wav", "audio/wav"),
             (TXT_BYTES, "a.txt", "text/plain"),
         ],
     )
@@ -92,6 +96,10 @@ class TestValidationRejects:
     def test_rejects_binary_disguised_as_txt(self):
         with pytest.raises(FileValidationError):
             file_storage.validate_upload(b"\x00\x81\xfe\xff" * 20, "a.txt")
+
+    def test_rejects_audio_with_mismatched_extension(self):
+        with pytest.raises(FileValidationError, match="не соответствует расширению"):
+            file_storage.validate_upload(MP3_BYTES, "sound.wav")
 
 
 class TestSaveAndRead:

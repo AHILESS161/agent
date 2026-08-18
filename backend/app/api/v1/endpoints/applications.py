@@ -67,6 +67,7 @@ from app.schemas.legal import (
 )
 from app.services.completeness_engine import ApplicationStage, CompletenessEngine
 from app.services.state_machine import ApplicationStateMachine
+from app.agents.legal.query_variants import QueryVariantGenerator
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -346,6 +347,27 @@ async def update_application(
     await session.flush()
     await session.refresh(app)
     return ApplicationResponse.model_validate(app)
+
+
+@router.post("/{application_id}/suggest-mark-language")
+async def suggest_mark_language(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, str | None]:
+    """Предложить транслитерацию и перевод обозначения."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    text = (app.mark_text or app.mark_name or "").strip()
+    variants = await QueryVariantGenerator(_get_llm_provider()).build(text)
+    return {
+        "transliteration": next(
+            (item.text for item in variants if item.kind == "transliteration"), None
+        ),
+        "translation": next(
+            (item.text for item in variants if item.kind == "translation"), None
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------

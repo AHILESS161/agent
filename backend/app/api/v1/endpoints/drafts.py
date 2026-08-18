@@ -25,10 +25,17 @@ from app.services import file_storage
 from app.services.application_draft import (
     collect_draft_content,
     create_draft,
+    load_mark_image_content,
     render_docx,
     serialize_draft,
 )
 from app.services.blank_layout import build_form
+from app.services.filing_package import (
+    FilingPackageNotReady,
+    filing_package_status,
+    public_filing_package_status,
+    render_filing_package,
+)
 from app.services.reconciliation import load_reconciliation
 
 logger = get_logger(__name__)
@@ -112,7 +119,11 @@ async def download_draft_preview(
     application = await _load_application(session, application_id, with_client=True)
     _ensure_access(application, current_user)
     content = await collect_draft_content(session, application)
-    payload = render_docx(content, application)
+    payload = render_docx(
+        content,
+        application,
+        mark_image=await load_mark_image_content(session, application),
+    )
     filename = f"chernovik-zayavleniya-{application_id}.docx"
     return Response(
         content=payload,
@@ -123,6 +134,69 @@ async def download_draft_preview(
             "Content-Disposition": f"attachment; filename*=UTF-8''{filename}",
             "X-Document-Status": "draft-not-approved",
         },
+    )
+
+
+@router.get(
+    "/applications/{application_id}/filing-package",
+    summary="Готовность полного пакета для самостоятельной подачи",
+)
+async def get_filing_package(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Показать состав архива и всё, что ещё мешает его сформировать."""
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
+    result = await filing_package_status(session, application)
+    return public_filing_package_status(result)
+
+
+@router.get(
+    "/applications/{application_id}/filing-package/download",
+    summary="Скачать полный пакет документов и инструкцию в ZIP",
+)
+async def download_filing_package(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Собрать архив только после заполнения полей и завершения проверок."""
+    application = await _load_application(session, application_id, with_client=True)
+    _ensure_access(application, current_user)
+    try:
+        payload, package = await render_filing_package(session, application)
+    except FilingPackageNotReady as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Пакет документов пока не готов",
+                "blockers": exc.blockers,
+            },
+        ) from exc
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="filing_package.downloaded",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(application.id),
+            new_value_json={
+                "filing_documents": package["filing_document_count"],
+                "reference_documents": package["reference_document_count"],
+                "classes": package["class_numbers"],
+            },
+        )
+    )
+    await session.flush()
+
+    filename = f"paket-dlya-podachi-{application_id}.zip"
+    return Response(
+        content=payload,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
     )
 
 

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -28,6 +29,7 @@ from app.infrastructure.database.models import (
     TrademarkApplicationDraft,
 )
 from app.infrastructure.rag.store import load_active_chunks
+from app.services.nice_catalog import search as search_nice_catalog
 
 logger = get_logger(__name__)
 
@@ -101,6 +103,8 @@ async def run_class_analysis(
     session: AsyncSession,
     application: TrademarkApplicationDraft,
     llm_provider: Any,
+    *,
+    preserve_approved: bool = True,
 ) -> dict[str, Any]:
     """Подобрать классы МКТУ и сохранить предложения.
 
@@ -109,13 +113,12 @@ async def run_class_analysis(
     """
     chunks = await load_active_chunks(session)
     if not chunks:
-        return {
-            "status": "inconclusive",
-            "reason": (
-                "База знаний пуста. Выполните: python -m scripts.ingest_knowledge"
-            ),
-            "suggestions": [],
-        }
+        return await _catalog_fallback(
+            session,
+            application,
+            "Языковая модель или база знаний недоступна",
+            preserve_approved=preserve_approved,
+        )
 
     analyzer = RagNiceClassAnalyzer(llm_provider, chunks)
     outcome = await analyzer.analyse(
@@ -127,21 +130,29 @@ async def run_class_analysis(
     )
 
     if not outcome.is_conclusive:
-        return {
-            "status": "inconclusive",
-            "reason": outcome.reason,
-            "suggestions": [],
-            # Неподтверждённые предложения — не результат, но и не мусор:
-            # специалист вправе принять их под свою ответственность.
-            "unverified": outcome.verification.get("rejected", []),
-            "verification": outcome.verification,
-        }
+        return await _catalog_fallback(
+            session,
+            application,
+            outcome.reason,
+            preserve_approved=preserve_approved,
+        )
 
     existing = await load_class_context(session, application.id)
-    approved_numbers = {item.class_number for item in existing.approved}
+    approved_numbers = (
+        {item.class_number for item in existing.approved}
+        if preserve_approved
+        else set()
+    )
 
-    # Неподтверждённые предложения заменяем: они устарели.
-    for stale in existing.suggested:
+    # При обычном автоматическом подборе решение человека сохраняем. Явная
+    # команда «Подобрать заново» заменяет весь список, включая подтверждённые
+    # ранее классы: пользователь ожидает чистый результат по новым данным.
+    stale_rows = (
+        existing.suggested
+        if preserve_approved
+        else [*existing.approved, *existing.suggested]
+    )
+    for stale in stale_rows:
         await session.delete(stale)
     await session.flush()
 
@@ -193,4 +204,87 @@ async def run_class_analysis(
             "От перечня классов зависит вывод об охраноспособности "
             "обозначения."
         ),
+    }
+
+
+async def _catalog_fallback(
+    session: AsyncSession,
+    application: TrademarkApplicationDraft,
+    reason: str,
+    *,
+    preserve_approved: bool = True,
+) -> dict[str, Any]:
+    """Детерминированный резерв: классы не должны исчезать вместе с LLM.
+
+    Справочник ищет русские слова по заголовкам и составу классов. Результат
+    остаётся предложением и обязательно подтверждается человеком.
+    """
+    source = "\n".join(
+        part for part in (
+            application.goods_services_raw or "",
+            application.business_description or "",
+        ) if part.strip()
+    )
+    phrases = [p.strip() for p in re.split(r"[;,\n]+", source) if len(p.strip()) >= 3]
+    if source.strip() and source.strip() not in phrases:
+        phrases.append(source.strip())
+
+    found = {}
+    for phrase in phrases[:20]:
+        for item in search_nice_catalog(phrase, limit=2):
+            found.setdefault(item.number, (item, phrase))
+            if len(found) >= 6:
+                break
+        if len(found) >= 6:
+            break
+
+    if not found:
+        return {"status": "inconclusive", "reason": reason, "suggestions": []}
+
+    existing = await load_class_context(session, application.id)
+    approved_numbers = (
+        {item.class_number for item in existing.approved}
+        if preserve_approved
+        else set()
+    )
+    stale_rows = (
+        existing.suggested
+        if preserve_approved
+        else [*existing.approved, *existing.suggested]
+    )
+    for stale in stale_rows:
+        await session.delete(stale)
+    await session.flush()
+
+    created = []
+    for number, (item, phrase) in found.items():
+        if number in approved_numbers:
+            continue
+        record = NiceClassSuggestion(
+            application_id=application.id,
+            class_number=number,
+            class_description=item.title,
+            rationale=f"Справочник МКТУ: найдено по описанию «{phrase}».",
+            confidence=0.55,
+            category=NiceCategory.primary,
+            approved=None,
+        )
+        session.add(record)
+        created.append({
+            "class_number": number,
+            "category": "primary",
+            "confidence": 0.55,
+            "goods_services": [item.title],
+            "rationale": record.rationale,
+            "citations": [],
+        })
+    await session.flush()
+    return {
+        "status": "fallback",
+        "summary": "Классы предложены по справочнику МКТУ без языковой модели.",
+        "reason": reason,
+        "suggestions": created,
+        "already_approved": sorted(approved_numbers),
+        "requires_specialist_review": True,
+        "notice": "Проверьте и подтвердите каждый предложенный класс.",
     }

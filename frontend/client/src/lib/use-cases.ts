@@ -21,6 +21,7 @@ interface ApplicationDto {
   mark_type: MarkType | null;
   mark_name: string | null;
   mark_text?: string | null;
+  mark_image_file_id?: string | null;
   colors_claimed?: string | null;
   transliteration?: string | null;
   translation?: string | null;
@@ -70,6 +71,7 @@ function toApplication(dto: ApplicationDto): Application {
     markType: (dto.mark_type ?? "other") as MarkType,
     markName: dto.mark_name ?? `Заявка №${dto.id}`,
     markText: dto.mark_text ?? "",
+    markImageFileId: dto.mark_image_file_id ?? "",
     colorsClaimed: dto.colors_claimed ?? "",
     transliteration: dto.transliteration ?? "",
     translation: dto.translation ?? "",

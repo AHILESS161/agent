@@ -2,7 +2,8 @@
   "name": "trademark-frontend",
   "version": "1.0.0",
   "type": "module",
-  "license": "MIT",
+  "license": "UNLICENSED",
+  "private": true,
   "scripts": {
     "dev": "vite",
     "build": "vite build",

@@ -130,6 +130,15 @@ export const api = {
     form.append("file", file);
     return request<T>("POST", path, form);
   },
+  /** Получить защищённый бинарный файл для предпросмотра. */
+  blob: async (path: string): Promise<Blob> => {
+    const response = await fetch(`/api/v1${path}`, {
+      cache: "no-store",
+      headers: authHeaders(),
+    });
+    if (!response.ok) throw await toApiError(response);
+    return response.blob();
+  },
   /** Скачивание файла с авторизацией (прямая ссылка не сработает). */
   download: async (path: string, filename: string): Promise<void> => {
     const response = await fetch(`/api/v1${path}`, { headers: authHeaders() });
@@ -234,7 +243,9 @@ export const DOCUMENT_KIND_LABELS: Record<string, string> = {
   egrip_extract: "Выписка ЕГРИП",
   unknown_registry_extract: "Реестровая справка (тип не определён)",
   power_of_attorney: "Доверенность",
+  passport: "Паспорт заявителя",
   mark_image: "Изображение обозначения",
+  mark_audio: "Аудиозапись звукового обозначения",
   other: "Иной документ",
   unknown: "Тип не определён",
 };

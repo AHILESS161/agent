@@ -222,11 +222,17 @@ class SimilarityAssessment:
     # Специалист должен видеть разницу — у этих источников разная цена
     # ошибки и разная проверяемость.
     semantic_source: str = "rules"
+    # Сходство самих изображений; не путать с ``visual`` выше, где
+    # сравнивается начертание слов и омоглифы.
+    image_visual: float | None = None
 
     def as_dict(self) -> dict:
         return {
             "phonetic": round(self.phonetic, 3),
             "visual": round(self.visual, 3),
+            "image_visual": (
+                round(self.image_visual, 3) if self.image_visual is not None else None
+            ),
             "semantic": round(self.semantic, 3),
             "semantic_source": self.semantic_source,
             "goods": round(self.goods, 3),
@@ -279,6 +285,22 @@ def with_semantic(
         semantic_score,
         assessment.goods,
         semantic_source="llm",
+        image_visual=assessment.image_visual,
+    )
+
+
+def with_image_visual(
+    assessment: SimilarityAssessment, image_score: float
+) -> SimilarityAssessment:
+    """Добавить воспроизводимую оценку сходства загруженных изображений."""
+    bounded = max(0.0, min(1.0, image_score))
+    return _combine(
+        assessment.phonetic,
+        assessment.visual,
+        assessment.semantic,
+        assessment.goods,
+        semantic_source=assessment.semantic_source,
+        image_visual=bounded,
     )
 
 
@@ -288,11 +310,12 @@ def _combine(
     semantic: float,
     goods: float,
     semantic_source: str,
+    image_visual: float | None = None,
 ) -> SimilarityAssessment:
     """Свести признаки в итоговую оценку по правилу пункта 162."""
     # Сходство обозначения определяется наиболее выраженным признаком:
     # достаточно совпадения по одному критерию из трёх.
-    mark_similarity = max(phonetic, visual, semantic)
+    mark_similarity = max(phonetic, visual, semantic, image_visual or 0.0)
 
     reasons: list[str] = []
     if phonetic >= 0.75:
@@ -304,6 +327,8 @@ def _combine(
         reasons.append(f"смысловое сходство ({semantic:.2f}){source}")
     if goods >= 0.6:
         reasons.append(f"однородные товары и услуги ({goods:.2f})")
+    if image_visual is not None and image_visual >= 0.7:
+        reasons.append(f"сходство изображений ({image_visual:.2f})")
 
     # Итог: сходство обозначения и однородность товаров усиливают
     # друг друга, поэтому берётся произведение с поправкой.
@@ -329,4 +354,5 @@ def _combine(
         confusion_likely=confusion_likely,
         reasons=reasons,
         semantic_source=semantic_source,
+        image_visual=image_visual,
     )

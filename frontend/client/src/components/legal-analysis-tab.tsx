@@ -149,7 +149,16 @@ interface FindingDto {
       registration_number?: string | null;
       filing_date?: string | null;
       registration_date?: string | null;
+      image_url?: string | null;
     };
+    image_comparison?: {
+      score: number;
+      difference_hash: number;
+      average_hash: number;
+      color_histogram: number;
+      aspect_ratio: number;
+      method: string;
+    } | null;
   };
 }
 
@@ -293,7 +302,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
         onRun={() => void runAll()}
       />
 
-      <TrademarkMatches findings={relative?.findings ?? []} />
+      <TrademarkMatches appId={appId} findings={relative?.findings ?? []} />
 
       {/* --- абсолютные основания --- */}
       <Section
@@ -927,7 +936,7 @@ function LegalSummaryCard({
   );
 }
 
-function TrademarkMatches({ findings }: { findings: FindingDto[] }) {
+function TrademarkMatches({ appId, findings }: { appId: number; findings: FindingDto[] }) {
   const matches = findings.filter((finding) => finding.category === "conflicting_mark");
   if (matches.length === 0) return null;
 
@@ -950,7 +959,7 @@ function TrademarkMatches({ findings }: { findings: FindingDto[] }) {
 
         {priority.length > 0 ? (
           <div className="grid gap-3 xl:grid-cols-2">
-            {priority.map((finding) => <TrademarkMatchCard key={finding.id} finding={finding} prominent />)}
+            {priority.map((finding) => <TrademarkMatchCard key={finding.id} appId={appId} finding={finding} prominent />)}
           </div>
         ) : (
           <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/[0.06] px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
@@ -965,7 +974,7 @@ function TrademarkMatches({ findings }: { findings: FindingDto[] }) {
               <ChevronDown className="h-4 w-4 transition-transform group-open:rotate-180" />
             </summary>
             <div className="grid gap-3 border-t border-border p-3 xl:grid-cols-2">
-              {other.map((finding) => <TrademarkMatchCard key={finding.id} finding={finding} />)}
+              {other.map((finding) => <TrademarkMatchCard key={finding.id} appId={appId} finding={finding} />)}
             </div>
           </details>
         )}
@@ -974,13 +983,14 @@ function TrademarkMatches({ findings }: { findings: FindingDto[] }) {
   );
 }
 
-function TrademarkMatchCard({ finding, prominent = false }: { finding: FindingDto; prominent?: boolean }) {
+function TrademarkMatchCard({ appId, finding, prominent = false }: { appId: number; finding: FindingDto; prominent?: boolean }) {
   const record = finding.verification?.registry_record;
   const quoted = Array.from(finding.explanation.matchAll(/«([^»]+)»/g));
   const mark = record?.mark_text || quoted[1]?.[1] || quoted[0]?.[1] || "Обозначение без названия";
   const classes = (record?.classes ?? []).map(String).filter(Boolean);
   const number = record?.registration_number || record?.application_number || record?.record_id || finding.verification?.record_id;
   const registryUrl = `https://searchplatform.rospatent.gov.ru/trademarks?search=${encodeURIComponent(mark)}`;
+  const imageComparison = finding.verification?.image_comparison;
 
   return (
     <article className={cn("rounded-xl border p-4", prominent ? "border-red-500/40 bg-red-500/[0.04]" : "border-border bg-card")}>
@@ -991,6 +1001,20 @@ function TrademarkMatchCard({ finding, prominent = false }: { finding: FindingDt
         </div>
         <Badge className={cn("shrink-0 text-[11px]", LEVEL_BADGE[finding.level])}>{RISK_LABELS[finding.level] ?? finding.level}</Badge>
       </div>
+
+      {imageComparison && (
+        <div className="mt-4">
+          <div className="grid grid-cols-2 gap-3">
+            <RegistryImage path={`/applications/${appId}/mark-image/content`} label="Ваш знак" />
+            <RegistryImage path={`/risk-findings/${finding.id}/registry-image`} label="Найденный знак" />
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-950">
+            <span>Предварительное сходство изображений</span>
+            <strong>{Math.round(imageComparison.score * 100)}%</strong>
+          </div>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Система сравнила форму, яркостную структуру, цвета и пропорции. Итог требует проверки человеком.</p>
+        </div>
+      )}
 
       <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <div>
@@ -1020,6 +1044,35 @@ function TrademarkMatchCard({ finding, prominent = false }: { finding: FindingDt
         Проверить запись в реестре <ExternalLink className="h-3.5 w-3.5" />
       </a>
     </article>
+  );
+}
+
+function RegistryImage({ path, label }: { path: string; label: string }) {
+  const [url, setUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | null = null;
+    api.blob(path)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [path]);
+
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-medium text-muted-foreground">{label}</p>
+      <div className="flex h-32 items-center justify-center rounded-lg border border-border bg-white p-2">
+        {url ? <img src={url} alt={label} className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-muted-foreground">Нет изображения</span>}
+      </div>
+    </div>
   );
 }
 

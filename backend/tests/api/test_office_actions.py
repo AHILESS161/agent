@@ -13,10 +13,10 @@ class FakeOfficeActionLLM:
     async def generate_structured(self, messages, output_schema, temperature=0.1):
         self.messages = messages
         return {
-            "notice_summary": "Эксперт просит пояснить однородность товаров.",
-            "response_summary": "Подготовлена позиция по различию назначения и покупателей.",
             "missing_evidence": ["Добавьте каталог продукции"],
-            "draft_text": "Просим учесть различное назначение заявленных товаров.",
+            # Даже если провайдер нарушит схему и добавит выдуманный текст,
+            # фактическая часть письма не должна использовать его.
+            "draft_text": "Продажи осуществлялись в Беларуси с августа 2022 года.",
         }
 
 
@@ -93,6 +93,9 @@ def test_office_action_keeps_confirmed_facts_and_generates_docx(
     )
     assert generated.status_code == 200
     assert generated.json()["status"] == "generated"
+    assert "профессиональных покупателей" in generated.json()["draft_text"]
+    assert "Беларуси" not in generated.json()["draft_text"]
+    assert "августа 2022" not in generated.json()["draft_text"]
     prompt = fake.messages[-1].content
     assert "профессиональных покупателей" in prompt
     assert "каталог.txt" in prompt

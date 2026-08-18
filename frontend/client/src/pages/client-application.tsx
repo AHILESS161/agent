@@ -24,6 +24,7 @@ import {
   ImageIcon,
   Upload,
   Trash2,
+  MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +39,7 @@ import { HelpTip } from "@/components/help-tip";
 import { useApi } from "@/lib/use-api";
 import { COUNTRY_OPTIONS } from "@/lib/country-codes";
 import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
+import { OfficeActionResponse } from "@/components/office-action-response";
 import {
   Select,
   SelectContent,
@@ -46,7 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Section = "data" | "check" | "application" | "fees" | "documents";
+type Section = "data" | "check" | "application" | "fees" | "documents" | "response";
 
 interface ClassSuggestion {
   id: number;
@@ -119,6 +121,7 @@ const SECTION_META: Array<{ id: Section; label: string; icon: typeof Circle }> =
   { id: "application", label: "Заявка", icon: FileSignature },
   { id: "fees", label: "Пошлины", icon: ReceiptText },
   { id: "documents", label: "Документы", icon: Archive },
+  { id: "response", label: "Ответ Роспатенту", icon: MessageSquareText },
 ];
 
 const ACTION_LABELS: Record<string, string> = {
@@ -181,7 +184,7 @@ export default function ClientApplicationPage() {
         </div>
       </section>
 
-      <nav className="grid grid-cols-2 gap-2 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-2 lg:grid-cols-5">
+      <nav className="grid grid-cols-2 gap-2 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-2 lg:grid-cols-6">
         {SECTION_META.map((item, index) => {
           const active = section === item.id;
           return (
@@ -207,6 +210,7 @@ export default function ClientApplicationPage() {
         {section === "application" && <ClientResult appId={appId} draftRequest={draftRequest} onEditData={() => setSection("data")} />}
         {section === "fees" && <ClientFeeEstimate appId={appId} />}
         {section === "documents" && <ClientFilingPackage appId={appId} onEditData={() => setSection("data")} />}
+        {section === "response" && <OfficeActionResponse appId={appId} />}
       </div>
     </div>
   );

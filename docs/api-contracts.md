@@ -1106,6 +1106,22 @@ agent_run_duration_seconds_bucket{agent="absolute_grounds",le="5.0"} 38
 
 ## Клиентский черновик и пошлины
 
+### Ответ на уведомление Роспатента
+
+`GET/POST /api/v1/applications/{application_id}/office-actions` возвращает
+историю или создаёт отдельный проект ответа. `PUT
+/api/v1/applications/{application_id}/office-actions/{response_id}` сохраняет
+срок, факты об однородности, доказательства различительной способности и ссылки
+на загруженные документы. Подтверждённый пункт обязан содержать конкретный факт;
+все `document_ids` должны принадлежать тому же делу.
+
+`POST .../{response_id}/generate` передаёт LLM текст уведомления и только
+подтверждённые непустые факты. Ответ содержит `notice_summary`,
+`response_summary`, `missing_evidence`, `draft_text` и статус `generated`.
+`GET .../{response_id}/download` отдаёт редактируемый DOCX и возвращает `409`,
+пока черновик не сформирован. Подробные гарантии описаны в
+[`office-action-responses.md`](office-action-responses.md).
+
 ### Видимость клиентской заявки
 
 Клиентский интерфейс вызывает `POST /api/v1/applications` для карточки заявителя,

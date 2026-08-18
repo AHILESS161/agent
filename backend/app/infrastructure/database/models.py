@@ -391,6 +391,58 @@ class TrademarkApplicationDraft(Base):
         cascade="all, delete-orphan",
         foreign_keys="SourceDocument.application_id",
     )
+    office_action_responses: Mapped[list["OfficeActionResponse"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+
+
+class OfficeActionResponse(Base):
+    """Черновик ответа на уведомление Роспатента и подтверждённые клиентом факты."""
+
+    __tablename__ = "office_action_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    notice_document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("source_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    response_deadline: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    homogeneity_facts_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    distinctiveness_evidence_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    additional_facts: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notice_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    missing_evidence_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    draft_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="office_action_responses"
+    )
+    notice_document: Mapped["SourceDocument"] = relationship(
+        "SourceDocument", foreign_keys=[notice_document_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )
 
 
 class GoodsServicesItem(Base):

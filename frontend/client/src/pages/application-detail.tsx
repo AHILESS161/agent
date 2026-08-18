@@ -18,7 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SourceDocumentsTab } from "@/components/source-documents-tab";
 import { FieldConfirmationTab } from "@/components/field-confirmation-tab";
 import {
-  DocumentPackagesTab,
+  DocumentPackagesTab, StatusHistoryTab,
 } from "@/components/case-tabs";
 // Классы МКТУ, абсолютные основания и конфликты — части одной проверки,
 // поэтому живут в общей вкладке, а не в трёх разных.
@@ -26,6 +26,8 @@ import { LegalAnalysisTab } from "@/components/legal-analysis-tab";
 import { ApplicationDraftTab } from "@/components/application-draft-tab";
 import { ProfessionalFeeEstimate } from "@/components/professional-fee-estimate";
 import { OfficeActionResponse } from "@/components/office-action-response";
+import { ProfessionalFilingPackage, type ProfessionalPackageStatus } from "@/components/professional-filing-package";
+import { ProfessionalMarkAssets } from "@/components/professional-mark-assets";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
@@ -210,6 +212,8 @@ function GeneralInfoTab({
           />
         </CardContent>
       </Card>
+
+      <ProfessionalMarkAssets appId={app.id} markType={app.markType} />
     </div>
   );
 }
@@ -484,6 +488,9 @@ export default function ApplicationDetailPage() {
   // Меняется после извлечения реквизитов, чтобы вкладка сверки
   // перечитала данные при следующем открытии.
   const [fieldsRefreshKey, setFieldsRefreshKey] = useState(0);
+  const [activeTab, setActiveTab] = useState("overview");
+  const packageReadiness = useApi<ProfessionalPackageStatus>(`/applications/${appId}/filing-package`);
+  const officeActions = useApi<{ items: Array<{ id: number; status: string }>; total: number }>(`/applications/${appId}/office-actions`);
 
   // Шапка карточки берётся из API: раньше она читалась из моков и
   // расходилась с реальными данными во вкладках.
@@ -532,16 +539,16 @@ export default function ApplicationDetailPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid h-auto w-full grid-cols-2 overflow-hidden rounded-lg border border-border bg-card p-0 md:grid-cols-4 xl:grid-cols-7">
           {[
-            { value: "overview", label: "Карточка", hint: "сведения", icon: Info },
-            { value: "data", label: "Данные", hint: "документы и сверка", icon: ClipboardCheck },
-            { value: "review", label: "Экспертиза", hint: "классы и риски", icon: Shield },
-            { value: "application", label: "Заявка", hint: "черновик заявления", icon: FileSignature },
-            { value: "fees", label: "Пошлины", hint: "расчёт к оплате", icon: FileCheck },
-            { value: "documents", label: "Документы", hint: "готовые файлы", icon: Download },
-            { value: "response", label: "Ответ", hint: "переписка с Роспатентом", icon: MessageSquareText },
+            { value: "overview", label: "Карточка", hint: "сведения и история", icon: Info, count: 0 },
+            { value: "data", label: "Данные", hint: "документы и сверка", icon: ClipboardCheck, count: packageReadiness.data?.blockers.filter((item) => item.section === "data").length || 0 },
+            { value: "review", label: "Экспертиза", hint: "классы и риски", icon: Shield, count: packageReadiness.data?.blockers.filter((item) => item.section === "check").length || 0 },
+            { value: "application", label: "Заявка", hint: "черновик заявления", icon: FileSignature, count: 0 },
+            { value: "fees", label: "Пошлины", hint: "расчёт к оплате", icon: FileCheck, count: 0 },
+            { value: "documents", label: "Документы", hint: "готовность и файлы", icon: Download, count: packageReadiness.data?.blockers.length || 0 },
+            { value: "response", label: "Ответ", hint: "переписка с Роспатентом", icon: MessageSquareText, count: officeActions.data?.total || 0 },
           ].map(tab => (
             <TabsTrigger
               key={tab.value}
@@ -553,7 +560,7 @@ export default function ApplicationDetailPage() {
                 <tab.icon className="h-3.5 w-3.5" />
               </span>
               <span className="min-w-0">
-                <span className="block truncate text-sm font-semibold sm:text-base">{tab.label}</span>
+                <span className="flex items-center gap-2 truncate text-sm font-semibold sm:text-base">{tab.label}{tab.count > 0 && <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] text-amber-800">{tab.count}</span>}</span>
                 <span className="hidden truncate text-xs font-normal text-muted-foreground md:block">{tab.hint}</span>
               </span>
             </TabsTrigger>
@@ -562,7 +569,14 @@ export default function ApplicationDetailPage() {
 
         <div className="mt-6">
           <TabsContent value="overview">
-            <GeneralInfoTab app={app} client={client} onSaved={reload} />
+            <div className="space-y-8">
+              <GeneralInfoTab app={app} client={client} onSaved={reload} />
+              <section className="border-t border-border pt-7">
+                <h2 className="mb-1 text-xl font-semibold">Хронология дела</h2>
+                <p className="mb-4 text-sm text-muted-foreground">Статусы и переходы по заявке — без технических журналов системы.</p>
+                <StatusHistoryTab appId={appId} />
+              </section>
+            </div>
           </TabsContent>
           <TabsContent value="data" className="space-y-8">
             <section>
@@ -602,10 +616,10 @@ export default function ApplicationDetailPage() {
             )}
           </TabsContent>
           <TabsContent value="documents">
-            <section>
-              <h2 className="mb-3 text-xl font-semibold">Готовые документы</h2>
-              <DocumentPackagesTab appId={appId} />
-            </section>
+            <div className="space-y-8">
+              <section><h2 className="mb-3 text-xl font-semibold">Готовность пакета для подачи</h2><ProfessionalFilingPackage appId={appId} onNavigate={setActiveTab} /></section>
+              <section className="border-t border-border pt-7"><h2 className="mb-3 text-xl font-semibold">Версии документов специалиста</h2><DocumentPackagesTab appId={appId} /></section>
+            </div>
           </TabsContent>
           <TabsContent value="response">
             <OfficeActionResponse appId={appId} audience="professional" />

@@ -942,7 +942,9 @@ class DocumentKind(str, enum.Enum):
     egrip_extract = "egrip_extract"                   # выписка ЕГРИП
     unknown_registry_extract = "unknown_registry_extract"  # реестровая справка, тип неясен
     power_of_attorney = "power_of_attorney"           # доверенность
+    passport = "passport"                             # паспорт заявителя — чувствительные данные
     mark_image = "mark_image"                         # изображение обозначения
+    mark_audio = "mark_audio"                         # аудиозапись звукового обозначения
     other = "other"
     unknown = "unknown"
 

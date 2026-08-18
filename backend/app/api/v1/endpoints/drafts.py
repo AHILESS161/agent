@@ -25,6 +25,7 @@ from app.services import file_storage
 from app.services.application_draft import (
     collect_draft_content,
     create_draft,
+    load_mark_image_content,
     render_docx,
     serialize_draft,
 )
@@ -118,7 +119,11 @@ async def download_draft_preview(
     application = await _load_application(session, application_id, with_client=True)
     _ensure_access(application, current_user)
     content = await collect_draft_content(session, application)
-    payload = render_docx(content, application)
+    payload = render_docx(
+        content,
+        application,
+        mark_image=await load_mark_image_content(session, application),
+    )
     filename = f"chernovik-zayavleniya-{application_id}.docx"
     return Response(
         content=payload,

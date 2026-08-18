@@ -28,6 +28,27 @@ from tests.conftest import login_headers
 
 @pytest.mark.api
 class TestFilingPackage:
+    async def test_sound_mark_requires_audio_attachment(self, client, api_user_factory):
+        await api_user_factory("filing-sound@test.ru", UserRole.client)
+        headers = login_headers(client, "filing-sound@test.ru")
+        applicant = client.post(
+            "/api/v1/clients",
+            json={"type": "individual", "full_name_or_company_name": "Иван Тестов"},
+            headers=headers,
+        ).json()
+        application = client.post(
+            "/api/v1/applications",
+            json={"client_id": applicant["id"], "mark_name": "ДЖИНГЛ", "mark_type": "sound"},
+            headers=headers,
+        ).json()
+
+        status = client.get(
+            f"/api/v1/applications/{application['id']}/filing-package",
+            headers=headers,
+        )
+        assert status.status_code == 200, status.text
+        assert "mark_audio" in {item["code"] for item in status.json()["blockers"]}
+
     async def test_user_confirms_document_kind_before_packaging(self, client, api_user_factory):
         await api_user_factory("filing-kind@test.ru", UserRole.client)
         headers = login_headers(client, "filing-kind@test.ru")

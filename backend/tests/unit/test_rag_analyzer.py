@@ -139,6 +139,62 @@ class TestHallucinationsAreRejected:
         assert rejected
         assert rejected[0]["reason"] == "нет подтверждённых цитат"
 
+    async def test_generic_cultural_heritage_rule_is_not_a_case_finding(self, chunks):
+        payload = json.loads(
+            _valid_response("состоящих только из элементов, характеризующих товары")
+        )
+        payload["findings"][0].update(
+            {
+                "category": "official_symbols",
+                "legal_basis": "ГК РФ ст. 1483 п. 4",
+                "explanation": (
+                    "Обозначение якобы совпадает с особо ценным объектом "
+                    "культурного наследия Российской Федерации"
+                ),
+                "case_facts_used": ["Обозначение «СВЕЖИЙ ХЛЕБ»"],
+            }
+        )
+        outcome = await RagAbsoluteGroundsAnalyzer(
+            FakeLLM(json.dumps(payload, ensure_ascii=False)), chunks
+        ).analyse(FACTS)
+
+        assert not outcome.is_conclusive
+        assert outcome.verification["findings_rejected"]
+        assert "не связывает обозначение" in outcome.verification["findings_rejected"][0]["reason"]
+
+
+class TestNoAdverseFindings:
+    async def test_empty_findings_are_conclusive_low_risk(self, chunks):
+        payload = json.loads(_valid_response("состоящих только из элементов, характеризующих товары"))
+        payload.update({
+            "overall_risk": "low",
+            "summary": "По переданным фактам подтверждённые абсолютные основания отказа не установлены",
+            "findings": [],
+            "missing_data": [],
+        })
+        outcome = await RagAbsoluteGroundsAnalyzer(
+            FakeLLM(json.dumps(payload, ensure_ascii=False)), chunks
+        ).analyse(FACTS)
+
+        assert outcome.is_conclusive
+        assert outcome.result.overall_risk.value == "low"
+        assert outcome.verification["no_adverse_findings"] is True
+
+    async def test_attached_image_is_not_reported_as_missing(self, chunks):
+        payload = json.loads(_valid_response("состоящих только из элементов, характеризующих товары"))
+        payload.update({
+            "overall_risk": "low",
+            "summary": "По переданным фактам подтверждённые абсолютные основания отказа не установлены",
+            "findings": [],
+            "missing_data": ["Изображение знака для анализа изобразительных элементов"],
+        })
+        outcome = await RagAbsoluteGroundsAnalyzer(
+            FakeLLM(json.dumps(payload, ensure_ascii=False)), chunks
+        ).analyse({**FACTS, "image_attached": True})
+
+        assert outcome.is_conclusive
+        assert outcome.result.missing_data == []
+
 
 class TestInvalidModelOutput:
     async def test_invalid_json_yields_insufficient_data(self, chunks):

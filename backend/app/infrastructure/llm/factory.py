@@ -83,6 +83,8 @@ class LLMProviderFactory:
                 or "https://ngw.devices.sberbank.ru:9443/api/v2/oauth",
                 scope=config.get("scope") or "GIGACHAT_API_PERS",
                 timeout=float(config.get("timeout", 120.0)),
+                min_request_interval=float(config.get("min_request_interval", 1.25)),
+                max_retries=int(config.get("max_retries", 5)),
                 verify_ssl=bool(config.get("verify_ssl", True)),
                 ca_bundle_file=config.get("ca_bundle_file"),
                 default_system_prompt=config.get("default_system_prompt"),

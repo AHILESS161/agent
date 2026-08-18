@@ -57,6 +57,16 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 5. Не давай категоричных заключений о том, что знак будет зарегистрирован.
    Это предварительная оценка, а не юридическое заключение.
 6. Отвечай СТРОГО валидным JSON по указанной схеме, без пояснений вокруг.
+7. В findings включай только УСТАНОВЛЕННЫЕ обстоятельства, которые повышают риск
+   отказа. Успешное прохождение критерия (например, «не содержит символов» или
+   «не вводит в заблуждение») не является риском и не должно попадать в findings.
+8. Общая норма доказывает только содержание правила, но не факт его применимости
+   к обозначению. Для объектов культурного наследия, официальных символов и
+   наименований нужен источник, который прямо связывает именно заявленное
+   обозначение с конкретным охраняемым объектом. Без такого источника вывод не делай.
+9. Если в фактах указано «Изображение приложено: да», не добавляй изображение знака
+   в missing_data. Оцени словесные элементы, описание и цвета; ограничения оценки
+   самой графики укажи в limitations.
 
 ПРИНЦИП СПЕЦИАЛИЗАЦИИ (обязательно учитывать):
 
@@ -242,10 +252,13 @@ class RagAbsoluteGroundsAnalyzer:
                 llm_raw=raw[:2000],
             )
 
-        return self._verify(result, available_sources)
+        return self._verify(result, available_sources, facts)
 
     def _verify(
-        self, result: AnalysisResult, available_sources: dict[str, str]
+        self,
+        result: AnalysisResult,
+        available_sources: dict[str, str],
+        facts: dict[str, Any],
     ) -> AnalysisOutcome:
         """Отбросить выводы, не подтверждённые источниками."""
         confirmed = []
@@ -270,6 +283,38 @@ class RagAbsoluteGroundsAnalyzer:
                 finding.citations = [
                     c for c in finding.citations if c.quote in verified_quotes
                 ]
+                finding_text = " ".join((
+                    finding.legal_basis,
+                    finding.explanation,
+                    *finding.case_facts_used,
+                )).lower()
+                mark_text = re.sub(r"\W+", " ", str(facts.get("mark_text") or "").lower()).strip()
+                verified_text = re.sub(r"\W+", " ", " ".join(verified_quotes).lower())
+                fact_specific_ground = any(token in finding_text for token in (
+                    "культурн", "наследи", "официальн", "государственн", "герб", "флаг",
+                ))
+                negative_non_risk = any(phrase in finding_text for phrase in (
+                    "обеспечивает различительную",
+                    "является фантазийн",
+                    "не содержит бран",
+                    "не содержит государствен",
+                    "не включает государствен",
+                    "отсутствуют географическ",
+                    "не вводит потребител",
+                    "не противоречит обществен",
+                ))
+                source_names_mark = bool(mark_text and mark_text in verified_text)
+                if negative_non_risk or (fact_specific_ground and not source_names_mark):
+                    rejected_details.append({
+                        "category": finding.category.value,
+                        "reason": (
+                            "успешная проверка не является риском"
+                            if negative_non_risk
+                            else "источник не связывает обозначение с конкретным охраняемым объектом"
+                        ),
+                        "checks": report.summary(),
+                    })
+                    continue
                 confirmed.append(finding)
             else:
                 rejected_details.append(
@@ -292,7 +337,33 @@ class RagAbsoluteGroundsAnalyzer:
             "findings_rejected": rejected_details,
         }
 
+        # Модель иногда просит уже приложенное изображение. Это не реальный
+        # пробел во входных данных и не должно превращать всю проверку в
+        # «незавершённую».
+        if facts.get("image_attached"):
+            result.missing_data = [
+                item for item in result.missing_data
+                if "изображен" not in item.lower()
+            ]
+
         if not confirmed:
+            # Пустой список findings является штатным ответом на инструкцию
+            # «включай только установленные риски». Если модель не заявляла
+            # рисков и после очистки фактически отсутствующих данных пробелов
+            # нет, абсолютные основания проверены с низким предварительным
+            # риском. Это отличается от ситуации, когда вывод был заявлен, но
+            # его цитаты не прошли проверку — такой результат остаётся
+            # неопределённым.
+            if not result.findings and not result.missing_data:
+                result.overall_risk = RiskLevel.low
+                result.findings = []
+                verification["no_adverse_findings"] = True
+                return AnalysisOutcome(
+                    result=result,
+                    insufficient=None,
+                    verification=verification,
+                    sources_used=list(available_sources),
+                )
             return AnalysisOutcome(
                 result=None,
                 insufficient=InsufficientData(

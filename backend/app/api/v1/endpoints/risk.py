@@ -259,6 +259,7 @@ async def run_analysis(
 )
 async def suggest_classes(
     application_id: int,
+    replace_all: bool = False,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -269,11 +270,17 @@ async def suggest_classes(
     выполняется до анализа оснований отказа, а его результат
     подтверждается специалистом.
     """
-    _require_write_access(current_user)
     application = await _load_application(session, application_id)
+    if current_user.role is UserRole.client:
+        _require_client_access(current_user, application)
+    else:
+        _require_write_access(current_user)
 
     result = await run_class_analysis(
-        session, application, llm_provider=_get_llm_provider()
+        session,
+        application,
+        llm_provider=_get_llm_provider(),
+        preserve_approved=not replace_all,
     )
 
     session.add(
@@ -286,6 +293,7 @@ async def suggest_classes(
             new_value_json={
                 "status": result.get("status"),
                 "suggested": len(result.get("suggestions", [])),
+                "replace_all": replace_all,
             },
         )
     )

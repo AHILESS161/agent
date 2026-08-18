@@ -303,7 +303,7 @@ async def upload_mark_image(
 )
 async def upload_document(
     application_id: int,
-    file: UploadFile = File(..., description="PDF, DOCX, TXT, PNG или JPG"),
+    file: UploadFile = File(..., description="PDF, DOCX, TXT, PNG, JPG, MP3 или WAV"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
@@ -349,6 +349,27 @@ async def upload_document(
     )
     session.add(document)
     await session.flush()
+
+    # Аудиозапись звукового знака хранится как оригинал: извлекать из неё текст
+    # не нужно. Описание звучания заявитель подтверждает отдельным полем заявки.
+    if stored.detected_mime in {"audio/mpeg", "audio/wav"}:
+        document.document_kind = DocumentKind.mark_audio
+        document.kind_confidence = 1.0
+        document.kind_requires_confirmation = False
+        document.processing_status = DocumentProcessingStatus.uploaded
+        document.metadata_json = {"purpose": "sound_mark_recording"}
+        session.add(
+            AuditLog(
+                user_id=current_user.id,
+                application_id=application.id,
+                action="mark_audio.upload",
+                entity_type="SourceDocument",
+                entity_id=str(document.id),
+                new_value_json={"filename": filename, "sha256": stored.sha256},
+            )
+        )
+        await session.flush()
+        return _serialize(document)
 
     # --- извлечение текста ---
     try:

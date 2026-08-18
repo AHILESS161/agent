@@ -32,7 +32,7 @@ class FileValidationError(ValueError):
 # ---------------------------------------------------------------------------
 
 ALLOWED_EXTENSIONS: Final[frozenset[str]] = frozenset(
-    {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg"}
+    {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".mp3", ".wav"}
 )
 
 # Сигнатуры (magic bytes) → канонический MIME.
@@ -41,6 +41,7 @@ _SIGNATURES: Final[tuple[tuple[bytes, str], ...]] = (
     (b"%PDF-", "application/pdf"),
     (b"\x89PNG\r\n\x1a\n", "image/png"),
     (b"\xff\xd8\xff", "image/jpeg"),
+    (b"ID3", "audio/mpeg"),
     (b"PK\x03\x04", "application/zip"),  # уточняется ниже до DOCX
 )
 
@@ -51,6 +52,8 @@ _EXT_TO_MIME: Final[dict[str, str]] = {
     ".jpeg": "image/jpeg",
     ".txt": "text/plain",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
 }
 
 _SAFE_NAME_RE: Final[re.Pattern[str]] = re.compile(r"[^\w\s.\-()]+", re.UNICODE)
@@ -78,6 +81,11 @@ def detect_mime(content: bytes, filename: str) -> str:
     надёжной сигнатуры (TXT) и для уточнения ZIP → DOCX.
     """
     ext = Path(filename).suffix.lower()
+
+    if ext == ".wav" and content.startswith(b"RIFF") and content[8:12] == b"WAVE":
+        return "audio/wav"
+    if ext == ".mp3" and len(content) >= 2 and content[0] == 0xFF and (content[1] & 0xE0) == 0xE0:
+        return "audio/mpeg"
 
     for signature, mime in _SIGNATURES:
         if content.startswith(signature):

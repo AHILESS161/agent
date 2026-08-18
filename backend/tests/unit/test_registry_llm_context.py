@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.agents.legal.registry_context import review_registry_context
 from app.document_processing.similarity import assess
+from app.infrastructure.llm.gigachat_provider import GigaChatStructuredOutputError
 from app.infrastructure.providers.base import RegistryRecord
 
 
@@ -143,3 +144,45 @@ async def test_registry_context_llm_failure_does_not_break_analysis():
     )
 
     assert review is None
+
+
+async def test_truncated_registry_review_retries_with_three_records():
+    class TruncatedOnceLLM(RecordingStructuredLLM):
+        def __init__(self) -> None:
+            super().__init__()
+            self.prompts: list[str] = []
+
+        async def generate_structured(self, messages, output_schema, temperature=0.1):
+            self.prompts.append(messages[1].content)
+            if len(self.prompts) == 1:
+                raise GigaChatStructuredOutputError("truncated")
+            return await super().generate_structured(
+                messages, output_schema, temperature
+            )
+
+    llm = TruncatedOnceLLM()
+    conflicts = []
+    for index in range(6):
+        record = _record(
+            record_id=f"public:registration:{index + 1}",
+            external_id=f"uid-{index + 1}",
+            registration_number=str(900000 + index),
+        )
+        conflicts.append((record, assess("Регистр", record.mark_text, [42], [42])))
+
+    review = await review_registry_context(
+        llm,
+        applicant_mark="Регистр",
+        applicant_mark_type="word",
+        applicant_classes=[42],
+        applicant_goods="разработка программного обеспечения",
+        conflicts=conflicts,
+        provider_name="rospatent_public",
+        search_mode="limited",
+    )
+
+    assert review is not None
+    assert len(llm.prompts) == 2
+    assert '"records_sent": 6' in llm.prompts[0]
+    assert '"records_sent": 3' in llm.prompts[1]
+    assert "public:registration:4" not in llm.prompts[1]

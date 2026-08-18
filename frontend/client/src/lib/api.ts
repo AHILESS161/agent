@@ -243,7 +243,9 @@ export const DOCUMENT_KIND_LABELS: Record<string, string> = {
   egrip_extract: "Выписка ЕГРИП",
   unknown_registry_extract: "Реестровая справка (тип не определён)",
   power_of_attorney: "Доверенность",
+  passport: "Паспорт заявителя",
   mark_image: "Изображение обозначения",
+  mark_audio: "Аудиозапись звукового обозначения",
   other: "Иной документ",
   unknown: "Тип не определён",
 };

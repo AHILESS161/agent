@@ -171,6 +171,7 @@ async def create_case_from_event(
     mark_type: MarkType | None,
     business_description: str | None,
     goods_services: str | None,
+    description_of_mark: str | None = None,
     user_id: int | None = None,
 ) -> TrademarkApplicationDraft:
     """Создать дело-черновик из обращения.
@@ -211,6 +212,7 @@ async def create_case_from_event(
         mark_type=mark_type,
         business_description=business_description,
         goods_services_raw=goods_services,
+        description_of_mark=description_of_mark,
         # Текст обращения сохраняется в примечаниях: он часто содержит
         # пояснения клиента, которых нет в структурированных полях.
         notes=event.body_text,

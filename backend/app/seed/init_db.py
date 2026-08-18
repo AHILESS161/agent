@@ -880,14 +880,14 @@ def seed_audit_log(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare demo data")
     parser.add_argument(
-        "--users-only",
+        "--with-demo-cases",
         action="store_true",
-        help="Create demo accounts without adding sample clients and applications",
+        help="Also add sample clients and applications (disabled by default)",
     )
     args = parser.parse_args()
     log.info(
         "=== Initialising database and seeding demo accounts ==="
-        if args.users_only
+        if not args.with_demo_cases
         else "=== Initialising database and seeding demo data ==="
     )
 
@@ -909,7 +909,7 @@ def main() -> None:
             log.info("\nSeeding users...")
             users = seed_users(session)
 
-            if not args.users_only:
+            if args.with_demo_cases:
                 log.info("\nSeeding clients...")
                 clients = seed_clients(session)
 

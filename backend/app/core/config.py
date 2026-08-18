@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     GIGACHAT_VERIFY_SSL: bool = True
     GIGACHAT_CA_BUNDLE_FILE: Optional[str] = None
+    GIGACHAT_MIN_REQUEST_INTERVAL: float = 1.25
+    GIGACHAT_MAX_RETRIES: int = 5
 
     # Провайдер реестра товарных знаков (Роспатент / ФИПС).
     FIPS_PROVIDER: str = "mock"

@@ -32,7 +32,12 @@ from app.infrastructure.database.models import (
     TrademarkApplicationDraft,
 )
 from app.services import file_storage
-from app.services.application_draft import DraftContent, collect_draft_content, render_docx
+from app.services.application_draft import (
+    DraftContent,
+    collect_draft_content,
+    load_mark_image_content,
+    render_docx,
+)
 from app.services.blank_layout import build_form
 from app.services.class_analysis import load_class_context
 from app.services.fee_calculator import calculate_trademark_fees
@@ -319,7 +324,11 @@ async def _filing_attachments(
             # В пакет попадает только текущая версия изображения и только для
             # вида знака, которому графическое приложение действительно нужно.
             continue
-        allowed = {DocumentKind.mark_image, DocumentKind.power_of_attorney}
+        allowed = {
+            DocumentKind.mark_image,
+            DocumentKind.mark_audio,
+            DocumentKind.power_of_attorney,
+        }
         if application.priority_claim:
             # Для приоритета отдельного enum пока нет. Такой файл сохраняется
             # как «иной документ» и включается только когда приоритет заявлен.
@@ -334,12 +343,15 @@ async def _filing_attachments(
             "03"
             if document.document_kind is DocumentKind.mark_image
             else "04"
-            if document.document_kind is DocumentKind.power_of_attorney
+            if document.document_kind is DocumentKind.mark_audio
             else "05"
+            if document.document_kind is DocumentKind.power_of_attorney
+            else "06"
         )
         name = f"{prefix}_{_safe_filename(document.original_filename)}"
         title = {
             DocumentKind.mark_image: "Изображение обозначения",
+            DocumentKind.mark_audio: "Аудиозапись звукового обозначения",
             DocumentKind.power_of_attorney: "Доверенность представителя",
             DocumentKind.other: "Документ, подтверждающий приоритет",
         }[document.document_kind]
@@ -368,7 +380,10 @@ async def filing_package_status(
         blockers.append(
             _blocker("required_field", label, "Заполните или подтвердите поле", "data")
         )
-    if not application.territory:
+    # Для обычной российской заявки страна заявителя уже даёт понятное
+    # значение по умолчанию; заставлять клиента повторно вводить «Россия» не
+    # нужно. Отдельное поле остаётся для действительно иной территории.
+    if not application.territory and not (application.client and application.client.country):
         blockers.append(
             _blocker("territory", "Территория регистрации", "Укажите Россию или другую территорию", "data")
         )
@@ -384,20 +399,34 @@ async def filing_package_status(
     for missing in sorted(expected_analysis - assessments.keys()):
         label = "Проверка самого обозначения" if missing == AnalysisKind.absolute_grounds.value else "Поиск сходных знаков"
         blockers.append(_blocker("analysis", label, "Завершите проверку", "check"))
+    analysis_warnings: list[str] = []
     for assessment in assessments.values():
-        if assessment.is_inconclusive or not assessment.classes_confirmed:
-            blockers.append(
-                _blocker(
-                    "analysis_incomplete",
-                    assessment.inconclusive_reason or "Одна из проверок не завершена",
-                    "Повторите анализ после подтверждения классов",
-                    "check",
-                )
+        # Оба анализа должны быть запущены, но неопределённый результат одной
+        # предварительной проверки не должен навсегда блокировать документы.
+        # Он переносится в пакет как предупреждение. Текущая готовность классов
+        # проверяется выше, а не по снимку внутри старого assessment.
+        if assessment.is_inconclusive:
+            analysis_warnings.append(
+                assessment.inconclusive_reason
+                or "Одна из предварительных проверок не дала надёжного вывода"
             )
     mark_attachments = [item for item in attachments if item.title == "Изображение обозначения"]
     if application.mark_type in {MarkType.figurative, MarkType.combined} and not mark_attachments:
         blockers.append(
             _blocker("mark_image", "Изображение обозначения", "Загрузите изображение знака", "data")
+        )
+    audio_attachments = [
+        item for item in attachments
+        if item.title == "Аудиозапись звукового обозначения"
+    ]
+    if application.mark_type is MarkType.sound and not audio_attachments:
+        blockers.append(
+            _blocker(
+                "mark_audio",
+                "Аудиозапись звукового обозначения",
+                "Загрузите аудиозапись звукового знака",
+                "data",
+            )
         )
     representatives = (
         list(
@@ -444,6 +473,7 @@ async def filing_package_status(
         "Пакет подготовлен для обычной самостоятельной подачи одного товарного знака.",
         "Перед отправкой ещё раз проверьте данные в официальном сервисе Роспатента.",
     ]
+    warnings.extend(analysis_warnings)
     risk_order = {"low": 0, "medium": 1, "high": 2, "critical": 3}
     risk_levels = [a.overall_risk.value for a in assessments.values() if a.overall_risk]
     overall_risk = max(risk_levels, key=risk_order.get) if risk_levels else None
@@ -548,7 +578,15 @@ async def render_filing_package(
 
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("01_ДЛЯ_ПОДАЧИ/01_заявление.docx", render_docx(content, application))
+        archive.writestr(
+            "01_ДЛЯ_ПОДАЧИ/01_заявление.docx",
+            render_docx(
+                content,
+                application,
+                mark_image=await load_mark_image_content(session, application),
+                include_goods_attachment=True,
+            ),
+        )
         archive.writestr(
             "01_ДЛЯ_ПОДАЧИ/02_перечень_товаров_и_услуг.docx",
             _goods_document(application, content),

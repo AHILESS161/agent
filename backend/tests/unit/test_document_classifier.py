@@ -68,6 +68,13 @@ class TestKnownTypes:
     def test_recognises_power_of_attorney(self):
         assert classify_document(POA_TEXT).kind is DocumentKind.power_of_attorney
 
+    def test_recognises_passport(self):
+        text = (
+            "Паспорт гражданина Российской Федерации. Паспорт выдан ОМВД России. "
+            "Код подразделения 770-001. Дата рождения 01.01.1990."
+        )
+        assert classify_document(text).kind is DocumentKind.passport
+
     def test_reports_matched_markers_for_explainability(self):
         result = classify_document(EGRUL_TEXT)
         assert result.matched_markers

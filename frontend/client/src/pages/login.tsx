@@ -26,13 +26,7 @@ const DEMO_ROLES = [
     description: "Создать и отслеживать заявку",
     email: "client@demo.ru",
     icon: UserRound,
-  },
-  {
-    id: "lawyer" as const,
-    label: "Юрист",
-    description: "Проверять заявки и заключения",
-    email: null,
-    icon: BriefcaseBusiness,
+    order: 1,
   },
   {
     id: "admin" as const,
@@ -40,6 +34,15 @@ const DEMO_ROLES = [
     description: "Распределять заявки и управлять системой",
     email: "admin@demo.ru",
     icon: UsersRound,
+    order: 3,
+  },
+  {
+    id: "lawyer" as const,
+    label: "Юрист",
+    description: "Проверять заявки и заключения",
+    email: null,
+    icon: BriefcaseBusiness,
+    order: 2,
   },
 ];
 
@@ -123,9 +126,9 @@ export default function LoginPage() {
         </div>
       </section>
 
-      <section className="flex items-center justify-center bg-[#08090b] p-5 sm:p-10">
-        <div className="w-full max-w-[500px] rounded-xl bg-[#fbfaf8] p-7 shadow-2xl sm:p-10">
-          <div className="mb-9 flex border-b border-border text-center text-sm">
+      <section className="flex items-center justify-center bg-[#08090b] p-5 sm:p-8 xl:p-10">
+        <div className="w-full max-w-[620px] rounded-[18px] bg-[#fbfaf8] p-6 shadow-2xl sm:p-8 xl:p-9">
+          <div className="mb-6 flex border-b border-border text-center text-sm">
             <div className="relative flex-1 pb-4 font-medium text-[#17104f] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
@@ -138,7 +141,7 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
 
           <form
-            className="mt-7 space-y-5"
+            className="mt-5 space-y-4"
             onSubmit={(event) => {
               event.preventDefault();
               void submit(email, password);
@@ -207,7 +210,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-7 border-t border-border pt-6">
+          <div className="mt-5 border-t border-border pt-5">
             <p className="text-center text-sm font-medium text-[#17104f]">Или выберите тип аккаунта</p>
             <p className="mt-1 text-center text-xs text-muted-foreground">Для быстрого входа в демо-стенд</p>
 
@@ -221,6 +224,7 @@ export default function LoginPage() {
                     type="button"
                     disabled={isSubmitting}
                     onClick={() => chooseDemoRole(role.id, role.email)}
+                    style={{ order: role.order }}
                     className={`rounded-xl border px-3 py-3 text-left transition ${
                       selected
                         ? "border-primary bg-primary/10 shadow-sm"

@@ -16,12 +16,14 @@ from typing import Any
 
 from app.core.logging import get_logger
 from app.infrastructure.llm.base import LLMMessage
+from app.infrastructure.llm.gigachat_provider import GigaChatStructuredOutputError
 from app.infrastructure.llm.prompt_registry import PromptDefinition, PromptRegistry
 
 logger = get_logger(__name__)
 
 PROMPT_ID = "legal.registry_conflict_review"
-MAX_REGISTRY_RECORDS_FOR_LLM = 10
+MAX_REGISTRY_RECORDS_FOR_LLM = 6
+RETRY_REGISTRY_RECORDS_FOR_LLM = 3
 
 _LEGAL_METHODOLOGY = {
     "sources": [
@@ -162,7 +164,6 @@ async def review_registry_context(
     records = [
         _record_payload(record, similarity) for record, similarity in shortlisted
     ]
-    allowed_ids = {item["record_id"] for item in records}
     applicant = {
         "mark_text": _bounded_text(applicant_mark, 500),
         "mark_type": _bounded_text(applicant_mark_type, 50),
@@ -183,25 +184,29 @@ async def review_registry_context(
         "class_first_search": bool(applicant_classes),
     }
 
-    try:
-        registry = _prompt_registry()
-        definition: PromptDefinition | None = registry.get(PROMPT_ID)
-        if definition is None:  # guarded when the cached registry is created
-            raise RuntimeError(f"Prompt {PROMPT_ID!r} is not loaded")
+    registry = _prompt_registry()
+    definition: PromptDefinition | None = registry.get(PROMPT_ID)
+    if definition is None:  # guarded when the cached registry is created
+        raise RuntimeError(f"Prompt {PROMPT_ID!r} is not loaded")
+
+    async def _request(current_records: list[dict[str, Any]]) -> dict[str, Any]:
+        current_context = {**context, "records_sent": len(current_records)}
         user_prompt = registry.render(
             PROMPT_ID,
             {
                 "applicant_json": json.dumps(applicant, ensure_ascii=False, indent=2),
                 "registry_context_json": json.dumps(
-                    context, ensure_ascii=False, indent=2
+                    current_context, ensure_ascii=False, indent=2
                 ),
-                "records_json": json.dumps(records, ensure_ascii=False, indent=2),
+                "records_json": json.dumps(
+                    current_records, ensure_ascii=False, indent=2
+                ),
                 "legal_methodology_json": json.dumps(
                     _LEGAL_METHODOLOGY, ensure_ascii=False, indent=2
                 ),
             },
         )
-        result = await generate_structured(
+        return await generate_structured(
             messages=[
                 LLMMessage(role="system", content=definition.system),
                 LLMMessage(role="user", content=user_prompt),
@@ -209,6 +214,27 @@ async def review_registry_context(
             output_schema=definition.output_schema,
             temperature=0.0,
         )
+
+    try:
+        result = await _request(records)
+    except (GigaChatStructuredOutputError, json.JSONDecodeError) as exc:
+        if len(records) <= RETRY_REGISTRY_RECORDS_FOR_LLM:
+            logger.warning(
+                "LLM registry context review was truncated", error=str(exc)
+            )
+            return None
+        records = records[:RETRY_REGISTRY_RECORDS_FOR_LLM]
+        logger.warning(
+            "LLM registry context review was truncated; retrying a smaller batch",
+            records_sent=len(records),
+        )
+        try:
+            result = await _request(records)
+        except Exception as retry_exc:  # noqa: BLE001
+            logger.warning(
+                "LLM registry context review retry failed", error=str(retry_exc)
+            )
+            return None
     except Exception as exc:  # noqa: BLE001
         logger.warning("LLM registry context review failed", error=str(exc))
         return None
@@ -224,6 +250,7 @@ async def review_registry_context(
         logger.warning("LLM registry context review did not match the expected schema")
         return None
 
+    allowed_ids = {item["record_id"] for item in records}
     comments: dict[str, dict[str, Any]] = {}
     raw_reviews = result.get("record_reviews") or []
     if isinstance(raw_reviews, list):

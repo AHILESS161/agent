@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { ExternalLink, Loader2, ReceiptText } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useApi } from "@/lib/use-api";
 
@@ -22,6 +24,7 @@ const rubles = (value: number | null) =>
 
 export function ProfessionalFeeEstimate({ appId }: { appId: number }) {
   const fees = useApi<FeeEstimate>(`/applications/${appId}/fees`);
+  const [benefitOpen, setBenefitOpen] = useState(false);
 
   return (
     <Card className="border border-card-border" data-testid="professional-fee-estimate">
@@ -83,6 +86,11 @@ export function ProfessionalFeeEstimate({ appId }: { appId: number }) {
             <p className="text-sm text-muted-foreground">
               Бумажное свидетельство оформляется по желанию: дополнительно {rubles(fees.data.paper_certificate_extra)}.
             </p>
+
+            <div className="rounded-lg border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-medium">Льгота или освобождение</p><p className="mt-1 text-xs text-muted-foreground">Применяется только после проверки правового основания и подтверждающего документа.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setBenefitOpen((value) => !value)}>Проверить льготу</Button></div>
+              {benefitOpen && <div className="mt-3 rounded-md bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">Для обычной заявки на товарный знак статус физлица, самозанятого, ИП или субъекта МСП сам по себе не уменьшает пошлину. Специальные освобождения, включая п. 13¹ Положения о пошлинах, проверяются вручную; расчёт не меняется до подтверждения.</div>}
+            </div>
 
             {fees.data.warnings.length > 0 && (
               <div className="rounded-md bg-muted/60 p-3 text-xs leading-relaxed text-muted-foreground">

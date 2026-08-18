@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "Trademark Registration System"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    API_DOCS_ENABLED: bool = True
+    ALLOWED_HOSTS: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["*"]
+    )
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./trademark.db"
@@ -118,6 +122,7 @@ class Settings(BaseSettings):
         return list(v)  # type: ignore[arg-type]
 
     @field_validator(
+        "ALLOWED_HOSTS",
         "FIPS_TRADEMARK_DATASETS",
         "FIPS_APPLICATION_DATASETS",
         "FIPS_PUBLIC_DATA_SOURCES",

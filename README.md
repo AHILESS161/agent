@@ -112,7 +112,7 @@ docker compose exec api python -m app.seed.init_db
 ## Тесты
 
 ```bash
-cd backend && ../venv/Scripts/python -m pytest     # 704 теста собрано на 15.08.2026
+cd backend && ../venv/Scripts/python -m pytest     # 735 тестов на 18.08.2026
 cd frontend && npm run check && npm run build
 ```
 
@@ -174,6 +174,7 @@ cd frontend && npm run check && npm run build
 | [`docs/investor-pitch.pdf`](docs/investor-pitch.pdf) | готовая PDF-презентация для инвесторов |
 | [`docs/document-extraction.md`](docs/document-extraction.md) | пайплайн, паттерны, маппинг, политика LLM |
 | [`docs/demo-deployment.md`](docs/demo-deployment.md) | запуск, туннель, чек-лист безопасности |
+| [`docs/production-architecture.md`](docs/production-architecture.md) | production Docker-контур, обновление, бэкапы и масштабирование |
 | [`docs/rospatent-open-api.md`](docs/rospatent-open-api.md) | публичный и официальный поиск, поля реестра в анализе и контекст для LLM |
 | [`docs/testing.md`](docs/testing.md) | команды и покрытие |
 | [`docs/roadmap.md`](docs/roadmap.md) | план и честные ограничения |

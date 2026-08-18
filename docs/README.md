@@ -1,6 +1,6 @@
 # Документация «Регистра»
 
-**Актуализировано:** 17 августа 2026 года.
+**Актуализировано:** 18 августа 2026 года.
 
 Начинать знакомство с проектом следует с [`current-state.md`](current-state.md):
 это единая точка правды о реализованных функциях, ограничениях и маршрутах
@@ -50,6 +50,7 @@
 |---|---|
 | [`demo-deployment.md`](demo-deployment.md) | локальный запуск и временный доступ извне |
 | [`server-production-plan.md`](server-production-plan.md) | отложенный production-план |
+| [`production-architecture.md`](production-architecture.md) | готовый production-контур, деплой, бэкапы и путь масштабирования |
 | [`security.md`](security.md) | модель доступа, секреты и ограничения демо-режима |
 | [`testing.md`](testing.md) | актуальные команды и текущее покрытие |
 | [`testing-strategy.md`](testing-strategy.md) | целевая стратегия тестирования |

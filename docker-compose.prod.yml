@@ -1,0 +1,103 @@
+name: registr
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [private]
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    env_file: ${ENV_FILE:-.env.production}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      FILE_STORAGE_PATH: /data/documents
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [private]
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    env_file: ${ENV_FILE:-.env.production}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      FILE_STORAGE_PATH: /data/documents
+    volumes:
+      - documents_data:/data/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose: ["8000"]
+    restart: unless-stopped
+    networks: [private]
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    depends_on:
+      api:
+        condition: service_healthy
+    expose: ["8080"]
+    restart: unless-stopped
+    networks: [private]
+    security_opt:
+      - no-new-privileges:true
+
+  caddy:
+    image: caddy:2.8-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN is required}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    networks: [private]
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  private:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    name: registr_postgres_data
+  documents_data:
+    name: registr_documents_data
+  caddy_data:
+    name: registr_caddy_data
+  caddy_config:
+    name: registr_caddy_config

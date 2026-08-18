@@ -14,6 +14,8 @@
 | [`current-state.md`](current-state.md) | фактическое состояние продукта на сегодня |
 | [`target-audience-and-positioning.md`](target-audience-and-positioning.md) | основная аудитория и продуктовая модель |
 | [`business-go-to-market.md`](business-go-to-market.md) | коммерческий потенциал, тарифы, продвижение и экономика |
+| [`operating-economics-and-sla.md`](operating-economics-and-sla.md) | нагрузочные сценарии, команда, стоимость LLM, серверы и SLA/SLO |
+| [`marketing-strategy.md`](marketing-strategy.md) | ICP, позиционирование, каналы, бюджет, KPI и план на 90 дней |
 | [`investor-pitch.html`](investor-pitch.html) | интерактивная инвестиционная презентация, печать в PDF |
 | [`investor-pitch.pdf`](investor-pitch.pdf) | готовая инвестиционная презентация 16:9 без обрезания слайдов |
 | [`ux-audit-2026-08.md`](ux-audit-2026-08.md) | изменения клиентского и профессионального интерфейсов |

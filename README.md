@@ -170,6 +170,8 @@ cd frontend && npm run check && npm run build
 | [`docs/README.md`](docs/README.md) | оглавление всей документации |
 | [`docs/current-state.md`](docs/current-state.md) | единая точка правды о текущем продукте |
 | [`docs/business-go-to-market.md`](docs/business-go-to-market.md) | бизнес-модель и план продвижения |
+| [`docs/operating-economics-and-sla.md`](docs/operating-economics-and-sla.md) | команда, серверы, стоимость LLM и целевой SLA |
+| [`docs/marketing-strategy.md`](docs/marketing-strategy.md) | сегменты, каналы, бюджет и 90-дневный маркетинговый план |
 | [`docs/investor-pitch.html`](docs/investor-pitch.html) | интерактивная презентация для инвесторов |
 | [`docs/investor-pitch.pdf`](docs/investor-pitch.pdf) | готовая PDF-презентация для инвесторов |
 | [`docs/document-extraction.md`](docs/document-extraction.md) | пайплайн, паттерны, маппинг, политика LLM |

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
@@ -8,10 +9,14 @@ import {
   Plus,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
+import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useCases } from "@/lib/use-cases";
+import { getGreetingName } from "@/lib/utils";
 import type { Application, ApplicationStatus } from "@shared/schema";
 
 const RESULT_STATUSES = new Set<ApplicationStatus>([
@@ -38,13 +43,46 @@ function stageFor(status: ApplicationStatus) {
   return { step: 1, label: "Черновик", action: "Открыть заявку" };
 }
 
-function ApplicationCard({ application }: { application: Application }) {
+function ApplicationCard({
+  application,
+  onDeleted,
+}: {
+  application: Application;
+  onDeleted: () => void;
+}) {
+  const { toast } = useToast();
+  const [isDeleting, setIsDeleting] = useState(false);
   const stage = stageFor(application.status);
   const updated = new Date(application.updatedAt).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   });
+  const canDelete = !["submitted", "closed"].includes(application.status);
+
+  const remove = async () => {
+    const confirmed = window.confirm(
+      `Удалить заявку «${application.markName}»?\n\n` +
+        "Вместе с ней будут удалены документы и результаты проверки. " +
+        "Отменить это действие будет нельзя.",
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await api.delete(`/applications/${application.id}`);
+      toast({ title: `Заявка «${application.markName}» удалена` });
+      onDeleted();
+    } catch (error) {
+      toast({
+        title: "Не удалось удалить заявку",
+        description: error instanceof ApiError ? error.message : "Попробуйте ещё раз",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <Link href={`/applications/${application.id}`}>
@@ -59,10 +97,30 @@ function ApplicationCard({ application }: { application: Application }) {
             </h2>
             <p className="mt-1 text-sm text-[#6d6d7d]">Обновлено {updated}</p>
           </div>
-          <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f0f8f7] px-3.5 py-2 text-sm font-semibold text-[#087c78]">
-            {stage.step === 4 ? <CheckCircle2 className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
-            {stage.label}
-          </span>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f0f8f7] px-3.5 py-2 text-sm font-semibold text-[#087c78]">
+              {stage.step === 4 ? <CheckCircle2 className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
+              {stage.label}
+            </span>
+            {canDelete && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="rounded-full px-3 text-[#8a5260] hover:bg-red-50 hover:text-red-700"
+                disabled={isDeleting}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void remove();
+                }}
+                aria-label={`Удалить заявку «${application.markName}»`}
+              >
+                {isDeleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                Удалить
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-4 gap-2" aria-label={`Шаг ${stage.step} из 4`}>
@@ -89,7 +147,7 @@ export default function ClientDashboardPage() {
   const [, setLocation] = useLocation();
   const cases = useCases();
   const applications = cases.data?.applications ?? [];
-  const name = user?.preferredName || user?.fullName?.split(" ")[0] || "";
+  const name = getGreetingName(user?.preferredName, user?.fullName);
 
   return (
     <div className="space-y-10">
@@ -169,7 +227,11 @@ export default function ClientDashboardPage() {
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">
             {applications.map((application) => (
-              <ApplicationCard key={application.id} application={application} />
+              <ApplicationCard
+                key={application.id}
+                application={application}
+                onDeleted={cases.reload}
+              />
             ))}
           </div>
         )}

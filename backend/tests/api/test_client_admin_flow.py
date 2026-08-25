@@ -26,6 +26,90 @@ def _create_case(api_client, headers: dict[str, str], mark: str = "КЛИЕНТ�
 
 @pytest.mark.api
 class TestClientApplicationRouting:
+    async def test_common_classification_uses_precise_local_catalog(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("customer-repair@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-repair@test.ru")
+        application = _create_case(client, customer, "МАСТЕР")
+        updated = client.put(
+            f"/api/v1/applications/{application['id']}",
+            json={
+                "business_description": "Ремонт бытовой техники",
+                "goods_services_raw": "Ремонт бытовой техники",
+            },
+            headers=customer,
+        )
+        assert updated.status_code == 200, updated.text
+
+        response = client.post(
+            f"/api/v1/applications/{application['id']}/nice-classes/suggest",
+            headers=customer,
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["status"] == "catalog"
+        assert [
+            item["class_number"] for item in response.json()["suggestions"]
+        ] == [37]
+
+    async def test_explicit_sales_add_trade_services_class(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("customer-clothes@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-clothes@test.ru")
+        application = _create_case(client, customer, "ОДЕЖДА")
+        client.put(
+            f"/api/v1/applications/{application['id']}",
+            json={
+                "business_description": "Производство одежды и продажа через интернет-магазин",
+                "goods_services_raw": "Производство одежды и продажа через интернет-магазин",
+            },
+            headers=customer,
+        )
+
+        response = client.post(
+            f"/api/v1/applications/{application['id']}/nice-classes/suggest",
+            headers=customer,
+        )
+
+        assert response.status_code == 201, response.text
+        assert {
+            item["class_number"] for item in response.json()["suggestions"]
+        } == {25, 35}
+
+    async def test_client_can_delete_own_draft(self, client, api_user_factory):
+        await api_user_factory("customer-delete@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-delete@test.ru")
+        application = _create_case(client, customer, "УДАЛЯЕМЫЙ ЧЕРНОВИК")
+
+        deleted = client.delete(
+            f"/api/v1/applications/{application['id']}", headers=customer
+        )
+
+        assert deleted.status_code == 204, deleted.text
+        assert (
+            client.get(
+                f"/api/v1/applications/{application['id']}", headers=customer
+            ).status_code
+            == 404
+        )
+
+    async def test_client_cannot_delete_another_clients_draft(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("customer-owner@test.ru", UserRole.client)
+        await api_user_factory("customer-stranger@test.ru", UserRole.client)
+        owner = login_headers(client, "customer-owner@test.ru")
+        stranger = login_headers(client, "customer-stranger@test.ru")
+        application = _create_case(client, owner, "ЧУЖОЙ ЧЕРНОВИК")
+
+        denied = client.delete(
+            f"/api/v1/applications/{application['id']}", headers=stranger
+        )
+
+        assert denied.status_code == 403
+
     async def test_client_application_is_visible_to_admin(self, client, api_user_factory):
         await api_user_factory("customer-flow@test.ru", UserRole.client)
         await api_user_factory("admin-flow@test.ru", UserRole.admin)

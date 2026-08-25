@@ -67,9 +67,20 @@ from app.schemas.legal import (
 )
 from app.services.completeness_engine import ApplicationStage, CompletenessEngine
 from app.services.state_machine import ApplicationStateMachine
+from app.services.application_draft import load_mark_image_content
+from app.services.mark_description import (
+    DESCRIPTION_SCHEMA,
+    build_mark_description_prompt,
+    normalize_mark_language,
+    normalize_mark_description,
+    prepare_vision_image,
+)
+from app.core.config import settings
+from app.core.logging import get_logger
 from app.agents.legal.query_variants import QueryVariantGenerator
 
 router = APIRouter(prefix="/applications", tags=["applications"])
+logger = get_logger(__name__)
 
 _completeness_engine = CompletenessEngine()
 
@@ -264,7 +275,7 @@ async def delete_application(
     application_id: int,
     request: Request,
     session: AsyncSession = Depends(get_session),
-    current_user: User = Depends(require_roles("admin", "lawyer")),
+    current_user: User = Depends(get_current_user),
 ) -> None:
     """Удалить дело со всеми материалами.
 
@@ -273,9 +284,8 @@ async def delete_application(
     """
     app = await _get_app_or_404(application_id, session)
 
-    # Поверенный распоряжается своими делами; чужое дело удалить может
-    # только администратор — иначе чужая работа исчезнет без следа
-    # у того, кто её вёл.
+    # Клиент и специалист распоряжаются только своими делами; чужое дело
+    # удалить может только администратор.
     if current_user.role is not UserRole.admin and not _is_owner(app, current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -367,6 +377,68 @@ async def suggest_mark_language(
         "translation": next(
             (item.text for item in variants if item.kind == "translation"), None
         ),
+    }
+
+
+@router.post("/{application_id}/generate-mark-description")
+async def generate_mark_description(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Подготовить описание и цвета по фактически загруженному изображению знака."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    if app.mark_type is None or app.mark_type.value not in {"figurative", "combined"}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Анализ изображения доступен для изобразительного и комбинированного обозначения.",
+        )
+    original = await load_mark_image_content(session, app)
+    if not original:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Сначала загрузите изображение обозначения.",
+        )
+    provider = _get_llm_provider()
+    generate = getattr(provider, "generate_image_structured", None)
+    if not callable(generate):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI-анализ изображения недоступен для настроенной модели.",
+        )
+    image, mime_type = prepare_vision_image(original)
+    try:
+        raw = await generate(
+            image=image,
+            mime_type=mime_type,
+            prompt=build_mark_description_prompt(
+                mark_type=app.mark_type.value,
+                known_text=(app.mark_text or app.mark_name or ""),
+            ),
+            output_schema=DESCRIPTION_SCHEMA,
+            model=settings.VISION_MODEL or settings.LLM_MODEL,
+        )
+        description, colors = normalize_mark_description(raw)
+        transliteration, translation = normalize_mark_language(raw)
+    except Exception as exc:  # внешний AI не должен отдавать техническую ошибку клиенту
+        logger.warning(
+            "Не удалось подготовить описание изображения",
+            application_id=application_id,
+            error=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Не удалось проанализировать изображение. Попробуйте ещё раз позже или заполните описание вручную.",
+        ) from exc
+    return {
+        "description": description,
+        "colors": colors,
+        "transliteration": transliteration,
+        "translation": translation,
+        "model": settings.VISION_MODEL or settings.LLM_MODEL,
+        "requires_confirmation": True,
     }
 
 

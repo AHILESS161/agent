@@ -148,9 +148,23 @@ def build_context(retrieved: list[RetrievedChunk]) -> tuple[str, dict[str, str]]
     for item in retrieved:
         chunk = item.chunk
         sources[item.citation_id] = chunk.content
+        provenance = []
+        if chunk.source_metadata:
+            edition = chunk.source_metadata.get("edition")
+            effective_from = chunk.source_metadata.get("effective_from")
+            verified_at = chunk.source_metadata.get("verified_at")
+            if edition:
+                provenance.append(f"редакция: {edition}")
+            if effective_from:
+                provenance.append(f"действует с: {effective_from}")
+            if verified_at:
+                provenance.append(f"проверено: {verified_at}")
+        if chunk.source_url:
+            provenance.append(f"официальный источник: {chunk.source_url}")
+        provenance_text = f" [{'; '.join(provenance)}]" if provenance else ""
         blocks.append(
             f"[source_id: {item.citation_id}] "
-            f"[{chunk.source_name} — {chunk.anchor}]\n{chunk.content}"
+            f"[{chunk.source_name} — {chunk.anchor}]{provenance_text}\n{chunk.content}"
         )
 
     return "\n\n---\n\n".join(blocks), sources

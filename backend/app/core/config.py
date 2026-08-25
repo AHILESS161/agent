@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o"
     LLM_BASE_URL: Optional[str] = None
     LLM_API_KEY: Optional[str] = None
+    # Отдельную мультимодальную модель используем только для анализа загруженного
+    # изображения обозначения. Основная текстовая модель может не принимать картинки.
+    VISION_MODEL: Optional[str] = "google/gemini-2.5-flash"
     GIGACHAT_AUTHORIZATION_KEY: Optional[str] = None
     GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"
     GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"

@@ -63,6 +63,7 @@ desktop.ini
 .continue/
 .scratch/
 .runtime/
+.review/
 /.pytest-tmp-*/
 /.pytest-cache-*/
 tmp/

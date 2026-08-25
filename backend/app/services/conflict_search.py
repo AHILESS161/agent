@@ -20,6 +20,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,7 +42,7 @@ from app.infrastructure.database.models import (
     SearchMode,
     TrademarkApplicationDraft,
 )
-from app.agents.legal.query_variants import QueryVariantGenerator
+from app.agents.legal.query_variants import QueryVariantGenerator, deterministic_variants
 from app.agents.legal.registry_context import (
     MAX_REGISTRY_RECORDS_FOR_LLM,
     review_registry_context,
@@ -64,7 +66,7 @@ from app.services.visual_mark_similarity import (
 logger = get_logger(__name__)
 
 # Сколько записей запрашивать у провайдера на один вид поиска.
-MAX_RESULTS = 50
+MAX_RESULTS = 40
 
 # Порог, ниже которого совпадение не сохраняется как конфликт.
 MIN_SIMILARITY = 0.3
@@ -78,7 +80,18 @@ MAX_SEMANTIC_CHECKS = 4
 # Контрольный поиск вне выбранных классов нужен для общеизвестных знаков и
 # случаев однородности товаров из разных классов. Он выполняется только после
 # основного class-first прохода и намеренно уже основного поиска.
-BROAD_CONTROL_RESULTS = 20
+BROAD_CONTROL_RESULTS = 12
+
+# Публичный поиск не имеет гарантированного SLA. Сначала тратим бюджет на
+# выбранные классы, а общий контроль выполняем только на оставшемся времени.
+REGISTRY_SEARCH_BUDGET_SECONDS = 25.0
+# Это дополнительный текстовый разбор. Поиск, class-first ранжирование и
+# смысловая оценка карточек уже выполнены, поэтому долго ждать его нет смысла.
+REGISTRY_REVIEW_BUDGET_SECONDS = 4.0
+REGISTRY_SEARCH_CONCURRENCY = 4
+QUERY_VARIANT_BUDGET_SECONDS = 4.0
+SEMANTIC_LAYER_BUDGET_SECONDS = 8.0
+VISUAL_COMPARISON_BUDGET_SECONDS = 8.0
 
 _RISK_ORDER = {
     RiskLevel.low: 0,
@@ -188,9 +201,14 @@ async def _apply_semantic_layer(
 
     analyzer = SemanticSimilarityAnalyzer(llm_provider)
     updated = list(scored)
-    for index in candidates:
+
+    async def analyze_one(index: int) -> tuple[int, SemanticVerdict]:
+        record, _ = updated[index]
+        return index, await analyzer.analyze(mark_text, record.mark_text or "")
+
+    results = await asyncio.gather(*(analyze_one(index) for index in candidates))
+    for index, verdict in results:
         record, similarity = updated[index]
-        verdict = await analyzer.analyze(mark_text, record.mark_text or "")
         if not verdict.is_meaningful:
             continue
         updated[index] = (record, with_semantic(similarity, verdict.score))
@@ -286,7 +304,19 @@ async def run_conflict_search(
     # Реестр ищет по написанию, поэтому знак-перевод не найдётся
     # по исходному обозначению. Запрос расширяется транслитерацией
     # (по правилам) и переводом (языковой моделью).
-    variants = await QueryVariantGenerator(llm_provider).build(mark_text)
+    query_variants_timed_out = False
+    try:
+        variants = await asyncio.wait_for(
+            QueryVariantGenerator(llm_provider).build(mark_text),
+            timeout=QUERY_VARIANT_BUDGET_SECONDS,
+        )
+    except TimeoutError:
+        variants = deterministic_variants(mark_text)
+        query_variants_timed_out = True
+        logger.warning(
+            "Расширение поискового запроса остановлено по лимиту времени",
+            seconds=QUERY_VARIANT_BUDGET_SECONDS,
+        )
     job.search_strategy_json = {
         **(job.search_strategy_json or {}),
         "query_variants": [
@@ -299,6 +329,9 @@ async def run_conflict_search(
     search_scope: dict[str, str] = {}
     search_applications = getattr(registry_provider, "search_applications", None)
     applications_checked = callable(search_applications)
+    search_errors: list[str] = []
+    search_complete = True
+    search_semaphore = asyncio.Semaphore(REGISTRY_SEARCH_CONCURRENCY)
 
     async def collect_phase(
         *,
@@ -307,8 +340,11 @@ async def run_conflict_search(
         phase_name: str,
         registration_search_types: tuple[str, ...],
         max_results: int,
-    ) -> None:
+        timeout_seconds: float,
+    ) -> bool:
         """Собрать одну фазу, сохраняя порядок class-first в аудите."""
+        calls: list[tuple[int, Any, str, SearchQuery, Any]] = []
+        call_index = 0
         for variant in phase_variants:
             for search_type in registration_search_types:
                 query = SearchQuery(
@@ -320,19 +356,10 @@ async def run_conflict_search(
                     search_type=search_type,
                     max_results=max_results,
                 )
-                for record in await registry_provider.search_marks(query):
-                    # Не все внешние адаптеры гарантируют серверную фильтрацию.
-                    # В первой фазе дополнительно проверяем пересечение локально.
-                    if (
-                        phase_classes
-                        and record.classes
-                        and not set(phase_classes).intersection(record.classes)
-                    ):
-                        continue
-                    if record.record_id not in records:
-                        records[record.record_id] = record
-                        found_by[record.record_id] = variant.kind
-                        search_scope[record.record_id] = phase_name
+                calls.append(
+                    (call_index, variant, "registration", query, registry_provider.search_marks)
+                )
+                call_index += 1
 
             if applications_checked:
                 application_query = SearchQuery(
@@ -344,36 +371,87 @@ async def run_conflict_search(
                     search_type="fuzzy",
                     max_results=max_results,
                 )
-                for record in await search_applications(application_query):
-                    if (
-                        phase_classes
-                        and record.classes
-                        and not set(phase_classes).intersection(record.classes)
-                    ):
-                        continue
-                    if record.record_id not in records:
-                        records[record.record_id] = record
-                        found_by[record.record_id] = f"application:{variant.kind}"
-                        search_scope[record.record_id] = phase_name
+                calls.append(
+                    (call_index, variant, "application", application_query, search_applications)
+                )
+                call_index += 1
+
+        async def execute(call: tuple[int, Any, str, SearchQuery, Any]):
+            index, variant, source, query, searcher = call
+            async with search_semaphore:
+                return index, variant, source, await searcher(query)
+
+        tasks = [asyncio.create_task(execute(call)) for call in calls]
+        done, pending = await asyncio.wait(tasks, timeout=max(0.1, timeout_seconds))
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+            search_errors.append(
+                f"{phase_name}: не завершено запросов {len(pending)} из {len(tasks)}"
+            )
+
+        completed: list[tuple[int, Any, str, list[Any]]] = []
+        for task in done:
+            try:
+                completed.append(task.result())
+            except Exception as exc:  # один сбой публичного поиска не обнуляет остальные
+                search_errors.append(f"{phase_name}: {type(exc).__name__}: {exc}")
+
+        for _, variant, source, found in sorted(completed, key=lambda item: item[0]):
+            for record in found:
+                # Не все внешние адаптеры гарантируют серверную фильтрацию.
+                if (
+                    phase_classes
+                    and record.classes
+                    and not set(phase_classes).intersection(record.classes)
+                ):
+                    continue
+                if record.record_id not in records:
+                    records[record.record_id] = record
+                    found_by[record.record_id] = (
+                        f"application:{variant.kind}"
+                        if source == "application"
+                        else variant.kind
+                    )
+                    search_scope[record.record_id] = phase_name
+        return not pending and len(completed) == len(tasks)
 
     try:
-        await collect_phase(
+        search_deadline = time.monotonic() + REGISTRY_SEARCH_BUDGET_SECONDS
+        # В публичном адаптере phonetic отправляется как тот же fuzzy-запрос.
+        # Фонетическая близость всё равно рассчитывается локально по карточкам.
+        registration_types = (
+            ("exact", "fuzzy")
+            if mode is SearchMode.limited
+            else ("exact", "fuzzy", "phonetic")
+        )
+        search_complete = await collect_phase(
             phase_variants=variants,
             phase_classes=classes or None,
             phase_name=("selected_classes" if classes else "broader_registry_without_classes"),
-            registration_search_types=("exact", "fuzzy", "phonetic"),
+            registration_search_types=registration_types,
             max_results=MAX_RESULTS,
+            timeout_seconds=REGISTRY_SEARCH_BUDGET_SECONDS,
         )
-        if classes:
+        remaining = search_deadline - time.monotonic()
+        if classes and remaining >= 5:
             # Контрольный проход выполняется после классов, только по исходному
             # написанию и с меньшим лимитом. Он не вытесняет class-first выдачу.
-            await collect_phase(
-                phase_variants=variants[:1],
-                phase_classes=None,
-                phase_name="broader_registry_control",
-                registration_search_types=("exact", "fuzzy"),
-                max_results=BROAD_CONTROL_RESULTS,
+            search_complete = (
+                await collect_phase(
+                    phase_variants=variants[:1],
+                    phase_classes=None,
+                    phase_name="broader_registry_control",
+                    registration_search_types=("exact", "fuzzy"),
+                    max_results=BROAD_CONTROL_RESULTS,
+                    timeout_seconds=remaining,
+                )
+                and search_complete
             )
+        elif classes:
+            search_complete = False
+            search_errors.append("broader_registry_control: пропущен из-за лимита времени")
     except Exception as exc:  # noqa: BLE001
         job.status = SearchJobStatus.failed
         job.error_message = str(exc)
@@ -405,9 +483,21 @@ async def run_conflict_search(
     # Смысловая проверка выполняется ДО отсечения по порогу: пара
     # «ЯБЛОКО» / «APPLE» не проходит порог по звуку и начертанию,
     # и без этого шага была бы отброшена до того, как её увидела модель.
-    scored, semantic_verdicts = await _apply_semantic_layer(
-        scored, mark_text, llm_provider, goods_known=bool(classes)
-    )
+    semantic_layer_timed_out = False
+    try:
+        scored, semantic_verdicts = await asyncio.wait_for(
+            _apply_semantic_layer(
+                scored, mark_text, llm_provider, goods_known=bool(classes)
+            ),
+            timeout=SEMANTIC_LAYER_BUDGET_SECONDS,
+        )
+    except TimeoutError:
+        semantic_verdicts = {}
+        semantic_layer_timed_out = True
+        logger.warning(
+            "Смысловое сравнение обозначений остановлено по лимиту времени",
+            seconds=SEMANTIC_LAYER_BUDGET_SECONDS,
+        )
     visual_comparisons: dict[str, Any] = {}
     visual_errors: list[str] = []
     if application.mark_type is MarkType.combined and application.mark_image_file_id:
@@ -426,9 +516,22 @@ async def run_conflict_search(
                 )
                 if record.image_url
             ][:MAX_VISUAL_IMAGE_CHECKS]
-            visual_comparisons, visual_errors = await compare_registry_candidates(
-                source_image, visual_candidates, registry_provider
-            )
+            try:
+                visual_comparisons, visual_errors = await asyncio.wait_for(
+                    compare_registry_candidates(
+                        source_image, visual_candidates, registry_provider
+                    ),
+                    timeout=VISUAL_COMPARISON_BUDGET_SECONDS,
+                )
+            except TimeoutError:
+                visual_comparisons = {}
+                visual_errors = [
+                    "Визуальное сравнение остановлено по лимиту времени"
+                ]
+                logger.warning(
+                    "Визуальное сравнение карточек остановлено по лимиту времени",
+                    seconds=VISUAL_COMPARISON_BUDGET_SECONDS,
+                )
             scored = [
                 (
                     record,
@@ -465,33 +568,45 @@ async def run_conflict_search(
         reverse=True,
     )[:MAX_REGISTRY_RECORDS_FOR_LLM]
 
-    registry_review = await review_registry_context(
-        llm_provider,
-        applicant_mark=mark_text,
-        applicant_mark_type=(
-            application.mark_type.value if application.mark_type else None
-        ),
-        applicant_classes=classes,
-        applicant_goods=application.goods_services_raw or "",
-        conflicts=review_candidates,
-        provider_name=getattr(settings, "FIPS_PROVIDER", "mock"),
-        search_mode=mode.value,
-        class_context_description=class_context.describe(),
-        classes_confirmed=class_context.is_confirmed,
-        applicant_details={
-            "description_of_mark": application.description_of_mark,
-            "transliteration": application.transliteration,
-            "translation": application.translation,
-            "colors_claimed": application.colors_claimed,
-            "priority_claim": application.priority_claim,
-            "visual_records_compared": len(visual_comparisons),
-            "visual_comparison_method": (
-                "dhash+ahash+color_histogram+aspect_ratio"
-                if visual_comparisons
-                else None
+    registry_review_timed_out = False
+    try:
+        registry_review = await asyncio.wait_for(
+            review_registry_context(
+                llm_provider,
+                applicant_mark=mark_text,
+                applicant_mark_type=(
+                    application.mark_type.value if application.mark_type else None
+                ),
+                applicant_classes=classes,
+                applicant_goods=application.goods_services_raw or "",
+                conflicts=review_candidates,
+                provider_name=getattr(settings, "FIPS_PROVIDER", "mock"),
+                search_mode=mode.value,
+                class_context_description=class_context.describe(),
+                classes_confirmed=class_context.is_confirmed,
+                applicant_details={
+                    "description_of_mark": application.description_of_mark,
+                    "transliteration": application.transliteration,
+                    "translation": application.translation,
+                    "colors_claimed": application.colors_claimed,
+                    "priority_claim": application.priority_claim,
+                    "visual_records_compared": len(visual_comparisons),
+                    "visual_comparison_method": (
+                        "dhash+ahash+color_histogram+aspect_ratio"
+                        if visual_comparisons
+                        else None
+                    ),
+                },
             ),
-        },
-    )
+            timeout=REGISTRY_REVIEW_BUDGET_SECONDS,
+        )
+    except TimeoutError:
+        registry_review = None
+        registry_review_timed_out = True
+        logger.warning(
+            "LLM-разбор карточек реестра остановлен по лимиту времени",
+            seconds=REGISTRY_REVIEW_BUDGET_SECONDS,
+        )
     if registry_review is not None:
         assessment.llm_used = True
         assessment.model_name = getattr(llm_provider, "MODEL_NAME", None)
@@ -552,6 +667,26 @@ async def run_conflict_search(
 
     # --- ограничения, которые обязаны попасть в отчёт ---
     limitations: list[str] = []
+    if query_variants_timed_out:
+        limitations.append(
+            "Поиск по исходному написанию и транслитерации выполнен, но модель не успела "
+            "предложить перевод обозначения в установленный срок."
+        )
+    if semantic_layer_timed_out:
+        limitations.append(
+            "Смысловое сравнение обозначений на разных языках не завершилось в установленный срок; "
+            "найденные карточки ранжированы по воспроизводимым текстовым показателям."
+        )
+    if not search_complete:
+        limitations.append(
+            "Часть контрольных запросов к публичному реестру не завершилась в установленный срок. "
+            "Результаты поиска внутри выбранных классов сохранены; для окончательного решения рекомендуется повторная проверка."
+        )
+    if registry_review_timed_out:
+        limitations.append(
+            "Дополнительный комментарий языковой модели по карточкам реестра не сформирован в установленный срок. "
+            "Рассчитанные показатели сходства и найденные карточки сохранены."
+        )
     if mode is SearchMode.demo:
         limitations.append(
             "Поиск выполнен по ограниченному демонстрационному набору данных, "
@@ -655,6 +790,10 @@ async def run_conflict_search(
             registry_review.as_dict() if registry_review is not None else None
         ),
         "applications_checked": applications_checked,
+        "search_complete": search_complete,
+        "search_errors": search_errors[:10],
+        "query_variants_timed_out": query_variants_timed_out,
+        "semantic_layer_timed_out": semantic_layer_timed_out,
         "class_first_search": bool(classes),
         "selected_class_records": sum(
             scope == "selected_classes" for scope in search_scope.values()
@@ -697,13 +836,23 @@ async def run_conflict_search(
 
     highest_record, highest = conflicts[0]
     assessment.overall_risk = effective_level(conflicts[0])
-    assessment.summary = (
-        f"Выявлено карточек, требующих оценки: {len(conflicts)}. Наиболее значимая — "
-        f"«{highest_record.mark_text}» (расчётный коэффициент {highest.overall:.2f}, "
-        f"предварительный риск {assessment.overall_risk.value})."
+    risk_wording = {
+        RiskLevel.low: "не выглядит препятствием для регистрации",
+        RiskLevel.medium: "требует дополнительной правовой оценки",
+        RiskLevel.high: "может создать существенный риск отказа",
+        RiskLevel.critical: "создаёт высокий риск отказа",
+    }[assessment.overall_risk]
+    class_wording = (
+        "классах " + ", ".join(str(value) for value in classes)
+        if classes
+        else "доступной части реестра"
     )
-    if registry_review is not None and registry_review.summary:
-        assessment.summary += f" Комментарий LLM: {registry_review.summary}"
+    assessment.summary = (
+        f"Поиск в {class_wording} завершён. Для сравнения отобрано "
+        f"{len(conflicts)} обозначений. Наиболее близкое — "
+        f"«{highest_record.mark_text}»; по предварительной оценке оно "
+        f"{risk_wording}."
+    )
     if application.mark_type is MarkType.combined and not visual_comparisons:
         assessment.is_inconclusive = True
         assessment.inconclusive_reason = (
@@ -718,21 +867,35 @@ async def run_conflict_search(
 
     # --- выводы по каждому конфликту ---
     for record, similarity in conflicts:
+        level = effective_level((record, similarity))
+        if level is RiskLevel.low:
+            legal_assessment = (
+                "Словесные элементы и общий смысл обозначений различаются. "
+                "Даже при пересечении отдельных товаров или услуг очевидной "
+                "вероятности смешения предварительно не установлено."
+            )
+        elif level is RiskLevel.medium:
+            legal_assessment = (
+                "Есть отдельные сходные элементы и пересечение товаров или услуг. "
+                "Перед подачей нужно подробнее сопоставить перечни и общее "
+                "впечатление от обозначений."
+            )
+        else:
+            legal_assessment = (
+                "Сходные элементы сочетаются с пересечением товаров или услуг, "
+                "поэтому Роспатент может увидеть вероятность смешения обозначений."
+            )
         explanation = (
-            f"Обозначение «{mark_text}» сопоставлено с «{record.mark_text}» "
-            f"(правообладатель: {record.owner or 'не указан'}). "
-            f"Звуковое сходство {similarity.phonetic:.2f}, графическое "
-            f"{similarity.visual:.2f}, смысловое {similarity.semantic:.2f}, "
-            f"однородность товаров {similarity.goods:.2f}."
+            f"Заявляемое обозначение «{mark_text}» сопоставлено с "
+            f"«{record.mark_text}» (правообладатель: "
+            f"{record.owner or 'в открытой записи не указан'}). {legal_assessment}"
         )
         image_comparison = visual_comparisons.get(record.record_id)
         if image_comparison is not None:
             explanation += (
-                " Предварительное сходство самих изображений "
-                f"{image_comparison.score:.2f}; результат требует визуальной проверки."
+                " Изображения также сопоставлены автоматически; этот результат "
+                "используется как подсказка и требует визуальной проверки."
             )
-        if similarity.reasons:
-            explanation += " Основания: " + "; ".join(similarity.reasons) + "."
 
         verdict = semantic_verdicts.get(record.record_id)
         if verdict is not None:

@@ -68,3 +68,43 @@ async def test_class_analyzer_uses_provider_json_schema() -> None:
     assert outcome.result.suggestions[0].class_number == 37
     assert provider.schema is not None
     assert "suggestions" in provider.schema["properties"]
+
+
+@pytest.mark.unit
+def test_class_retrieval_does_not_let_one_class_fill_context() -> None:
+    chunks = [
+        StoredChunk(
+            chunk_id=index,
+            source_id=1,
+            source_name="МКТУ",
+            source_version="13-2026",
+            source_type="methodology",
+            content=f"Класс 9. Телефоны, компьютеры и оборудование, часть {index}.",
+            anchor="МКТУ 13-2026 → Класс 9. Официальный перечень",
+            article=None,
+            clause=None,
+        )
+        for index in range(1, 9)
+    ]
+    chunks.append(
+        StoredChunk(
+            chunk_id=20,
+            source_id=1,
+            source_name="МКТУ",
+            source_version="13-2026",
+            source_type="methodology",
+            content="Класс 37. Установка, обслуживание и ремонт компьютеров.",
+            anchor="МКТУ 13-2026 → Класс 37. Официальный перечень",
+            article=None,
+            clause=None,
+        )
+    )
+
+    analyzer = RagNiceClassAnalyzer(StructuredProvider(), chunks)
+    retrieved = analyzer._retrieve_class_candidates(
+        "Ремонтирую мобильные телефоны и компьютеры"
+    )
+
+    anchors = [item.chunk.anchor for item in retrieved]
+    assert any("Класс 37." in anchor for anchor in anchors)
+    assert sum("Класс 9." in anchor for anchor in anchors) == 1

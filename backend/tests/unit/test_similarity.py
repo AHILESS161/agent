@@ -17,6 +17,7 @@ from app.document_processing.similarity import (
     phonetic_similarity,
     semantic_similarity,
     visual_similarity,
+    with_image_visual,
 )
 
 
@@ -116,3 +117,12 @@ class TestConfusionAssessment:
         payload = assess("СБЕР", "СБЕР", [36], [36]).as_dict()
         for key in ("phonetic", "visual", "semantic", "goods", "overall", "level"):
             assert key in payload
+
+    def test_rough_image_score_does_not_create_legal_risk(self):
+        base = assess("ДРУЖЕЛЮБНЫЙ СОСЕД", "ТЕХНОЛОГИИ ПОБЕД", [37], [37])
+        enriched = with_image_visual(base, 0.95)
+
+        assert enriched.image_visual == pytest.approx(0.95)
+        assert enriched.overall == pytest.approx(base.overall)
+        assert enriched.mark_similarity == pytest.approx(base.mark_similarity)
+        assert enriched.confusion_likely is base.confusion_likely

@@ -30,6 +30,10 @@ interface ApplicationDto {
   goods_services_raw?: string | null;
   territory?: string | null;
   priority_claim?: string | null;
+  filing_method?: "electronic" | "paper";
+  signatory_name?: string | null;
+  signatory_position?: string | null;
+  signature_date?: string | null;
   notes?: string | null;
   created_at: string;
   updated_at: string;
@@ -47,6 +51,7 @@ interface ClientDto {
   country: string | null;
   inn: string | null;
   ogrn_or_ogrnip: string | null;
+  kpp: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +85,10 @@ function toApplication(dto: ApplicationDto): Application {
     goodsServicesRaw: dto.goods_services_raw ?? "",
     territory: dto.territory ?? "",
     priorityClaim: dto.priority_claim ?? "",
+    filingMethod: dto.filing_method ?? "electronic",
+    signatoryName: dto.signatory_name ?? "",
+    signatoryPosition: dto.signatory_position ?? "",
+    signatureDate: dto.signature_date ?? "",
     notes: dto.notes ?? "",
     assigneeId: dto.assigned_lawyer_id ?? dto.assigned_manager_id ?? undefined,
     createdAt: dto.created_at,
@@ -100,6 +109,7 @@ function toClient(dto: ClientDto): Client {
     countryCode: dto.country ?? "RU",
     inn: dto.inn ?? "",
     ogrnOrOgrnip: dto.ogrn_or_ogrnip ?? "",
+    kpp: dto.kpp ?? "",
     createdAt: dto.created_at,
   };
 }

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -22,10 +23,15 @@ from pathlib import Path
 
 from app.infrastructure.rag.stemmer import stem
 
-KNOWLEDGE_PATH = (
+LEGACY_KNOWLEDGE_PATH = (
     Path(__file__).resolve().parents[1].parent
     / "knowledge"
     / "nice_classification_overview.md"
+)
+CURRENT_KNOWLEDGE_PATH = (
+    Path(__file__).resolve().parents[1].parent
+    / "knowledge"
+    / "nice_classification_13_2026.md"
 )
 
 # «### Класс 25. Одежда и обувь»
@@ -33,6 +39,7 @@ _HEADING_RE = re.compile(r"^###\s*Класс\s+(\d+)\.\s*(.+?)\s*$", re.MULTILIN
 
 # Классы 1–34 — товары, 35–45 — услуги.
 GOODS_MAX_CLASS = 34
+_GENERIC_ACTIVITY_STEMS = frozenset({stem("производство"), stem("изготовление")})
 
 
 @dataclass(frozen=True)
@@ -40,6 +47,7 @@ class NiceClass:
     number: int
     title: str
     description: str
+    search_terms: str = ""
 
     @property
     def kind(self) -> str:
@@ -57,10 +65,15 @@ class NiceClass:
 @lru_cache(maxsize=1)
 def load_catalog() -> tuple[NiceClass, ...]:
     """Разобрать перечень классов из базы знаний."""
-    if not KNOWLEDGE_PATH.exists():
+    knowledge_path = (
+        CURRENT_KNOWLEDGE_PATH
+        if CURRENT_KNOWLEDGE_PATH.exists()
+        else LEGACY_KNOWLEDGE_PATH
+    )
+    if not knowledge_path.exists():
         return ()
 
-    text = KNOWLEDGE_PATH.read_text(encoding="utf-8")
+    text = knowledge_path.read_text(encoding="utf-8")
     matches = list(_HEADING_RE.finditer(text))
 
     classes: list[NiceClass] = []
@@ -79,8 +92,23 @@ def load_catalog() -> tuple[NiceClass, ...]:
             end = start + section.start()
 
         body = " ".join(text[start:end].split())
+        # В актуальном снимке после заголовка идёт полный официальный перечень.
+        # API отдаёт пользователю компактное описание, а поиск учитывает весь
+        # перечень — иначе запросы вроде «смартфон» или «цепочка для кошелька»
+        # теряются.
+        official_heading = re.search(
+            r"Официальный заголовок класса:\s*(.+?)(?:\n|$)",
+            text[start:end],
+        )
+        description = official_heading.group(1).strip() if official_heading else body
+        title = description if official_heading else match.group(2).strip()
         classes.append(
-            NiceClass(number=number, title=match.group(2).strip(), description=body)
+            NiceClass(
+                number=number,
+                title=title,
+                description=description,
+                search_terms=body,
+            )
         )
 
     # Один и тот же класс не должен попасть дважды.
@@ -118,6 +146,8 @@ def search(query: str = "", limit: int = 45) -> list[NiceClass]:
     # основе тем же стеммером, что и в поиске по базе знаний, иначе
     # «производство одежды» не нашло бы класс «Одежда и обувь».
     query_stems = _stems(normalized)
+    if len(query_stems) > 1:
+        query_stems = query_stems - _GENERIC_ACTIVITY_STEMS
     if not query_stems:
         return []
 
@@ -126,13 +156,37 @@ def search(query: str = "", limit: int = 45) -> list[NiceClass]:
     # класса не встречается, и точное совпадение дало бы пусто.
     # Поэтому классы ранжируются по числу совпавших слов, а
     # совпадение в названии весит больше, чем в составе класса.
-    scored: list[tuple[int, int, NiceClass]] = []
+    documents = [_full_stems(item) for item in catalog]
+    document_frequency = {
+        token: sum(token in document for document in documents)
+        for token in query_stems
+    }
+    weights = {
+        token: math.log((len(catalog) + 1) / (document_frequency[token] + 1)) + 1
+        for token in query_stems
+    }
+
+    scored: list[tuple[float, int, NiceClass]] = []
     for item in catalog:
-        title_hits = len(query_stems & _title_stems(item))
-        body_hits = len(query_stems & _full_stems(item))
-        if not body_hits:
+        title_stems = _title_stems(item)
+        full_stems = _full_stems(item)
+        matched = query_stems & full_stems
+        if not matched:
             continue
-        scored.append((title_hits * 3 + body_hits, -item.number, item))
+        score = sum(weights[token] for token in matched)
+        score += 4 * sum(weights[token] for token in query_stems & title_stems)
+        first_title_word = next(
+            (word for word in re.split(r"\W+", item.title.lower()) if len(word) >= 3),
+            "",
+        )
+        if first_title_word and stem(first_title_word) in query_stems:
+            score += 8
+        title_lower = item.title.lower().replace("ё", "е")
+        if normalized in title_lower:
+            score += 4
+        if title_lower.startswith(normalized):
+            score += 8
+        scored.append((score, -item.number, item))
 
     scored.sort(key=lambda row: (-row[0], -row[1]))
     return [item for _, _, item in scored[:limit]]
@@ -154,4 +208,4 @@ def _title_stems(item: NiceClass) -> frozenset[str]:
 
 @lru_cache(maxsize=64)
 def _full_stems(item: NiceClass) -> frozenset[str]:
-    return _stems(f"{item.title} {item.description}")
+    return _stems(f"{item.title} {item.description} {item.search_terms}")

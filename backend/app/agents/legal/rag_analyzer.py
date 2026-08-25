@@ -67,6 +67,16 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 9. Если в фактах указано «Изображение приложено: да», не добавляй изображение знака
    в missing_data. Оцени словесные элементы, описание и цвета; ограничения оценки
    самой графики укажи в limitations.
+10. Сам по себе факт, что обозначение состоит из обычных слов, НЕ доказывает
+    отсутствие различительной способности. Оценивай сочетание целиком.
+11. Описательным считай только обозначение, которое прямо и непосредственно
+    сообщает потребителю вид, качество, свойство, назначение, место или способ
+    оказания именно заявленных товаров или услуг. Ассоциация, рекламный намёк,
+    метафора либо рассуждение вида «может восприниматься как» недостаточны.
+12. Не превращай желаемый образ бренда или характер обслуживания в юридически
+    установленное свойство услуги. Например, слова «дружелюбный сосед» сами по
+    себе не описывают ремонт компьютеров и не означают «дружелюбный сервис» или
+    оказание услуги «по-соседски» без дополнительных подтверждённых фактов.
 
 ПРИНЦИП СПЕЦИАЛИЗАЦИИ (обязательно учитывать):
 
@@ -303,13 +313,27 @@ class RagAbsoluteGroundsAnalyzer:
                     "не вводит потребител",
                     "не противоречит обществен",
                 ))
+                speculative_descriptive = (
+                    finding.category.value == "descriptive"
+                    and any(phrase in finding_text for phrase in (
+                        "может восприниматься",
+                        "может указывать",
+                        "может ассоциироваться",
+                        "ассоциац",
+                        "намёк",
+                        "по-соседски",
+                        "состоит из общеупотребительных слов",
+                    ))
+                )
                 source_names_mark = bool(mark_text and mark_text in verified_text)
-                if negative_non_risk or (fact_specific_ground and not source_names_mark):
+                if negative_non_risk or speculative_descriptive or (fact_specific_ground and not source_names_mark):
                     rejected_details.append({
                         "category": finding.category.value,
                         "reason": (
                             "успешная проверка не является риском"
                             if negative_non_risk
+                            else "описательность основана на предположении, а не на прямой связи с услугами"
+                            if speculative_descriptive
                             else "источник не связывает обозначение с конкретным охраняемым объектом"
                         ),
                         "checks": report.summary(),
@@ -354,9 +378,20 @@ class RagAbsoluteGroundsAnalyzer:
             # риском. Это отличается от ситуации, когда вывод был заявлен, но
             # его цитаты не прошли проверку — такой результат остаётся
             # неопределённым.
-            if not result.findings and not result.missing_data:
+            speculative_only = bool(rejected_details) and all(
+                item["reason"]
+                == "описательность основана на предположении, а не на прямой связи с услугами"
+                for item in rejected_details
+            )
+            if (not result.findings or speculative_only) and not result.missing_data:
                 result.overall_risk = RiskLevel.low
                 result.findings = []
+                if speculative_only:
+                    result.summary = (
+                        "По представленным данным обозначение не описывает прямо "
+                        "вид, качество или назначение заявленных товаров и услуг. "
+                        "Подтверждённых абсолютных оснований для отказа не установлено."
+                    )
                 verification["no_adverse_findings"] = True
                 return AnalysisOutcome(
                     result=result,

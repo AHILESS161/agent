@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.infrastructure.rag.retriever import Retriever, build_context
+from app.infrastructure.rag.retriever import RetrievedChunk, Retriever, build_context
 from app.infrastructure.rag.stemmer import stem
 from app.infrastructure.rag.store import StoredChunk
 
@@ -157,6 +157,22 @@ class TestContextBuilding:
         hits = Retriever(chunks).retrieve("государственные символы герб")
         context, _ = build_context(hits)
         assert "ст. 1483" in context
+
+    def test_context_includes_source_freshness_and_official_url(self):
+        chunk = _chunk(10, "Смартфоны относятся к перечню класса 9.", "Класс 9")
+        chunk.source_url = "https://www.fips.ru/example"
+        chunk.source_metadata = {
+            "edition": "МКТУ 13-2026",
+            "effective_from": "2026-01-01",
+            "verified_at": "2026-08-19",
+        }
+
+        context, _ = build_context([RetrievedChunk(chunk=chunk, score=1.0)])
+
+        assert "МКТУ 13-2026" in context
+        assert "2026-01-01" in context
+        assert "2026-08-19" in context
+        assert "https://www.fips.ru/example" in context
 
     def test_empty_retrieval_yields_empty_context(self):
         context, sources = build_context([])

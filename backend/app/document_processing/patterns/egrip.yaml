@@ -69,7 +69,9 @@ fields:
     normalizer: person_name
     patterns:
       - pattern_id: egrip_first_name_row
-        regex: '(?m)^\s*Имя\s+(.+?)\s*$'
+        # В разных версиях выписки номер строки печатается либо только
+        # перед фамилией, либо перед каждым элементом ФИО.
+        regex: '(?m)^\s*(?:\d+\s+)?Имя\s+(.+?)\s*$'
         confidence: 0.85
 
   - field_id: registry.sole_proprietor.middle_name
@@ -79,7 +81,7 @@ fields:
     normalizer: person_name
     patterns:
       - pattern_id: egrip_middle_name_row
-        regex: '(?m)^\s*Отчество\s+(.+?)\s*$'
+        regex: '(?m)^\s*(?:\d+\s+)?Отчество\s+(.+?)\s*$'
         confidence: 0.85
 
   # --- Идентификаторы -----------------------------------------------------

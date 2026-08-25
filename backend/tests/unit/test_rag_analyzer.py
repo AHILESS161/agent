@@ -164,6 +164,38 @@ class TestHallucinationsAreRejected:
 
 
 class TestNoAdverseFindings:
+    async def test_associative_wording_is_not_treated_as_descriptive_risk(self, chunks):
+        payload = json.loads(
+            _valid_response("состоящих только из элементов, характеризующих товары")
+        )
+        payload["findings"][0].update({
+            "level": "medium",
+            "explanation": (
+                "Сочетание «Дружелюбный Сосед» состоит из общеупотребительных "
+                "слов и может восприниматься как указание на дружелюбный сервис "
+                "и оказание ремонта компьютеров по-соседски."
+            ),
+            "case_facts_used": [
+                "Обозначение «Дружелюбный Сосед» для ремонта компьютеров"
+            ],
+        })
+        outcome = await RagAbsoluteGroundsAnalyzer(
+            FakeLLM(json.dumps(payload, ensure_ascii=False)), chunks
+        ).analyse({
+            **FACTS,
+            "mark_text": "Дружелюбный Сосед",
+            "goods_services": "ремонт и обслуживание компьютеров",
+            "classes": "37",
+        })
+
+        assert outcome.is_conclusive
+        assert outcome.result.overall_risk.value == "low"
+        assert outcome.result.findings == []
+        assert "не описывает прямо" in outcome.result.summary
+        assert "описательность основана на предположении" in (
+            outcome.verification["findings_rejected"][0]["reason"]
+        )
+
     async def test_empty_findings_are_conclusive_low_risk(self, chunks):
         payload = json.loads(_valid_response("состоящих только из элементов, характеризующих товары"))
         payload.update({

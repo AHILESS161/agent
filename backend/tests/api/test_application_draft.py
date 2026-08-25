@@ -254,6 +254,10 @@ class TestOfficialBlank:
             mark_text = "ЗВЁЗДОЧКА"
             mark_name = "ЗВЁЗДОЧКА"
             mark_type = None
+            filing_method = "electronic"
+            signatory_name = None
+            signatory_position = None
+            signature_date = None
 
         _App.mark_type = MarkType(mark_type)
         return render_docx(
@@ -354,6 +358,37 @@ class TestOfficialBlank:
         assert "X" in table.rows[23].cells[1].text  # цветное исполнение
         assert "X" in table.rows[90].cells[1].text  # изображение приложено
         assert "X" in table.rows[93].cells[1].text  # отдельный перечень товаров
+        assert "1" in table.rows[90].cells[37].text
+        assert "1" in table.rows[90].cells[43].text
+        assert "1" in table.rows[93].cells[37].text
+        assert "1" in table.rows[93].cells[43].text
+
+    def test_signatory_details_are_filled_without_fake_drawn_signature(self):
+        from datetime import date
+
+        payload = self._render({})
+        application = self._document(payload)
+        assert not application.tables[0].rows[116].cells[0].text.strip()
+
+        from app.services.application_draft import DraftContent, render_docx
+
+        class _SignedApp:
+            id = 2
+            mark_text = "ЗВЁЗДОЧКА"
+            mark_name = "ЗВЁЗДОЧКА"
+            mark_type = MarkType.word
+            filing_method = "paper"
+            signatory_name = "Иванов Иван Иванович"
+            signatory_position = "генеральный директор"
+            signature_date = date(2026, 8, 26)
+
+        signed = self._document(render_docx(DraftContent(), _SignedApp()))
+        signature_text = signed.tables[0].rows[116].cells[0].text
+        date_text = signed.tables[0].rows[117].cells[0].text
+        assert "________________" in signature_text
+        assert "Иванов Иван Иванович" in signature_text
+        assert "генеральный директор" in signature_text
+        assert "26.08.2026" in date_text
 
     def test_color_claim_conflicting_with_monochrome_image_is_not_filed(self):
         import io
@@ -408,14 +443,15 @@ class TestOfficialBlank:
 @pytest.mark.api
 class TestChecklist:
     def test_checklist_lists_manual_steps(self, client, lawyer_auth, case_with_fields):
-        """Чекбоксы бланка не определяются автоматически — это в чек-листе."""
+        """Чек-лист объясняет реальный способ подписания, а не старые ручные поля."""
         draft = client.post(
             f"/api/v1/applications/{case_with_fields}/draft", headers=lawyer_auth
         ).json()
 
         text = " ".join(draft["checklist"])
-        assert "550" in text
-        assert "вручную" in text
+        assert "ФИО человека, который подпишет" in text
+        assert "собственноручную подпись" in text
+        assert "электронной подписью" in text
 
     def test_checklist_mentions_missing_image(
         self, client, lawyer_auth, case_with_fields

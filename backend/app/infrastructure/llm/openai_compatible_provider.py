@@ -2,6 +2,7 @@
 OpenAI-compatible LLM provider using httpx.
 Works with OpenAI, local Qwen/Llama servers, vLLM, Ollama, etc.
 """
+import base64
 import json
 import time
 from typing import Any
@@ -77,13 +78,17 @@ class OpenAICompatibleProvider(BaseLLMProvider):
 
         content = message.get("content")
         if content:
-            return content
+            return str(content)
 
-        for fallback_key in ("reasoning", "reasoning_content"):
-            fallback = message.get(fallback_key)
-            if fallback:
-                return str(fallback)
-        return content or ""
+        # Внутреннее рассуждение не является ответом пользователю и не должно
+        # попадать ни в чат, ни в JSON-анализ. Пустой content обычно означает,
+        # что max_tokens закончился до формирования финального ответа.
+        if message.get("reasoning") or message.get("reasoning_content"):
+            raise ValueError(
+                "Модель израсходовала лимит на рассуждение и не вернула "
+                "финальный ответ"
+            )
+        raise ValueError("Модель вернула пустой финальный ответ")
 
     @staticmethod
     def _extract_usage(raw: dict) -> tuple[int, int]:
@@ -146,7 +151,9 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "model": self.model,
             "messages": self._build_messages(augmented),
             "temperature": temperature,
-            "max_tokens": 4096,
+            # Flash-модель может потратить несколько тысяч токенов на скрытое
+            # рассуждение до JSON. Малый лимит давал пустой content.
+            "max_tokens": 12000,
             "response_format": {"type": "json_object"},
         }
         t0 = time.time()
@@ -168,6 +175,58 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             lines = text.splitlines()
             text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
 
+        return json.loads(text)
+
+    async def generate_image_structured(
+        self,
+        *,
+        image: bytes,
+        mime_type: str,
+        prompt: str,
+        output_schema: dict,
+        model: str | None = None,
+        temperature: float = 0.1,
+        max_tokens: int = 2500,
+    ) -> dict[str, Any]:
+        """Получить JSON-описание изображения через совместимый vision API."""
+        if mime_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+            raise ValueError("Неподдерживаемый формат изображения")
+        data_url = f"data:{mime_type};base64,{base64.b64encode(image).decode('ascii')}"
+        schema = json.dumps(output_schema, ensure_ascii=False)
+        payload: dict[str, Any] = {
+            "model": model or self.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Отвечай только валидным JSON без Markdown. "
+                        f"Схема результата: {schema}"
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                    ],
+                },
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            raw = await self._post(payload)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 400:
+                payload.pop("response_format", None)
+                raw = await self._post(payload)
+            else:
+                raise
+        text = self._extract_text(raw).strip()
+        if text.startswith("```"):
+            lines = text.splitlines()
+            text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
         return json.loads(text)
 
     async def aclose(self) -> None:

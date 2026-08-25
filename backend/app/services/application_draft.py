@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 import docx
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Inches, Pt
 from sqlalchemy import func, select
@@ -120,6 +121,7 @@ async def collect_draft_content(
         "case.applicant.full_name": client.full_name_or_company_name if client else None,
         "case.applicant.inn": client.inn if client else None,
         "case.applicant.ogrn": client.ogrn_or_ogrnip if client else None,
+        "case.applicant.kpp": client.kpp if client else None,
         "case.applicant.legal_address": client.address if client else None,
         "case.applicant.country_code": (client.country or "RU") if client else "RU",
     }
@@ -270,6 +272,15 @@ async def collect_draft_content(
         ("application.mark.colors", "Цвет или цветовое сочетание", application.colors_claimed),
         ("application.mark.transliteration", "Транслитерация", application.transliteration),
         ("application.mark.translation", "Перевод", application.translation),
+        ("application.signatory.name", "ФИО подписанта", application.signatory_name),
+        ("application.signatory.position", "Должность подписанта", application.signatory_position),
+        (
+            "application.signatory.date",
+            "Дата подписания",
+            application.signature_date.strftime("%d.%m.%Y")
+            if application.signature_date
+            else None,
+        ),
     ):
         if value:
             content.filled.append(
@@ -332,14 +343,19 @@ def _build_checklist(
         checklist.append(
             "Изображение обозначения (540): файл не приложен к делу"
         )
+    if not application.signatory_name:
+        checklist.append("Укажите ФИО человека, который подпишет заявление")
+    if not application.signature_date:
+        checklist.append("Укажите дату подписания заявления")
     checklist.append(
-        "Вид знака (550), тип приоритета и пункт уплаченной пошлины: "
-        "отмечаются вручную — эти отметки не определяются автоматически"
+        "При бумажной подаче поставьте собственноручную подпись в готовом бланке; "
+        "при электронной подаче подпишите отправление электронной подписью в "
+        "официальном сервисе Роспатента"
     )
     checklist.append(
-        "Адрес для переписки (750) и представитель (740): заполняются вручную"
+        "После оплаты проверьте реквизиты платежа в официальном сервисе; "
+        "подтверждение оплаты прикладывается по инициативе заявителя"
     )
-    checklist.append("Документ об уплате пошлины: приложить перед подачей")
     return checklist
 
 
@@ -486,16 +502,42 @@ def _fill_mark_image_box(
     box = table.rows[19].cells[1]
     paragraph = box.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    box.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     try:
-        from PIL import Image
+        from PIL import Image, ImageChops
 
-        with Image.open(io.BytesIO(mark_image)) as image:
+        with Image.open(io.BytesIO(mark_image)) as source:
+            image = source.convert("RGBA")
+            # У логотипов часто остаются большие белые/прозрачные поля. Если
+            # вставлять исходный холст, сам знак выглядит маленьким и визуально
+            # смещённым внутри предназначенного для него квадрата формы.
+            alpha = image.getchannel("A")
+            alpha_bbox = alpha.getbbox()
+            rgb = image.convert("RGB")
+            difference = ImageChops.difference(
+                rgb, Image.new("RGB", rgb.size, (255, 255, 255))
+            ).convert("L")
+            difference = difference.point(lambda value: 255 if value > 12 else 0)
+            content_bbox = difference.getbbox() or alpha_bbox
+            if content_bbox:
+                left, top, right, bottom = content_bbox
+                padding = max(6, int(min(image.size) * 0.015))
+                image = image.crop(
+                    (
+                        max(0, left - padding),
+                        max(0, top - padding),
+                        min(image.width, right + padding),
+                        min(image.height, bottom + padding),
+                    )
+                )
             ratio = image.width / max(image.height, 1)
+            normalized = io.BytesIO()
+            image.save(normalized, format="PNG")
         max_width, max_height = 2.65, 2.42
         width = min(max_width, max_height * ratio)
         height = width / max(ratio, 0.01)
         paragraph.add_run().add_picture(
-            io.BytesIO(mark_image),
+            io.BytesIO(normalized.getvalue()),
             width=Inches(width),
             height=Inches(height),
         )
@@ -505,6 +547,51 @@ def _fill_mark_image_box(
             application_id=application_id,
             error=str(exc),
         )
+
+
+def _fill_attachment_row(
+    table,
+    row_index: int,
+    *,
+    sheets: int = 1,
+    copies: int = 1,
+) -> None:
+    """Отметить приложение и заполнить количество листов/экземпляров."""
+    _check_box(table, row_index, 1)
+    for cell_index, value in ((37, sheets), (43, copies)):
+        if row_index < len(table.rows) and cell_index < len(table.rows[row_index].cells):
+            cell = table.rows[row_index].cells[cell_index]
+            paragraph = cell.paragraphs[0]
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            paragraph.add_run(str(value)).bold = True
+
+
+def _fill_signature_block(
+    table,
+    *,
+    name: str | None,
+    position: str | None,
+    signed_at: str | None,
+    filing_method: str,
+) -> None:
+    """Заполнить сведения о подписанте, не имитируя собственноручную подпись.
+
+    Для бумажной подачи в поле остаётся линия для подписи от руки. Для
+    электронной подачи юридически значимая подпись ставится в официальном
+    сервисе, поэтому изображение росчерка в DOCX не создаётся.
+    """
+    if len(table.rows) <= 117:
+        return
+    details = ", ".join(part for part in (name, position) if part)
+    if details:
+        paragraph = table.rows[116].cells[0].paragraphs[0]
+        if filing_method == "paper":
+            paragraph.add_run("________________ / ")
+        paragraph.add_run(details).bold = True
+    if signed_at:
+        cell = table.rows[117].cells[0]
+        paragraph = cell.paragraphs[-1]
+        paragraph.add_run(signed_at).bold = True
 
 
 def _safe_claimed_colors(claimed: str | None, mark_image: bytes | None) -> str | None:
@@ -628,6 +715,7 @@ def render_docx(
 
     # --- (750) адрес и контакты для переписки ---
     correspondence = [
+        values.get("application.applicant.name", ""),
         values.get("application.correspondence_address", ""),
         f"Телефон: {values['application.contact.phone']}" if values.get("application.contact.phone") else "",
         f"E-mail: {values['application.contact.email']}" if values.get("application.contact.email") else "",
@@ -683,13 +771,34 @@ def render_docx(
 
     # Загруженное обозначение входит в состав электронной заявки.
     if mark_image or mark_type in {"sound", "3d"}:
-        _check_box(table, 90, 1)
+        _fill_attachment_row(table, 90)
 
     # --- (511) перечень товаров и услуг ---
     if content.classes:
         _fill_goods_table(table, content.classes)
         if include_goods_attachment:
-            _check_box(table, 93, 1)
+            _fill_attachment_row(table, 93)
+
+    _fill_signature_block(
+        table,
+        name=(
+            values.get("application.signatory.name")
+            or getattr(application, "signatory_name", None)
+        ),
+        position=(
+            values.get("application.signatory.position")
+            or getattr(application, "signatory_position", None)
+        ),
+        signed_at=(
+            values.get("application.signatory.date")
+            or (
+                application.signature_date.strftime("%d.%m.%Y")
+                if getattr(application, "signature_date", None)
+                else None
+            )
+        ),
+        filing_method=getattr(application, "filing_method", None) or "electronic",
+    )
 
     buffer = io.BytesIO()
     document.save(buffer)

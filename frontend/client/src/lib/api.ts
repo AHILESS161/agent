@@ -73,7 +73,11 @@ async function toApiError(response: Response): Promise<ApiError> {
   if (response.status === 401) message = "Сессия истекла. Войдите заново.";
   if (response.status === 403) message = "Недостаточно прав для этого действия.";
   if (response.status === 404 && typeof detail !== "string") message = "Не найдено.";
-  if (response.status >= 500) {
+  if (response.status === 503 && typeof detail === "string") {
+    // 503 используется для временно недоступных внешних сервисов. Текст detail
+    // формирует наш backend и его безопасно показать вместо безликой ошибки.
+    message = detail;
+  } else if (response.status >= 500) {
     // Внутренние подробности пользователю не показываем.
     message = "Внутренняя ошибка сервера. Попробуйте позже.";
   }

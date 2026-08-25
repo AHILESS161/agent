@@ -2,38 +2,78 @@
 
 **Актуализировано:** 26 августа 2026 года.
 
-Документация разделена на актуальные рабочие документы и архив. Начинайте с
-[`current-state.md`](current-state.md): это единая точка правды о реализованных
-функциях и ограничениях. Если текст расходится с кодом или тестами, приоритет
-имеют код и тесты.
+Здесь собраны рабочие документы проекта. Чтобы одинаковые сведения не
+расходились по нескольким файлам, у каждого документа есть одна роль:
 
-## Основные документы
+- [`current-state.md`](current-state.md) — что действительно работает сейчас;
+- [`backlog.md`](backlog.md) — конкретные незавершённые задачи;
+- [`roadmap.md`](roadmap.md) — последовательность продуктовых этапов;
+- код, миграции и тесты — окончательный технический источник правды.
 
-| Задача | Документ |
+Если документы противоречат друг другу, используйте именно этот порядок.
+
+## Начать отсюда
+
+| Нужно | Документ |
 |---|---|
-| Понять, что работает сейчас | [`current-state.md`](current-state.md) |
-| Увидеть следующие задачи и ограничения | [`roadmap.md`](roadmap.md) |
-| Вести конкретные продуктовые задачи | [`backlog.md`](backlog.md) |
-| Понять продукт, аудиторию и продвижение | [`business-go-to-market.md`](business-go-to-market.md) |
-| Оценить экономику, инфраструктуру и SLA | [`operating-economics-and-sla.md`](operating-economics-and-sla.md) |
-| Запустить локальный стенд | [`demo-deployment.md`](demo-deployment.md) |
-| Развернуть production | [`production-architecture.md`](production-architecture.md) |
-| Запустить проверки | [`testing.md`](testing.md) |
+| Понять продукт и его ограничения | [`current-state.md`](current-state.md) |
+| Выбрать следующую задачу | [`backlog.md`](backlog.md) |
+| Увидеть этапы выхода в пилот и production | [`roadmap.md`](roadmap.md) |
+| Запустить проект локально или дать демо-доступ | [`demo-deployment.md`](demo-deployment.md) |
+| Проверить изменения | [`testing.md`](testing.md) |
 
-## Технический справочник
+## Продукт и эксплуатация
 
-| Область | Документы |
+| Область | Документ | Статус |
+|---|---|---|
+| Целевая аудитория, тарифы и продвижение | [`business-go-to-market.md`](business-go-to-market.md) | рабочая гипотеза |
+| Экономика, команда, LLM и SLA | [`operating-economics-and-sla.md`](operating-economics-and-sla.md) | расчётная модель |
+| Production-контур и обновления | [`production-architecture.md`](production-architecture.md) | подготовлено, не развёрнуто |
+| Интеграции и внешние зависимости | [`integrations.md`](integrations.md) | смешанный статус по провайдерам |
+| Безопасность текущего MVP | раздел в [`current-state.md`](current-state.md#безопасность-и-эксплуатация) | фактический срез |
+
+## Живые технические справочники
+
+| Область | Документ |
 |---|---|
-| Архитектура и данные | [`architecture.md`](architecture.md), [`domain-model.md`](domain-model.md), [`state-machine.md`](state-machine.md) |
-| API | [`api-contracts.md`](api-contracts.md) |
-| Входящие и исходящие документы | [`document-extraction.md`](document-extraction.md), [`document-pipeline.md`](document-pipeline.md) |
-| AI, RAG и право | [`rag-and-legal-safety.md`](rag-and-legal-safety.md), [`legal-coverage.md`](legal-coverage.md) |
-| Ответы Роспатенту | [`office-action-responses.md`](office-action-responses.md) |
-| Внешние сервисы | [`integrations.md`](integrations.md), [`rospatent-open-api.md`](rospatent-open-api.md) |
-| Безопасность | [`security.md`](security.md) |
+| Извлечение реквизитов и OCR | [`document-extraction.md`](document-extraction.md) |
+| RAG, источники и ограничения LLM | [`rag-and-legal-safety.md`](rag-and-legal-safety.md) |
+| Полнота юридических проверок | [`legal-coverage.md`](legal-coverage.md) |
+| Поиск Роспатента | [`rospatent-open-api.md`](rospatent-open-api.md) |
+| Ответы на уведомления | [`office-action-responses.md`](office-action-responses.md) |
 
-## Архив
+Фактический HTTP-контракт всегда доступен в OpenAPI запущенного backend по
+адресу `/docs`. Это надёжнее статического перечня маршрутов.
 
-Исторические аудиты, отчёты о завершённых изменениях и дореализационные
-спецификации перенесены в [`archive/`](archive/README.md). Они сохранены для
-контекста, но не должны использоваться как описание текущего продукта.
+## Проектные спецификации
+
+Следующие документы полезны для понимания исходного дизайна, но частично
+описывают целевую, а не реализованную систему:
+
+- [`architecture.md`](architecture.md);
+- [`api-contracts.md`](api-contracts.md);
+- [`domain-model.md`](domain-model.md);
+- [`document-pipeline.md`](document-pipeline.md);
+- [`state-machine.md`](state-machine.md);
+- [`security.md`](security.md).
+
+Их нельзя использовать для ответа «работает ли функция сейчас» без сверки с
+[`current-state.md`](current-state.md), OpenAPI и тестами.
+
+## Архив и материалы
+
+Исторические аудиты и ранние планы находятся в
+[`archive/`](archive/README.md). Они сохранены только для контекста.
+
+HTML/PDF-презентации и примеры в `samples/` — демонстрационные материалы, а не
+технические спецификации и не юридические документы.
+
+## Правила обновления
+
+1. Реализованную функцию сначала фиксируем в `current-state.md` и тестах.
+2. Незавершённую идею добавляем только в `backlog.md` с критерием готовности.
+3. `roadmap.md` меняем лишь при изменении порядка крупных этапов.
+4. Цены, тарифы, нормы и внешние API сопровождаем датой проверки и ссылкой на
+   первоисточник.
+5. Завершённые аудиты и устаревшие планы переносим в `archive/`, а не создаём
+   рядом новый документ с тем же смыслом.

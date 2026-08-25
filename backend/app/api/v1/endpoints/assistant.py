@@ -80,6 +80,65 @@ SYSTEM_PROMPT = """Ты — справочный помощник сервиса
 """
 
 
+def _local_fallback_answer(question: str, *, has_application: bool) -> str:
+    """Понятный резервный ответ, когда внешний LLM временно недоступен.
+
+    Это не свободная генерация и не юридическое заключение: только короткие
+    справочные формулировки по темам, которые уже поддерживает продукт.
+    """
+    normalized = question.casefold().replace("ё", "е")
+    domain_words = (
+        "знак", "регистрац", "заяв", "роспатент", "мкту", "класс",
+        "пошлин", "документ", "отказ", "риск", "сход", "бренд",
+    )
+    if not has_application and not any(word in normalized for word in domain_words):
+        return (
+            "Я могу помочь только с регистрацией товарного знака "
+            "и вашей заявкой в Регистре."
+        )
+
+    if any(word in normalized for word in ("помеш", "отказ", "риск", "не зарегистр")):
+        return (
+            "Регистрации чаще всего мешают четыре группы причин:\n\n"
+            "• название описывает сам товар или услугу и плохо отличает вас от других;\n"
+            "• обозначение может вводить покупателя в заблуждение;\n"
+            "• уже есть более ранний сходный знак для однородных товаров или услуг;\n"
+            "• в знаке без разрешения используются охраняемые символы или элементы.\n\n"
+            "Риск сходства нужно проверять прежде всего в выбранных классах МКТУ "
+            "и среди однородных товаров и услуг. Окончательный вывод зависит от "
+            "самого обозначения и данных конкретной заявки."
+        )
+    if "мкту" in normalized or "класс" in normalized:
+        return (
+            "МКТУ — это международный справочник товаров и услуг. Класс нужен, "
+            "чтобы определить, для какой деятельности будет защищён знак.\n\n"
+            "Опишите конкретно, что вы продаёте или какие услуги оказываете. "
+            "Система предложит классы, а вы сможете подтвердить подходящие и "
+            "отклонить лишние. Один номер класса сам по себе ещё не означает, "
+            "что все товары внутри него однородны."
+        )
+    if "пошлин" in normalized or "стоим" in normalized:
+        return (
+            "Пошлина зависит от количества выбранных классов МКТУ, состава "
+            "действий и применимых льгот. Сначала подтвердите классы, затем "
+            "откройте раздел «Пошлины»: там будет расчёт по вашей заявке и этапы оплаты."
+        )
+    if "документ" in normalized or "паспорт" in normalized or "доверен" in normalized:
+        return (
+            "Набор документов зависит от заявителя и способа подачи. Обычно нужны "
+            "сведения о заявителе, изображение или текст обозначения и перечень "
+            "товаров и услуг. Для физического лица могут понадобиться паспортные "
+            "данные, а при работе через представителя — доверенность. В разделе "
+            "«Документы» система покажет комплект именно для вашей заявки."
+        )
+    return (
+        "Регистрация состоит из четырёх основных шагов: заполнить сведения о "
+        "заявителе и знаке, выбрать классы МКТУ, проверить возможные препятствия, "
+        "затем подготовить документы и оплатить пошлины. Задайте вопрос о любом "
+        "из этих шагов — например, о классах, рисках, документах или стоимости."
+    )
+
+
 async def _application_context(
     session: AsyncSession,
     application_id: int,
@@ -181,7 +240,7 @@ async def ask_assistant(
 
     try:
         response = await get_llm_provider().generate(
-            messages, temperature=0.1, max_tokens=1200
+            messages, temperature=0.1, max_tokens=6000
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
@@ -190,10 +249,15 @@ async def ask_assistant(
             application_id=payload.application_id,
             error=str(exc),
         )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Помощник временно недоступен. Попробуйте немного позже.",
-        ) from exc
+        source_names = list(dict.fromkeys(item.chunk.source_name for item in retrieved))
+        return AssistantResponse(
+            answer=_local_fallback_answer(
+                payload.question,
+                has_application=payload.application_id is not None,
+            ),
+            sources=source_names,
+            application_id=payload.application_id,
+        )
 
     source_names = list(dict.fromkeys(item.chunk.source_name for item in retrieved))
     return AssistantResponse(

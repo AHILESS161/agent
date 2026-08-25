@@ -22,6 +22,26 @@ EGRUL_TEXT = (
     "Сведения о регистрирующем органе\n"
 )
 
+EGRUL_WITH_DIRECTOR_TEXT = (
+    "ВЫПИСКА\n"
+    "из Единого государственного реестра юридических лиц\n"
+    "1 Полное наименование ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ ПРИМЕР\n"
+    "13 ОГРН 1027700132195\n"
+    "19 ИНН 7707083893\n"
+    "Сведения о лице, имеющем право без доверенности действовать от имени юридического\n"
+    "лица\n"
+    "35 ГРН и дата внесения в ЕГРЮЛ сведений о данном лице 1184205019129 27.09.2018\n"
+    "36 Фамилия АЛЕКСЕЕНКО\n"
+    "37 Имя АНДРЕЙ\n"
+    "38 Отчество СЕРГЕЕВИЧ\n"
+    "39 ИНН 421406812859\n"
+    "40 ГРН и дата внесения в ЕГРЮЛ записи, содержащей указанные сведения 1184205019129 27.09.2018\n"
+    "41 Должность ДИРЕКТОР\n"
+    "Выписка из ЕГРЮЛ\n"
+    "03.06.2020 05:52:20 ОГРН 1027700132195 Страница 2 из 10\n"
+    "Сведения об учредителях\n"
+)
+
 
 @pytest.fixture
 async def auth(client, api_user_factory) -> dict[str, str]:
@@ -57,6 +77,13 @@ class TestPrefillEgrip:
         # Основной ОКВЭД попадает в описание деятельности для подбора классов.
         assert "47.91.2" in prefill["business_activity"]
 
+    def test_egrip_prefills_entrepreneur_as_signatory(self, client, auth):
+        prefill = _prefill(client, auth, "egrip.txt", EGRIP_PAGE_1).json()["prefill"]
+
+        assert prefill["signatory_last_name"] == "Петров"
+        assert prefill["signatory_first_name"] == "Иван"
+        assert prefill["signatory_middle_name"] == "Сергеевич"
+
     def test_nothing_is_confirmed(self, client, auth):
         body = _prefill(client, auth, "egrip.txt", EGRIP_PAGE_1).json()
         assert "требуют проверки специалистом" in body["notice"]
@@ -70,6 +97,15 @@ class TestPrefillEgrul:
         assert body["client_type"] == "company"
         assert body["prefill"]["inn"] == "7707083893"
         assert body["prefill"]["ogrn"] == "1027700132195"
+
+    def test_egrul_prefills_director_as_signatory(self, client, auth):
+        body = _prefill(client, auth, "egrul.txt", EGRUL_WITH_DIRECTOR_TEXT).json()
+        prefill = body["prefill"]
+
+        assert prefill["signatory_last_name"] == "Алексеенко"
+        assert prefill["signatory_first_name"] == "Андрей"
+        assert prefill["signatory_middle_name"] == "Сергеевич"
+        assert prefill["signatory_position"] == "ДИРЕКТОР"
 
 
 @pytest.mark.api

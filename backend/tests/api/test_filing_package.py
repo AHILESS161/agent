@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import zipfile
+from datetime import date
 
 import docx
 import pytest
@@ -146,6 +147,10 @@ class TestFilingPackage:
                 business_description="Разработка программного обеспечения",
                 goods_services_raw="Программное обеспечение; разработка программ",
                 territory="Российская Федерация",
+                filing_method="electronic",
+                signatory_name="Иванов Иван Иванович",
+                signatory_position="генеральный директор",
+                signature_date=date(2026, 8, 26),
             )
             session.add(application)
             await session.flush()
@@ -186,7 +191,7 @@ class TestFilingPackage:
         assert status.status_code == 200, status.text
         body = status.json()
         assert body["ready"] is True, body["blockers"]
-        assert body["filing_document_count"] == 2
+        assert body["filing_document_count"] == 1
         assert body["reference_document_count"] == 4
         assert body["class_numbers"] == [42]
         assert body["filing_fee"] > 0
@@ -201,7 +206,7 @@ class TestFilingPackage:
         with zipfile.ZipFile(io.BytesIO(download.content)) as archive:
             names = set(archive.namelist())
             assert "01_ДЛЯ_ПОДАЧИ/01_заявление.docx" in names
-            assert "01_ДЛЯ_ПОДАЧИ/02_перечень_товаров_и_услуг.docx" in names
+            assert "01_ДЛЯ_ПОДАЧИ/02_перечень_товаров_и_услуг.docx" not in names
             assert "02_ДЛЯ_ВАС/01_инструкция_по_подаче.docx" in names
             assert "02_ДЛЯ_ВАС/02_расчёт_пошлин.docx" in names
             assert "02_ДЛЯ_ВАС/03_результат_проверки.docx" in names

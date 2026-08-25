@@ -105,18 +105,63 @@ def _add_label(document: docx.Document, label: str, value: str) -> None:
 
 
 def _goods_document(application: TrademarkApplicationDraft, content: DraftContent) -> bytes:
-    document = _new_document(
-        "ПЕРЕЧЕНЬ ТОВАРОВ И УСЛУГ",
-        f"к заявке на обозначение «{application.mark_text or application.mark_name or ''}»",
+    """Сформировать формальное приложение без справочного текста и декора."""
+    document = docx.Document()
+    for section in document.sections:
+        section.top_margin = docx.shared.Cm(2)
+        section.bottom_margin = docx.shared.Cm(2)
+        section.left_margin = docx.shared.Cm(2)
+        section.right_margin = docx.shared.Cm(2)
+    normal = document.styles["Normal"]
+    normal.font.name = "Times New Roman"
+    normal.font.size = Pt(12)
+    heading = document.add_paragraph()
+    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    run = heading.add_run("ПЕРЕЧЕНЬ ТОВАРОВ И УСЛУГ")
+    run.bold = True
+    run.font.name = "Times New Roman"
+    run.font.size = Pt(14)
+    subtitle = document.add_paragraph(
+        f"Приложение к заявке на обозначение "
+        f"«{application.mark_text or application.mark_name or ''}»"
     )
-    document.add_paragraph(
-        "Используйте этот лист как приложение, если полный перечень не помещается "
-        "в электронную форму. В самой форме укажите те же классы без сокращений."
-    )
+    subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    table = document.add_table(rows=1, cols=2)
+    table.style = "Table Grid"
+    table.rows[0].cells[0].text = "Класс МКТУ"
+    table.rows[0].cells[1].text = "Товары и (или) услуги"
     for number, description in content.classes:
-        document.add_heading(f"Класс {number} МКТУ", level=1)
-        document.add_paragraph(description or "Наименование товаров и услуг необходимо уточнить.")
+        cells = table.add_row().cells
+        cells[0].text = number
+        cells[1].text = description or ""
+    document.add_paragraph()
+    signature = document.add_paragraph()
+    if application.filing_method == "paper":
+        signature.add_run("Подпись: __________________  ")
+    signature.add_run(f"ФИО: {application.signatory_name or '__________________'}")
+    if application.signatory_position:
+        signature.add_run(f"  Должность: {application.signatory_position}")
+    signed_at = (
+        application.signature_date.strftime("%d.%m.%Y")
+        if application.signature_date
+        else "__________________"
+    )
+    document.add_paragraph(f"Дата подписания: {signed_at}")
     return _docx_bytes(document)
+
+
+def _needs_goods_attachment(content: DraftContent) -> bool:
+    """Нужен ли отдельный лист, если перечень не помещается в поле (511).
+
+    В официальном бланке доступно десять строк. Оценка учитывает переносы
+    длинных формулировок; короткий перечень из одного класса остаётся только в
+    основном заявлении и не дублируется отдельным файлом.
+    """
+    used_lines = 0
+    for _, description in content.classes:
+        normalized = " ".join((description or "").split())
+        used_lines += max(1, (len(normalized) + 109) // 110)
+    return len(content.classes) > 10 or used_lines > 10
 
 
 def _fees_document(fees: dict[str, Any]) -> bytes:
@@ -391,6 +436,37 @@ async def filing_package_status(
         blockers.append(
             _blocker("mark_description", "Описание обозначения", "Добавьте краткое описание знака", "data")
         )
+    if not application.signatory_name:
+        blockers.append(
+            _blocker(
+                "signatory_name",
+                "Кто подпишет заявление",
+                "Укажите ФИО подписанта",
+                "data",
+            )
+        )
+    if (
+        application.client
+        and application.client.type.value == "company"
+        and not application.signatory_position
+    ):
+        blockers.append(
+            _blocker(
+                "signatory_position",
+                "Должность подписанта",
+                "Укажите должность руководителя или представителя",
+                "data",
+            )
+        )
+    if not application.signature_date:
+        blockers.append(
+            _blocker(
+                "signature_date",
+                "Дата подписания",
+                "Укажите дату подписания заявления",
+                "data",
+            )
+        )
     if not classes.is_confirmed:
         blockers.append(
             _blocker("classes", "Классы МКТУ", "Подтвердите хотя бы один класс", "check")
@@ -485,6 +561,7 @@ async def filing_package_status(
     if application.priority_claim:
         warnings.append("Заявлен приоритет: проверьте вид, дату, номер и срок представления подтверждающего документа.")
 
+    include_goods_attachment = _needs_goods_attachment(content)
     manifest = [
         {
             "filename": "01_заявление.docx",
@@ -492,13 +569,16 @@ async def filing_package_status(
             "folder": "01_ДЛЯ_ПОДАЧИ",
             "purpose": "Перенесите сведения в официальный сервис или используйте сформированный бланк",
         },
-        {
-            "filename": "02_перечень_товаров_и_услуг.docx",
-            "title": "Перечень товаров и услуг по классам МКТУ",
-            "folder": "01_ДЛЯ_ПОДАЧИ",
-            "purpose": "Приложение, если перечень не помещается в форме",
-        },
     ]
+    if include_goods_attachment:
+        manifest.append(
+            {
+                "filename": "02_перечень_товаров_и_услуг.docx",
+                "title": "Перечень товаров и услуг по классам МКТУ",
+                "folder": "01_ДЛЯ_ПОДАЧИ",
+                "purpose": "Продолжение перечня из поля (511) заявления",
+            }
+        )
     manifest.extend(
         {
             "filename": item.filename,
@@ -555,6 +635,7 @@ async def filing_package_status(
         "_fees": fees,
         "_assessments": assessments,
         "_attachments": attachments,
+        "_include_goods_attachment": include_goods_attachment,
     }
 
 
@@ -574,6 +655,7 @@ async def render_filing_package(
     fees: dict[str, Any] = status.pop("_fees")
     assessments: dict[str, RiskAssessment] = status.pop("_assessments")
     attachments: list[FilingAttachment] = status.pop("_attachments")
+    include_goods_attachment: bool = status.pop("_include_goods_attachment")
     filing_names = [item["filename"] for item in status["documents"] if item["folder"] == "01_ДЛЯ_ПОДАЧИ"]
 
     output = io.BytesIO()
@@ -584,13 +666,14 @@ async def render_filing_package(
                 content,
                 application,
                 mark_image=await load_mark_image_content(session, application),
-                include_goods_attachment=True,
+                include_goods_attachment=include_goods_attachment,
             ),
         )
-        archive.writestr(
-            "01_ДЛЯ_ПОДАЧИ/02_перечень_товаров_и_услуг.docx",
-            _goods_document(application, content),
-        )
+        if include_goods_attachment:
+            archive.writestr(
+                "01_ДЛЯ_ПОДАЧИ/02_перечень_товаров_и_услуг.docx",
+                _goods_document(application, content),
+            )
         for attachment in attachments:
             archive.writestr(f"{attachment.folder}/{attachment.filename}", attachment.content)
         archive.writestr(

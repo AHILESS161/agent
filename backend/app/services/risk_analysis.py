@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -37,6 +38,13 @@ from app.services.class_analysis import ClassContext, load_class_context
 from app.infrastructure.rag.store import knowledge_base_version, load_active_chunks
 
 logger = get_logger(__name__)
+
+# RouterAI/DeepSeek обычно формирует правовой JSON дольше короткого чат-ответа:
+# модель сначала сопоставляет факты с несколькими основаниями статьи 1483.
+# Прежних 15 секунд не хватало даже исправному запросу, поэтому интерфейс часто
+# показывал незавершённую проверку как будто это риск. Минутный предел всё ещё
+# защищает клиентский путь от зависшего внешнего сервиса.
+ABSOLUTE_ANALYSIS_BUDGET_SECONDS = 60.0
 
 # Идентификатор фрагмента в контексте модели: "kb-<id чанка>".
 _CITATION_ID_RE = re.compile(r"^kb-(\d+)$")
@@ -169,7 +177,34 @@ async def run_absolute_grounds_analysis(
         return assessment
 
     analyzer = RagAbsoluteGroundsAnalyzer(llm_provider, chunks)
-    outcome: AnalysisOutcome = await analyzer.analyse(context.as_dict())
+    try:
+        outcome: AnalysisOutcome = await asyncio.wait_for(
+            analyzer.analyse(context.as_dict()),
+            timeout=ABSOLUTE_ANALYSIS_BUDGET_SECONDS,
+        )
+    except TimeoutError:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = (
+            "Проверка абсолютных оснований не успела завершиться. "
+            "Остальные части проверки продолжены."
+        )
+        assessment.missing_data_json = []
+        assessment.limitations_json = [
+            "Ответ языковой модели не получен за отведённое время; "
+            "повторите только эту проверку позже."
+        ]
+        assessment.verification_json = {
+            "timed_out": True,
+            "budget_seconds": ABSOLUTE_ANALYSIS_BUDGET_SECONDS,
+        }
+        session.add(assessment)
+        await session.flush()
+        logger.warning(
+            "Анализ абсолютных оснований остановлен по лимиту времени",
+            application_id=application.id,
+            seconds=ABSOLUTE_ANALYSIS_BUDGET_SECONDS,
+        )
+        return assessment
 
     assessment.sources_used_json = outcome.sources_used
     assessment.verification_json = outcome.verification

@@ -40,9 +40,11 @@ import {
   ArrowRight,
   CheckCircle2,
   FileText,
+  ImageIcon,
   Inbox,
   Loader2,
   Sparkles,
+  Trash2,
   Upload,
 } from "lucide-react";
 
@@ -120,7 +122,8 @@ export default function IntakePage() {
   const [markType, setMarkType] = useState<MarkType>("word");
   const [businessDescription, setBusinessDescription] = useState("");
   const [goodsServices, setGoodsServices] = useState("");
-  const [markDescription, setMarkDescription] = useState("");
+  const [markImageFile, setMarkImageFile] = useState<File | null>(null);
+  const [markImagePreview, setMarkImagePreview] = useState<string | null>(null);
 
   // Обращение (необязательное).
   const [sender, setSender] = useState("");
@@ -136,7 +139,7 @@ export default function IntakePage() {
   const saveDraft = (showNotice = false) => {
     localStorage.setItem(draftKey, JSON.stringify({
       useExistingClient, clientId, clientType, name, inn, ogrn, address,
-      markName, markType, businessDescription, goodsServices, markDescription, sender, bodyText,
+      markName, markType, businessDescription, goodsServices, sender, bodyText,
     }));
     if (showNotice) toast({ title: "Черновик сохранён", description: "Текстовые поля сохранятся в этом браузере. Файлы после перезагрузки нужно выбрать заново." });
   };
@@ -157,7 +160,6 @@ export default function IntakePage() {
       setMarkType(draft.markType || "word");
       setBusinessDescription(draft.businessDescription || "");
       setGoodsServices(draft.goodsServices || "");
-      setMarkDescription(draft.markDescription || "");
       setSender(draft.sender || "");
       setBodyText(draft.bodyText || "");
     } catch { localStorage.removeItem(draftKey); }
@@ -166,10 +168,22 @@ export default function IntakePage() {
   useEffect(() => {
     const timer = window.setTimeout(() => saveDraft(false), 500);
     return () => window.clearTimeout(timer);
-  }, [useExistingClient, clientId, clientType, name, inn, ogrn, address, markName, markType, businessDescription, goodsServices, markDescription, sender, bodyText]);
+  }, [useExistingClient, clientId, clientType, name, inn, ogrn, address, markName, markType, businessDescription, goodsServices, sender, bodyText]);
 
   const clients = Object.values(cases.data?.clientsById ?? {});
   const clientPortal = user?.role === "client";
+  const clientActivity = goodsServices || businessDescription;
+  const imageMark = markType === "figurative" || markType === "combined";
+
+  useEffect(() => {
+    if (!markImageFile) {
+      setMarkImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(markImageFile);
+    setMarkImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [markImageFile]);
 
   // Заполнить поле, только если оно ещё пустое: правки юриста важнее
   // предзаполнения и не должны затираться следующим документом.
@@ -189,7 +203,7 @@ export default function IntakePage() {
       return;
     }
     if ((extension === "png" || extension === "jpg" || extension === "jpeg") && (markType === "figurative" || markType === "combined")) {
-      setAttached((prev) => [...prev, { file, documentKind: "mark_image", autofilled: false, warning: null }]);
+      setMarkImageFile(file);
       if (fileInput.current) fileInput.current.value = "";
       return;
     }
@@ -259,6 +273,12 @@ export default function IntakePage() {
   };
 
   const setAttachmentKind = (index: number, documentKind: string) => {
+    if (documentKind === "mark_image") {
+      const file = attached[index]?.file;
+      if (file) setMarkImageFile(file);
+      removeAttachment(index);
+      return;
+    }
     setAttached((prev) => prev.map((item, i) => i === index ? { ...item, documentKind } : item));
   };
 
@@ -269,6 +289,9 @@ export default function IntakePage() {
       return "Укажите наименование или ФИО заявителя.";
     }
     if (!markName.trim()) return "Укажите заявляемое обозначение.";
+    if (imageMark && !markImageFile) {
+      return "Добавьте изображение товарного знака в формате PNG или JPEG.";
+    }
     return null;
   };
 
@@ -304,9 +327,9 @@ export default function IntakePage() {
         mark_name: markName.trim() || null,
         mark_text: markName.trim() || null,
         mark_type: markType,
-        business_description: businessDescription.trim() || null,
-        goods_services: goodsServices.trim() || null,
-        description_of_mark: markDescription.trim() || null,
+        business_description: (clientPortal ? clientActivity : businessDescription).trim() || null,
+        goods_services: (clientPortal ? clientActivity : goodsServices).trim() || null,
+        description_of_mark: null,
       });
 
       const newCaseId = event.created_case_id ?? event.target_case_id;
@@ -317,7 +340,19 @@ export default function IntakePage() {
       // 2. Загружаем приложенные документы в дело и извлекаем реквизиты.
       //    Так документ оказывается в деле, а поля — на вкладке «Сверка».
       let uploaded = 0;
+      let markImageUploadFailed = false;
+      if (imageMark && markImageFile) {
+        try {
+          await api.upload(`/applications/${newCaseId}/mark-image`, markImageFile);
+          uploaded += 1;
+        } catch {
+          markImageUploadFailed = true;
+        }
+      }
       for (const item of attached) {
+        // Отдельно выбранное изображение имеет приоритет над файлом,
+        // ранее помеченным как изображение в общем списке документов.
+        if (markImageFile && item.documentKind === "mark_image") continue;
         try {
           const endpoint = item.documentKind === "mark_image"
             ? `/applications/${newCaseId}/mark-image`
@@ -346,9 +381,12 @@ export default function IntakePage() {
       localStorage.removeItem(draftKey);
       toast({
         title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
-        description: uploaded
+        description: markImageUploadFailed
+          ? "Заявка сохранена, но изображение не загрузилось. Добавьте его ещё раз на экране «Данные»."
+          : uploaded
           ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
+        variant: markImageUploadFailed ? "destructive" : undefined,
       });
     } catch (e) {
       toast({
@@ -656,6 +694,51 @@ export default function IntakePage() {
             </Select>
           </Field>
 
+          {imageMark && (
+            <div className="rounded-2xl border border-primary/25 bg-primary/[0.045] p-5" data-testid="mark-image-field">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <Label className="inline-flex items-center gap-1 text-sm font-semibold">
+                    Изображение товарного знака
+                    <HelpTip text="Загрузите именно тот логотип или рисунок, который хотите зарегистрировать. Для комбинированного знака защищается изображение вместе с текстом." />
+                  </Label>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    PNG или JPEG · до 25 МБ. Изображение попадёт в заявление и будет участвовать в проверке.
+                  </p>
+                </div>
+                <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Обязательно</Badge>
+              </div>
+
+              {markImageFile && markImagePreview ? (
+                <div className="mt-4 grid gap-4 rounded-xl border border-border bg-background p-4 sm:grid-cols-[140px_1fr]">
+                  <div className="flex min-h-32 items-center justify-center rounded-lg bg-white p-2">
+                    <img src={markImagePreview} alt="Выбранный товарный знак" className="max-h-28 max-w-full object-contain" />
+                  </div>
+                  <div className="min-w-0 self-center">
+                    <p className="truncate text-sm font-semibold">{markImageFile.name}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{(markImageFile.size / 1024).toFixed(0)} КБ</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold hover:bg-muted">
+                        <Upload className="h-4 w-4" /> Заменить
+                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => setMarkImageFile(event.target.files?.[0] ?? null)} />
+                      </label>
+                      <button type="button" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50" onClick={() => setMarkImageFile(null)}>
+                        <Trash2 className="h-4 w-4" /> Удалить
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-primary/35 bg-background px-5 text-center hover:border-primary/60">
+                  <ImageIcon className="h-7 w-7 text-primary" />
+                  <span className="mt-2 text-sm font-semibold">Выбрать изображение</span>
+                  <span className="mt-1 text-xs text-muted-foreground">PNG или JPEG</span>
+                  <input type="file" accept="image/png,image/jpeg" className="sr-only" data-testid="input-mark-image" onChange={(event) => setMarkImageFile(event.target.files?.[0] ?? null)} />
+                </label>
+              )}
+            </div>
+          )}
+
           <Field
             label={
               markType === "figurative"
@@ -676,45 +759,33 @@ export default function IntakePage() {
             />
           </Field>
 
-          <Field
-            label="Чем занимается заявитель"
-            hint="Из этого описания система подберёт классы МКТУ. Для ИП подставляется основной вид деятельности из ЕГРИП."
-          >
-            <Textarea
-              value={businessDescription}
-              onChange={(e) => setBusinessDescription(e.target.value)}
-              placeholder="Например: производство одежды и продажа через интернет-магазин"
-              rows={2}
-              data-testid="input-business"
-            />
-          </Field>
+          {!clientPortal && (
+            <Field
+              label="Чем занимается заявитель"
+              hint="Из этого описания система подберёт классы МКТУ. Для ИП подставляется основной вид деятельности из ЕГРИП."
+            >
+              <Textarea
+                value={businessDescription}
+                onChange={(e) => setBusinessDescription(e.target.value)}
+                placeholder="Например: производство одежды и продажа через интернет-магазин"
+                rows={2}
+                data-testid="input-business"
+              />
+            </Field>
+          )}
 
           <Field label={clientPortal ? <span className="inline-flex items-center gap-1">Что вы продаёте или какие услуги оказываете <HelpTip text="По этому перечню система подберёт классы МКТУ — группы товаров и услуг, для которых будет действовать защита товарного знака." /></span> : "Товары и услуги (если клиент перечислил)"}>
             <Textarea
-              value={goodsServices}
-              onChange={(e) => setGoodsServices(e.target.value)}
-              placeholder="одежда, обувь, головные уборы"
+              value={clientPortal ? clientActivity : goodsServices}
+              onChange={(e) => {
+                setGoodsServices(e.target.value);
+                if (clientPortal) setBusinessDescription(e.target.value);
+              }}
+              placeholder={clientPortal ? "Например: ремонт квартир, пошив одежды или доставка еды" : "одежда, обувь, головные уборы"}
               rows={2}
               data-testid="input-goods"
             />
           </Field>
-
-          <Field label="Описание обозначения" hint="Описание попадёт в черновик заявления; его можно отредактировать позже.">
-            <div className="mb-2 flex justify-end"><Button type="button" variant="outline" size="sm" onClick={() => {
-              const text = markName.trim();
-              const generated = markType === "word"
-                ? `Словесное обозначение «${text}», выполненное стандартными символами русского алфавита.`
-                : markType === "combined"
-                  ? `Комбинированное обозначение содержит словесный элемент «${text}» и графические элементы, приведённые в приложенном изображении.`
-                  : markType === "sound"
-                    ? "Звуковое обозначение. Последовательность звуков приведена в приложенной аудиозаписи; текстовое описание звучания требует проверки."
-                    : `Обозначение «${text}»; существенные элементы приведены в приложенных материалах.`;
-              setMarkDescription(generated);
-            }}><Sparkles className="h-4 w-4" /> Сформировать автоматически</Button></div>
-            <Textarea value={markDescription} onChange={(event) => setMarkDescription(event.target.value)} rows={3} placeholder="Система предложит описание, которое можно уточнить" />
-          </Field>
-
-          <Separator className="my-2" />
 
           {!clientPortal && <details className="rounded-lg border border-border px-4 py-3 text-sm">
             <summary className="cursor-pointer font-medium text-muted-foreground hover:text-foreground">

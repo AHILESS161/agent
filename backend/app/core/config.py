@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     APP_NAME: str = "Trademark Registration System"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    API_DOCS_ENABLED: bool = True
+    ALLOWED_HOSTS: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["*"]
+    )
 
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./trademark.db"
@@ -35,6 +39,9 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o"
     LLM_BASE_URL: Optional[str] = None
     LLM_API_KEY: Optional[str] = None
+    # Отдельную мультимодальную модель используем только для анализа загруженного
+    # изображения обозначения. Основная текстовая модель может не принимать картинки.
+    VISION_MODEL: Optional[str] = "google/gemini-2.5-flash"
     GIGACHAT_AUTHORIZATION_KEY: Optional[str] = None
     GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"
     GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
@@ -118,6 +125,7 @@ class Settings(BaseSettings):
         return list(v)  # type: ignore[arg-type]
 
     @field_validator(
+        "ALLOWED_HOSTS",
         "FIPS_TRADEMARK_DATASETS",
         "FIPS_APPLICATION_DATASETS",
         "FIPS_PUBLIC_DATA_SOURCES",

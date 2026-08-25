@@ -376,6 +376,7 @@ async def risk_report(
     _require_client_access(current_user, application)
 
     sections: dict[str, Any] = {}
+    last_completed_sections: dict[str, Any] = {}
     for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
         latest = (
             await session.execute(
@@ -391,6 +392,23 @@ async def risk_report(
             )
         ).scalar_one_or_none()
         sections[kind.value] = serialize_assessment(latest) if latest else None
+        last_completed = (
+            await session.execute(
+                _loaded(
+                    select(RiskAssessment)
+                    .where(
+                        RiskAssessment.application_id == application_id,
+                        RiskAssessment.analysis_kind == kind,
+                        RiskAssessment.is_inconclusive.is_(False),
+                    )
+                    .order_by(RiskAssessment.id.desc())
+                    .limit(1)
+                )
+            )
+        ).scalar_one_or_none()
+        last_completed_sections[kind.value] = (
+            serialize_assessment(last_completed) if last_completed else None
+        )
 
     order = ["low", "medium", "high", "critical"]
     levels = [
@@ -443,6 +461,10 @@ async def risk_report(
         "mark": application.mark_text or application.mark_name,
         "overall_risk": overall,
         "sections": sections,
+        # Неудачный повтор из-за недоступности внешнего сервиса не должен
+        # визуально уничтожать уже полученный результат. Клиент видит отдельно
+        # состояние последней попытки и последний завершённый анализ.
+        "last_completed_sections": last_completed_sections,
         "missing_sections": missing_sections,
         "incomplete_checks": incomplete_checks,
         "classes_confirmed": classes_confirmed,

@@ -49,10 +49,25 @@ class MarkImageResult:
         }
 
 
-def _dominant_colors(image: Image.Image, count: int = 4) -> list[str]:
+def _dominant_colors(image: Image.Image, count: int = 8) -> list[str]:
     rgb = ImageOps.exif_transpose(image).convert("RGB")
     rgb.thumbnail((192, 192))
-    quantized = rgb.quantize(colors=count)
+    # У логотипов часто огромный белый холст. Если квантизовать его вместе с
+    # рисунком, вся палитра заполняется почти белыми оттенками и реальные цвета
+    # (синий, оранжевый, зелёный) теряются.
+    foreground = [
+        pixel
+        for pixel in rgb.getdata()
+        if not (
+            min(pixel) >= 235
+            or (max(pixel) - min(pixel) <= 14 and sum(pixel) / 3 >= 210)
+        )
+    ]
+    if not foreground:
+        foreground = list(rgb.getdata())
+    sample = Image.new("RGB", (len(foreground), 1))
+    sample.putdata(foreground)
+    quantized = sample.quantize(colors=min(count, len(set(foreground))))
     palette = quantized.getpalette() or []
     colors = sorted(quantized.getcolors() or [], reverse=True)
     result: list[str] = []

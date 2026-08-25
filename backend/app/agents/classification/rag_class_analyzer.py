@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -31,17 +32,21 @@ from app.infrastructure.rag.retriever import (
     build_context,
 )
 from app.infrastructure.rag.store import StoredChunk
+from app.services.nice_catalog import search as search_nice_catalog
 
 logger = get_logger(__name__)
 
 MAX_CONTEXT_CHUNKS = 8
+_CLASS_ANCHOR_RE = re.compile(r"Класс\s+(\d+)\.", re.IGNORECASE)
 
-# Класс 35 — реклама, продвижение, услуги розничной и оптовой торговли.
-# Он нужен почти любому, кто что-то продаёт, в том числе через интернет,
-# но по запросу о самом товаре поиск его не находит: в описании класса
-# нет ни «одежды», ни «игрушек». Модель же вправе ссылаться только на
-# выданные фрагменты, поэтому этот раздел добавляется в контекст всегда.
+# Класс 35 добавляется в контекст только при прямом упоминании торговли,
+# магазина, рекламы или продвижения. Сам факт производства товара не
+# означает оказание услуг розничной торговли третьим лицам.
 ALWAYS_INCLUDE_CLASSES = ("Класс 35.",)
+TRADE_QUERY_RE = re.compile(
+    r"\b(продаж\w*|прода\w*|торгов\w*|магазин\w*|маркетплейс\w*|реклам\w*|продвижен\w*)\b",
+    re.IGNORECASE,
+)
 
 # Запас на рассуждения модели плюс сам JSON-ответ.
 MAX_RESPONSE_TOKENS = 12000
@@ -106,20 +111,16 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 описательно только относительно конкретных товаров. Поэтому по каждому
 классу указывай, какие именно товары или услуги к нему отнесены.
 
-ПОЛНОТА ПЕРЕЧНЯ.
+ТОЧНОСТЬ ПЕРЕЧНЯ.
 
-Лучше предложить класс лишний раз, чем упустить нужный: специалист
-уберёт ненужное сам, а недостающий класс после подачи заявки уже
-не добавить — придётся подавать новую и платить пошлину заново.
-Поэтому предлагай не только очевидный класс товара, но и смежные:
-сопутствующие товары, материалы, из которых товар сделан, и услуги,
-которыми заявитель этот товар продаёт или продвигает.
+Предлагай только классы для товаров и услуг, которые пользователь прямо
+назвал. Не добавляй «на всякий случай» смежные товары, материалы,
+сопутствующие услуги или возможные будущие направления.
 
-Класс 35 (реклама, продвижение, услуги розничной и оптовой торговли)
-нужен почти всегда, если заявитель что-либо продаёт — в том числе
-через интернет-магазин, маркетплейс или соцсети. Сегодня так работает
-почти любой бизнес, поэтому проверяй этот класс отдельно и предлагай
-его, если в деятельности есть продажа или продвижение.
+Класс 35 предлагай только если пользователь прямо указал рекламу,
+продвижение, розничную или оптовую торговлю, интернет-магазин либо
+маркетплейс. Производство или ремонт товара сами по себе не являются
+основанием для класса 35.
 
 Классы, в которых ты не уверен, помечай category: "borderline" —
 специалист рассмотрит их отдельно. Уверенные ставь "primary",
@@ -157,7 +158,7 @@ class RagNiceClassAnalyzer:
         self._retriever = Retriever(self._corpus)
         self._has_corpus = bool(nice_chunks)
 
-    def _with_trade_services(self, retrieved: list[Any]) -> list[Any]:
+    def _with_trade_services(self, retrieved: list[Any], query: str) -> list[Any]:
         """Дополнить выдачу разделами, нужными почти всегда.
 
         Пропустить класс 35 дороже, чем предложить лишний: после подачи
@@ -167,6 +168,9 @@ class RagNiceClassAnalyzer:
         «класс» есть в каждом фрагменте справочника, и поисковый запрос
         «Класс 35» ранжируется случайно.
         """
+        if not TRADE_QUERY_RE.search(query):
+            return retrieved
+
         present = " ".join(item.chunk.anchor for item in retrieved)
 
         for marker in ALWAYS_INCLUDE_CLASSES:
@@ -180,10 +184,66 @@ class RagNiceClassAnalyzer:
             retrieved.append(RetrievedChunk(chunk=chunk, score=0.0))
         return retrieved
 
+    def _retrieve_class_candidates(self, query: str) -> list[RetrievedChunk]:
+        """Build a class-diverse context for the language model.
+
+        The official list is split into many chunks. A global BM25 top-N can be
+        occupied by several chunks of one product class (for example class 9),
+        hiding the relevant service class. First select candidate classes using
+        the complete official catalogue, then retrieve the best passage inside
+        each candidate class.
+        """
+        candidates = search_nice_catalog(query, limit=MAX_CONTEXT_CHUNKS)
+        selected: list[RetrievedChunk] = []
+        selected_chunk_ids: set[int] = set()
+
+        for candidate in candidates:
+            class_chunks = [
+                chunk
+                for chunk in self._corpus
+                if (
+                    (match := _CLASS_ANCHOR_RE.search(chunk.anchor))
+                    and int(match.group(1)) == candidate.number
+                )
+            ]
+            if not class_chunks:
+                continue
+            best = Retriever(class_chunks).retrieve(query, top_k=1)
+            if not best:
+                continue
+            item = best[0]
+            if item.chunk.chunk_id in selected_chunk_ids:
+                continue
+            selected.append(item)
+            selected_chunk_ids.add(item.chunk.chunk_id)
+
+        # Keep a lexical safety net for older or incomplete catalogues, while
+        # still allowing no more than one passage per additional class.
+        seen_classes = {candidate.number for candidate in candidates}
+        broad = self._retriever.retrieve(query, top_k=MAX_CONTEXT_CHUNKS * 8)
+        for item in broad:
+            if len(selected) >= MAX_CONTEXT_CHUNKS:
+                break
+            match = _CLASS_ANCHOR_RE.search(item.chunk.anchor)
+            class_number = int(match.group(1)) if match else None
+            if class_number is not None and class_number in seen_classes:
+                continue
+            if item.chunk.chunk_id in selected_chunk_ids:
+                continue
+            selected.append(item)
+            selected_chunk_ids.add(item.chunk.chunk_id)
+            if class_number is not None:
+                seen_classes.add(class_number)
+
+        return selected[:MAX_CONTEXT_CHUNKS]
+
     async def analyse(self, facts: dict[str, Any]) -> ClassAnalysisOutcome:
+        # Название обозначения не определяет товары и услуги. Раньше оно
+        # участвовало в поиске по справочнику и могло вытеснять релевантный
+        # класс из контекста.
         query = " ".join(
             str(facts.get(key) or "")
-            for key in ("business_description", "goods_services", "mark_text")
+            for key in ("business_description", "goods_services")
         ).strip()
 
         if not query:
@@ -192,14 +252,14 @@ class RagNiceClassAnalyzer:
                 reason="Не указаны товары, услуги или описание деятельности",
             )
 
-        retrieved = self._retriever.retrieve(query, top_k=MAX_CONTEXT_CHUNKS)
+        retrieved = self._retrieve_class_candidates(query)
         if not retrieved:
             return ClassAnalysisOutcome(
                 result=None,
                 reason="В справочнике МКТУ не найдено релевантных разделов",
             )
 
-        retrieved = self._with_trade_services(retrieved)
+        retrieved = self._with_trade_services(retrieved, query)
 
         context, available_sources = build_context(retrieved)
         prompt = USER_TEMPLATE.format(
@@ -212,6 +272,7 @@ class RagNiceClassAnalyzer:
 
         raw = await self._call_llm(prompt)
         if raw is None:
+            logger.warning("Модель не вернула ответ для подбора МКТУ")
             return ClassAnalysisOutcome(
                 result=None,
                 reason="Модель не вернула ответ",
@@ -220,6 +281,10 @@ class RagNiceClassAnalyzer:
 
         parsed = raw if isinstance(raw, dict) else _parse_json(raw)
         if parsed is None:
+            logger.warning(
+                "Ответ модели для МКТУ не является JSON",
+                response_preview=str(raw)[:1000],
+            )
             return ClassAnalysisOutcome(
                 result=None,
                 reason="Ответ модели не является валидным JSON",
@@ -228,7 +293,12 @@ class RagNiceClassAnalyzer:
 
         try:
             result = ClassAnalysisResult.model_validate(parsed)
-        except ValidationError:
+        except ValidationError as exc:
+            logger.warning(
+                "Ответ модели для МКТУ не соответствует схеме",
+                validation_errors=exc.errors(include_url=False),
+                response_keys=list(parsed) if isinstance(parsed, dict) else [],
+            )
             return ClassAnalysisOutcome(
                 result=None,
                 reason="Ответ модели не соответствует требуемой схеме",
@@ -280,6 +350,11 @@ class RagNiceClassAnalyzer:
         }
 
         if not confirmed:
+            logger.warning(
+                "Модель не дала подтверждённых классов МКТУ",
+                suggested=len(result.suggestions),
+                rejected=rejected,
+            )
             # Предложения показываются специалисту даже без подтверждённой
             # цитаты: решение за ним, а молчание системы полезнее не делает.
             return ClassAnalysisOutcome(

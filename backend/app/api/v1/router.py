@@ -19,6 +19,7 @@ from app.api.v1.endpoints.inbound import router as inbound_router
 from app.api.v1.endpoints.intake import router as intake_router
 from app.api.v1.endpoints.mvp import router as mvp_router
 from app.api.v1.endpoints.notifications import router as notifications_router
+from app.api.v1.endpoints.office_actions import router as office_actions_router
 from app.api.v1.endpoints.registry import router as registry_router
 from app.api.v1.endpoints.risk import router as risk_router
 from app.api.v1.endpoints.users import router as users_router
@@ -40,6 +41,7 @@ api_router.include_router(risk_router)
 api_router.include_router(drafts_router)
 api_router.include_router(mvp_router)
 api_router.include_router(notifications_router)
+api_router.include_router(office_actions_router)
 api_router.include_router(registry_router)
 api_router.include_router(audit_router)
 api_router.include_router(admin_router)

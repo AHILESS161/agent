@@ -8,6 +8,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.middleware.rate_limit import RateLimitMiddleware
@@ -58,11 +59,15 @@ def create_app() -> FastAPI:
             "Handles AI-assisted classification, legal review, conflict search, "
             "document generation, and submission to FIPS."
         ),
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if settings.API_DOCS_ENABLED else None,
+        redoc_url="/redoc" if settings.API_DOCS_ENABLED else None,
+        openapi_url="/openapi.json" if settings.API_DOCS_ENABLED else None,
         lifespan=lifespan,
     )
+
+    # Не доверяем произвольному Host в production. Значение "*" остаётся
+    # дефолтом только для локальной разработки и тестов.
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
     # ---- CORS ----------------------------------------------------------------
     app.add_middleware(

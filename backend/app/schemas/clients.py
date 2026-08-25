@@ -57,6 +57,7 @@ class ClientCreate(BaseModel):
     country: Optional[str] = Field(default="RU", min_length=2, max_length=2)
     inn: Optional[str] = Field(default=None, max_length=20)
     ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
+    kpp: Optional[str] = Field(default=None, max_length=20)
     representatives: Optional[List[ClientRepresentativeCreate]] = None
 
 
@@ -73,6 +74,7 @@ class ClientUpdate(BaseModel):
     country: Optional[str] = Field(default=None, min_length=2, max_length=2)
     inn: Optional[str] = Field(default=None, max_length=20)
     ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
+    kpp: Optional[str] = Field(default=None, max_length=20)
 
 
 class ClientResponse(BaseModel):
@@ -91,6 +93,7 @@ class ClientResponse(BaseModel):
     country: Optional[str] = None
     inn: Optional[str] = None
     ogrn_or_ogrnip: Optional[str] = None
+    kpp: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     created_by_user_id: Optional[int] = None

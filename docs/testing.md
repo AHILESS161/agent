@@ -1,18 +1,21 @@
 # Тестирование
 
-**Актуализировано:** 15 августа 2026 года. Pytest собирает **704 backend-теста**;
-успешность всей выборки подтверждается только полным запуском, а не сбором.
+**Актуализировано:** 26 августа 2026 года. Полный локальный прогон содержит
+**772 backend-теста** и завершён успешно.
 
 ## Команды
 
 ```bash
 cd backend
-../venv/Scripts/python -m pytest                      # всё
-../venv/Scripts/python -m pytest -m unit              # только модульные
-../venv/Scripts/python -m pytest -m api               # только API
-../venv/Scripts/python -m pytest -m e2e               # только сквозные
-../venv/Scripts/python -m pytest --cov=app            # с покрытием
+python -m pytest                      # всё; если окружение уже активировано
+python -m pytest -m unit              # только модульные
+python -m pytest -m api               # только API
+python -m pytest -m e2e               # только сквозные
+python -m pytest --cov=app            # с покрытием
 ```
+
+В локальном Windows-репозитории без активации окружения используйте
+`../venv/Scripts/python.exe`; в Linux/macOS — `../venv/bin/python`.
 
 Frontend:
 
@@ -22,8 +25,9 @@ npm run check      # tsc --noEmit
 npm run build      # сборка
 ```
 
-**Текущий состав: 704 backend-теста собираются.** Последняя целевая регрессия
-маршрутизации клиентских заявок, назначения юриста и пошлин: 41 тест прошёл.
+**Текущий подтверждённый состав: 772 backend-теста проходят.** Для тестов,
+создающих временные файлы в ограниченной среде, задавайте `--basetemp` внутри
+рабочего каталога.
 
 ---
 
@@ -121,7 +125,8 @@ npm run build      # сборка
   и доступ обеих профессиональных ролей к пошлинам покрыты API-тестом
   `test_client_admin_flow.py`.
 
-Все пункты вынесены в `docs/roadmap.md`.
+Все незавершённые проверки ведутся в [`backlog.md`](backlog.md), а крупные этапы
+качества — в [`roadmap.md`](roadmap.md).
 
 ---
 

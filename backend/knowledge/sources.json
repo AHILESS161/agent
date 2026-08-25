@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "nice_classification_13_2026.md": {
+      "source_type": "methodology",
+      "url": "https://www.fips.ru/publication-web/classification/mktu?view=index",
+      "authority": "Федеральный институт промышленной собственности (ФИПС)",
+      "edition": "МКТУ 13-2026",
+      "effective_from": "2026-01-01",
+      "verified_at": "2026-08-19",
+      "content_kind": "official_snapshot",
+      "jurisdiction": "RU"
+    },
+    "nice_classification_overview.md": {
+      "active": false,
+      "source_type": "methodology",
+      "edition": "устаревший обзор; заменён МКТУ 13-2026",
+      "content_kind": "editorial_summary"
+    },
+    "gk_rf_part4_trademarks.md": {
+      "source_type": "law",
+      "url": "http://pravo.gov.ru/proxy/ips/?docbody=&nd=102108321",
+      "authority": "Официальный интернет-портал правовой информации",
+      "edition": "локальная выборка положений о товарных знаках",
+      "source_url_checked_at": "2026-08-19",
+      "content_kind": "editorial_extract",
+      "jurisdiction": "RU"
+    },
+    "gk_rf_st1483_refusal_grounds.md": {
+      "source_type": "law",
+      "url": "http://pravo.gov.ru/proxy/ips/?docbody=&nd=102108321",
+      "authority": "Официальный интернет-портал правовой информации",
+      "edition": "статья 1483 — рабочая юридическая выборка",
+      "source_url_checked_at": "2026-08-19",
+      "content_kind": "editorial_extract",
+      "jurisdiction": "RU"
+    },
+    "rospatent_guidelines.md": {
+      "source_type": "regulation",
+      "url": "https://rospatent.gov.ru/ru/documents/rucov-po",
+      "authority": "Роспатент",
+      "edition": "действующая публикация Роспатента",
+      "source_url_checked_at": "2026-08-19",
+      "content_kind": "editorial_extract",
+      "jurisdiction": "RU"
+    },
+    "trademark_relative_grounds_methodology.md": {
+      "source_type": "methodology",
+      "url": "https://rospatent.gov.ru/ru/documents/482-prikaz-minekonomrazvitiya-rossii-ot-20-07-2015-482",
+      "authority": "Роспатент / Минэкономразвития России",
+      "edition": "Правила № 482 с изменениями от 20.09.2024",
+      "source_url_checked_at": "2026-08-19",
+      "content_kind": "editorial_extract",
+      "jurisdiction": "RU"
+    }
+  }
+}

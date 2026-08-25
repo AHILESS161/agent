@@ -61,6 +61,22 @@ class TestSearch:
         """Падеж не должен мешать: «одежды» — та же «одежда»."""
         assert search("производство одежды", limit=3)[0].number == 25
 
+    def test_household_appliance_repair_prefers_repair_services(self):
+        """«Бытовой» не должен уводить ремонт техники в канцтовары."""
+        assert search("ремонт бытовой техники", limit=1)[0].number == 37
+
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            ("смартфоны", 9),
+            ("аренда смартфонов", 38),
+            ("цепочки для кошельков", 18),
+        ],
+    )
+    def test_finds_positions_from_current_fips_snapshot(self, query, expected):
+        """Конкретные позиции МКТУ 13-2026 отсутствовали в старом обзоре."""
+        assert search(query, limit=3)[0].number == expected
+
     def test_empty_query_returns_whole_catalog(self):
         assert len(search("", limit=45)) == 45
 

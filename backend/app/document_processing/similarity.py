@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 
 # Транслитерация для сравнения кириллицы с латиницей: «ЗВЕЗДА» и
@@ -292,16 +292,15 @@ def with_semantic(
 def with_image_visual(
     assessment: SimilarityAssessment, image_score: float
 ) -> SimilarityAssessment:
-    """Добавить воспроизводимую оценку сходства загруженных изображений."""
+    """Сохранить машинную оценку изображения как подсказку для ручной проверки.
+
+    dHash/aHash и цветовая гистограмма хорошо находят почти одинаковые файлы,
+    но дают ложные высокие оценки разным логотипам с похожей компоновкой и
+    цветами. Поэтому этот показатель не повышает юридический риск и не меняет
+    итог по словесному, звуковому и смысловому сходству.
+    """
     bounded = max(0.0, min(1.0, image_score))
-    return _combine(
-        assessment.phonetic,
-        assessment.visual,
-        assessment.semantic,
-        assessment.goods,
-        semantic_source=assessment.semantic_source,
-        image_visual=bounded,
-    )
+    return replace(assessment, image_visual=bounded)
 
 
 def _combine(

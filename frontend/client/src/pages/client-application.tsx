@@ -24,6 +24,7 @@ import {
   ImageIcon,
   Upload,
   Trash2,
+  MessageSquareText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,13 +32,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { api, ApiError, DOCUMENT_KIND_LABELS, type ReconciliationDto, type SourceDocumentDto } from "@/lib/api";
+import { api, ApiError, DOCUMENT_KIND_LABELS, type SourceDocumentDto } from "@/lib/api";
 import { useCase } from "@/lib/use-cases";
 import { cn } from "@/lib/utils";
 import { HelpTip } from "@/components/help-tip";
 import { useApi } from "@/lib/use-api";
 import { COUNTRY_OPTIONS } from "@/lib/country-codes";
-import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
+import { MARK_TYPE_LABELS, type Application, type Client, type MarkType } from "@shared/schema";
+import { OfficeActionResponse } from "@/components/office-action-response";
 import {
   Select,
   SelectContent,
@@ -46,7 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Section = "data" | "check" | "application" | "fees" | "documents";
+type Section = "upload" | "review" | "analysis" | "fees" | "documents" | "response";
 
 interface ClassSuggestion {
   id: number;
@@ -58,12 +60,39 @@ interface ClassSuggestion {
 
 interface RiskFindingSummary {
   id: number;
+  category?: string;
   explanation: string;
   recommendation?: string;
   level?: string;
+  legal_basis?: string;
   verification?: {
-    registry_record?: { mark_text?: string; classes?: Array<number | string>; owner?: string };
+    registry_record?: {
+      mark_text?: string;
+      classes?: Array<number | string>;
+      owner?: string;
+      status?: string;
+      source?: string;
+      application_number?: string;
+      registration_number?: string;
+    };
     image_comparison?: { score: number } | null;
+    similarity?: { phonetic?: number; visual?: number; semantic?: number; goods?: number; image_visual?: number | null };
+    search_scope?: string;
+  };
+}
+
+interface RiskSection {
+  summary?: string | null;
+  findings?: RiskFindingSummary[];
+  is_inconclusive?: boolean;
+  inconclusive_reason?: string | null;
+  missing_data?: string[];
+  limitations?: string[];
+  provenance?: {
+    verification?: {
+      records_examined?: number;
+      search_errors?: string[];
+    };
   };
 }
 
@@ -71,11 +100,8 @@ interface RiskReport {
   overall_risk: "low" | "medium" | "high" | "critical" | null;
   is_complete: boolean;
   incomplete_checks?: string[];
-  sections: Record<string, {
-    findings?: RiskFindingSummary[];
-    is_inconclusive?: boolean;
-    inconclusive_reason?: string | null;
-  } | null>;
+  sections: Record<string, RiskSection | null>;
+  last_completed_sections?: Record<string, RiskSection | null>;
 }
 
 interface Recommendation {
@@ -101,35 +127,68 @@ interface MarkImageDto {
   visual_search_notice: string;
 }
 
+interface MarkDescriptionDto {
+  description: string;
+  colors: string[];
+  transliteration: string;
+  translation: string;
+  model: string;
+  requires_confirmation: boolean;
+}
+
 interface RegistrantPrefillDto {
   document_kind: string | null;
+  client_type: "company" | "sole_proprietor" | "individual" | null;
   prefill: {
     name?: string;
+    short_name?: string;
     inn?: string;
     ogrn?: string;
+    kpp?: string;
     address?: string;
     business_activity?: string;
+    signatory_last_name?: string;
+    signatory_first_name?: string;
+    signatory_middle_name?: string;
+    signatory_position?: string;
   };
   warning: string | null;
 }
 
+interface ExtractedRegistrantFieldDto {
+  field_path: string;
+  raw_value: string | null;
+  normalized_value: string | null;
+  validation_error: string | null;
+}
+
 const SECTION_META: Array<{ id: Section; label: string; icon: typeof Circle }> = [
-  { id: "data", label: "Данные", icon: PencilLine },
-  { id: "check", label: "Проверка", icon: Sparkles },
-  { id: "application", label: "Заявка", icon: FileSignature },
+  { id: "upload", label: "Загрузка", icon: Upload },
+  { id: "review", label: "Проверка данных", icon: PencilLine },
+  { id: "analysis", label: "Анализ", icon: Sparkles },
   { id: "fees", label: "Пошлины", icon: ReceiptText },
   { id: "documents", label: "Документы", icon: Archive },
+  { id: "response", label: "Ответ Роспатенту", icon: MessageSquareText },
 ];
-
-const ACTION_LABELS: Record<string, string> = {
-  proceed: "Можно переходить к подготовке заявления",
-  modify: "Сначала измените обозначение или перечень товаров и услуг",
-  withdraw: "Не подавайте обозначение в текущем виде",
-  further_review: "Завершите проверку перед подачей",
-};
 
 function messageOf(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
+}
+
+function transliterateRussian(value: string) {
+  const letters: Record<string, string> = {
+    а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh",
+    з: "z", и: "i", й: "y", к: "k", л: "l", м: "m", н: "n", о: "o",
+    п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "kh", ц: "ts",
+    ч: "ch", ш: "sh", щ: "shch", ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
+  };
+  if (!/[А-ЯЁ]/i.test(value)) return "";
+  return Array.from(value.toLocaleLowerCase("ru-RU"))
+    .map((letter) => letters[letter] ?? letter)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleUpperCase("ru-RU");
 }
 
 export default function ClientApplicationPage() {
@@ -137,8 +196,8 @@ export default function ClientApplicationPage() {
   const appId = Number(params.id);
   const [, setLocation] = useLocation();
   const current = useCase(appId);
-  const [section, setSection] = useState<Section>("data");
-  const [draftRequest, setDraftRequest] = useState(0);
+  const [section, setSection] = useState<Section>("upload");
+  const [analysisPending, setAnalysisPending] = useState(false);
 
   if (current.isLoading) {
     return <div className="flex min-h-[55vh] items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем заявку…</div>;
@@ -174,14 +233,14 @@ export default function ClientApplicationPage() {
             <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold">
               <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> Заявка заполняется
             </span>
-            <button type="button" onClick={() => { setDraftRequest((value) => value + 1); setSection("application"); }} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 hover:text-white">
-              Открыть черновик заявления →
+            <button type="button" onClick={() => setSection("documents")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 hover:text-white">
+              Готовые документы и памятка →
             </button>
           </div>
         </div>
       </section>
 
-      <nav className="grid grid-cols-2 gap-2 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-2 lg:grid-cols-5">
+      <nav className="grid grid-cols-2 gap-2 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-2 lg:grid-cols-6">
         {SECTION_META.map((item, index) => {
           const active = section === item.id;
           return (
@@ -202,11 +261,12 @@ export default function ClientApplicationPage() {
       </nav>
 
       <div className="rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 lg:p-10">
-        {section === "data" && <ClientDataForm application={application} client={client} onSaved={current.reload} onNext={() => setSection("check")} />}
-        {section === "check" && <ClientCheck appId={appId} onResult={() => setSection("application")} />}
-        {section === "application" && <ClientResult appId={appId} draftRequest={draftRequest} onEditData={() => setSection("data")} />}
-        {section === "fees" && <ClientFeeEstimate appId={appId} />}
-        {section === "documents" && <ClientFilingPackage appId={appId} onEditData={() => setSection("data")} />}
+        {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => setSection("review")} />}
+        {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); setSection("analysis"); }} onAnalysisComplete={() => setAnalysisPending(false)} />}
+        {section === "analysis" && <ClientResult appId={appId} analysisPending={analysisPending} onReview={() => setSection("review")} onApplication={() => setSection("fees")} onEditData={() => setSection("review")} />}
+        {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => setSection("documents")} />}
+        {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onReview={() => setSection("review")} />}
+        {section === "response" && <OfficeActionResponse appId={appId} />}
       </div>
     </div>
   );
@@ -223,7 +283,7 @@ function ClientPanel({ title, description, children }: { title: string; descript
   );
 }
 
-function ClientDataForm({ application, client, onSaved, onNext }: { application: any; client: any; onSaved: () => void; onNext: () => void }) {
+function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onAnalysis, onAnalysisComplete }: { mode: "upload" | "review"; application: any; client: any; appId?: number; onSaved: () => void | Promise<void>; onNext?: () => void; onAnalysis?: () => void; onAnalysisComplete?: () => void }) {
   const { toast } = useToast();
   const applicantDocumentInput = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
@@ -235,10 +295,12 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
   const [markAudio, setMarkAudio] = useState<SourceDocumentDto | null>(null);
   const [markImage, setMarkImage] = useState<MarkImageDto | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const automaticDescriptionRequested = useRef(false);
   const [form, setForm] = useState({
     name: client?.fullNameOrCompanyName || "",
     inn: client?.inn || "",
     ogrn: client?.ogrnOrOgrnip || "",
+    kpp: client?.kpp || "",
     address: client?.address || "",
     country: client?.countryCode || "RU",
     email: client?.email || "",
@@ -252,11 +314,24 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     colors: application.colorsClaimed || "",
     transliteration: application.transliteration || "",
     translation: application.translation || "",
+    filingMethod: application.filingMethod || "electronic",
+    signatoryName: application.signatoryName
+      || (client?.type === "company" ? "" : client?.fullNameOrCompanyName || ""),
+    signatoryPosition: application.signatoryPosition || "",
+    signatureDate: application.signatureDate || new Date().toISOString().slice(0, 10),
   });
 
   const set = (key: keyof typeof form, value: string) => setForm((old) => ({ ...old, [key]: value }));
+  const activityDescription = form.goods || form.business;
   const imageMark = form.markType === "figurative" || form.markType === "combined";
   const soundMark = form.markType === "sound";
+  const hasGenericImageDescription = (value: string) => {
+    const normalized = value.toLocaleLowerCase("ru-RU");
+    return !normalized.trim()
+      || normalized.includes("графические элементы, приведённые")
+      || normalized.includes("графическое исполнение и взаимное расположение элементов приведены")
+      || normalized.includes("внешний вид и расположение элементов которой приведены");
+  };
 
   const loadApplicantDocuments = async () => {
     const result = await api.get<{ items: SourceDocumentDto[] }>(
@@ -270,6 +345,49 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     setMarkAudio(
       result.items.filter((item) => item.document_kind === "mark_audio").at(-1) || null,
     );
+
+    // Старые заявки могли сохранить саму выписку и извлечённые поля, но не
+    // успеть перенести их в карточку до перехода между экранами. Восстанавливаем
+    // такие значения из последней выписки, чтобы не просить загрузить файл ещё
+    // раз. Окончательное сохранение происходит после проверки пользователем.
+    const registryDocument = result.items.find((item) =>
+      ["egrul_extract", "egrip_extract", "unknown_registry_extract"].includes(item.document_kind),
+    );
+    if (!registryDocument) return;
+
+    let extracted = await api.get<{ items: ExtractedRegistrantFieldDto[] }>(
+      `/source-documents/${registryDocument.id}/fields`,
+    ).catch(() => ({ items: [] }));
+    if (extracted.items.length === 0 && registryDocument.processing_status === "extracted") {
+      await api.post(`/source-documents/${registryDocument.id}/extract`).catch(() => undefined);
+      extracted = await api.get<{ items: ExtractedRegistrantFieldDto[] }>(
+        `/source-documents/${registryDocument.id}/fields`,
+      ).catch(() => ({ items: [] }));
+    }
+
+    const values = new Map(
+      extracted.items
+        .filter((item) => !item.validation_error && (item.normalized_value || item.raw_value))
+        .map((item) => [item.field_path, (item.normalized_value || item.raw_value || "").trim()]),
+    );
+    const from = (...paths: string[]) => paths.map((path) => values.get(path)).find(Boolean) || "";
+    const restoredSignatory = [
+      from("registry.legal_entity.director.last_name", "registry.sole_proprietor.last_name"),
+      from("registry.legal_entity.director.first_name", "registry.sole_proprietor.first_name"),
+      from("registry.legal_entity.director.middle_name", "registry.sole_proprietor.middle_name"),
+    ].filter(Boolean).join(" ");
+
+    setForm((current) => ({
+      ...current,
+      name: current.name || from("registry.legal_entity.full_name", "registry.sole_proprietor.full_name"),
+      inn: current.inn || from("registry.legal_entity.inn", "registry.sole_proprietor.inn"),
+      ogrn: current.ogrn || from("registry.legal_entity.ogrn", "registry.sole_proprietor.ogrnip"),
+      kpp: current.kpp || from("registry.legal_entity.kpp"),
+      address: current.address || from("registry.legal_entity.address.full"),
+      business: current.business || from("registry.sole_proprietor.main_activity"),
+      signatoryName: current.signatoryName || restoredSignatory,
+      signatoryPosition: current.signatoryPosition || from("registry.legal_entity.director.position"),
+    }));
   };
 
   const uploadApplicantDocument = async (file?: File) => {
@@ -288,6 +406,7 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
         file,
       ).catch((): RegistrantPrefillDto => ({
         document_kind: document.document_kind || null,
+        client_type: null,
         prefill: {},
         warning: document.warning || "Документ сохранён, но реквизиты не удалось распознать автоматически.",
       }));
@@ -307,17 +426,53 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
       }
 
       const values = prefill.prefill || {};
+      const extractedSignatoryName = [
+        values.signatory_last_name,
+        values.signatory_first_name,
+        values.signatory_middle_name,
+      ].filter(Boolean).join(" ");
       const changed = Object.values(values).filter((value) => Boolean(value?.trim())).length;
+
+      // Экран загрузки и экран проверки — разные экземпляры формы. Поэтому
+      // распознанные реквизиты сохраняем сразу: иначе при переходе по вкладке
+      // временное состояние терялось, хотя пользователь видел успешный разбор.
+      // На следующем экране значения всё равно остаются редактируемыми и
+      // должны быть сверены с документом.
+      await Promise.all([
+        client && changed
+          ? api.put(`/clients/${client.id}`, {
+              type: prefill.client_type || client.type,
+              full_name_or_company_name: values.name?.trim() || client.fullNameOrCompanyName,
+              short_name: values.short_name?.trim() || client.shortName || null,
+              inn: values.inn?.trim() || client.inn || null,
+              ogrn_or_ogrnip: values.ogrn?.trim() || client.ogrnOrOgrnip || null,
+              kpp: values.kpp?.trim() || client.kpp || null,
+              address: values.address?.trim() || client.address || null,
+            })
+          : Promise.resolve(),
+        extractedSignatoryName || values.signatory_position?.trim() || values.business_activity?.trim()
+          ? api.put(`/applications/${application.id}`, {
+              signatory_name: extractedSignatoryName || application.signatoryName || null,
+              signatory_position: values.signatory_position?.trim() || application.signatoryPosition || null,
+              business_description: values.business_activity?.trim() || application.businessDescription || null,
+              goods_services_raw: values.business_activity?.trim() || application.goodsServicesRaw || null,
+            })
+          : Promise.resolve(),
+      ]);
       setForm((current) => ({
         ...current,
         name: values.name?.trim() || current.name,
         inn: values.inn?.trim() || current.inn,
         ogrn: values.ogrn?.trim() || current.ogrn,
+        kpp: values.kpp?.trim() || current.kpp,
         address: values.address?.trim() || current.address,
         business: values.business_activity?.trim() || current.business,
+        signatoryName: extractedSignatoryName || current.signatoryName,
+        signatoryPosition: values.signatory_position?.trim() || current.signatoryPosition,
       }));
 
       await loadApplicantDocuments();
+      if (changed) await onSaved();
       toast({
         title: changed ? "Данные перенесены в форму" : "Документ добавлен",
         description: changed
@@ -381,13 +536,22 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     if (max < 45) return "чёрный";
     if (min > 235) return "белый";
     if (max - min < 25) return max < 140 ? "серый" : "светло-серый";
-    if (r > 170 && g > 120 && b < 100) return "оранжевый";
+    if (r > 170 && g > 70 && b < 110) return "оранжевый";
     if (r > 150 && b > 130 && g < 130) return "фиолетовый";
     if (r === max && g < 150) return "красный";
     if (g === max && b > 120) return "бирюзовый";
     if (g === max) return "зелёный";
-    if (b === max && r < 100) return "синий";
+    if (b === max && r < 100) return max < 145 ? "тёмно-синий" : "синий";
     return hex.toUpperCase();
+  };
+
+  const colorsFromImage = (image: MarkImageDto | null) => {
+    const detected = Array.from(
+      new Set((image?.dominant_colors || []).map(colorName)),
+    ).filter((value) => !value.startsWith("#"));
+    const neutral = new Set(["чёрный", "белый", "серый", "светло-серый"]);
+    const chromatic = detected.filter((value) => !neutral.has(value));
+    return (chromatic.length > 0 ? chromatic : detected).slice(0, 6).join(", ");
   };
 
   const generateAllDetails = async () => {
@@ -398,33 +562,51 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
         mark_text: (form.markText || form.markName).trim(),
         mark_type: form.markType,
       });
-      const language = await api.post<{ transliteration: string | null; translation: string | null }>(
-        `/applications/${application.id}/suggest-mark-language`,
-      );
-      const extractedColors = Array.from(new Set((markImage?.dominant_colors || []).map(colorName)))
-        .filter((value) => value !== "белый" || (markImage?.dominant_colors || []).length === 1)
-        .slice(0, 4)
-      const neutralColors = new Set(["чёрный", "белый", "серый", "светло-серый"]);
-      const colorClaim = extractedColors.length > 0 && extractedColors.every((value) => neutralColors.has(value))
-        ? ""
-        : extractedColors.join(", ");
+      const [languageResult, visualResult] = await Promise.allSettled([
+        api.post<{ transliteration: string | null; translation: string | null }>(
+          `/applications/${application.id}/suggest-mark-language`,
+        ),
+        imageMark && markImage
+          ? api.post<MarkDescriptionDto>(`/applications/${application.id}/generate-mark-description`)
+          : Promise.resolve(null),
+      ]);
+      const language = languageResult.status === "fulfilled"
+        ? languageResult.value
+        : { transliteration: null, translation: null };
+      const visual = visualResult.status === "fulfilled" ? visualResult.value : null;
+      const deterministicTransliteration = transliterateRussian(form.markText || form.markName);
+      const colorClaim = visual?.colors?.join(", ") || colorsFromImage(markImage);
       setForm((current) => {
         const enriched = { ...current, colors: colorClaim };
         return {
           ...enriched,
-          // Повторная автогенерация намеренно заменяет прежний шаблон: иначе
-          // исправленное описание и актуальные цвета не попадут в заявление.
-          description: buildDescription(enriched),
+          // Для изображения нельзя подменять анализ общим шаблоном: фраза
+          // «элементы приведены на изображении» выглядит как готовый результат,
+          // хотя модель картинку не увидела.
+          description: visual?.description
+            || (imageMark && hasGenericImageDescription(current.description) ? "" : current.description)
+            || (!imageMark ? buildDescription(enriched) : ""),
           // Для монохромного знака поле (591) оставляется пустым. Старое
           // противоречащее изображению значение намеренно заменяется.
-          transliteration: current.transliteration.trim() || language.transliteration || "",
-          translation: current.translation.trim() || language.translation || "",
+          transliteration: deterministicTransliteration || visual?.transliteration || language.transliteration || "",
+          translation: visual?.translation || language.translation || "",
         };
       });
-      toast({ title: "Сведения подготовлены", description: "Проверьте предложения системы перед сохранением." });
+      toast({
+        title: imageMark && !visual ? "Изображение пока не проанализировано" : "Сведения подготовлены",
+        description: visual
+          ? "Изображение проанализировано. Проверьте описание и цвета перед сохранением."
+          : imageMark
+            ? messageOf(
+                visualResult.status === "rejected" ? visualResult.reason : null,
+                "Внешняя модель не ответила. Мы не стали подменять анализ общим шаблоном — повторите попытку позже.",
+              )
+            : "Проверьте предложения системы перед сохранением.",
+        variant: imageMark && !visual ? "destructive" : undefined,
+      });
     } catch (error) {
-      generateDescription();
-      toast({ title: "Описание подготовлено", description: "Перевод временно недоступен; остальные сведения можно проверить вручную." });
+      if (!imageMark) generateDescription();
+      toast({ title: "Не удалось подготовить сведения", description: messageOf(error, "Попробуйте ещё раз позже"), variant: "destructive" });
     } finally {
       setAutoFilling(false);
     }
@@ -452,6 +634,19 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
   }, [application.id]);
 
   useEffect(() => {
+    if (
+      mode === "review"
+      && imageMark
+      && markImage
+      && hasGenericImageDescription(form.description)
+      && !automaticDescriptionRequested.current
+    ) {
+      automaticDescriptionRequested.current = true;
+      void generateAllDetails();
+    }
+  }, [mode, imageMark, markImage?.document_id]);
+
+  useEffect(() => {
     loadApplicantDocuments()
       .catch(() => undefined);
   }, [application.id]);
@@ -471,9 +666,13 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
         `/applications/${application.id}/mark-image`, file,
       );
       setMarkImage(image);
-      if (form.markType === "combined" && image.recognized_text.trim()) {
-        set("markText", image.recognized_text.replace(/\s+/g, " ").trim());
-      }
+      setForm((current) => ({
+          ...current,
+          markText: current.markType === "combined" && image.recognized_text.trim()
+          ? image.recognized_text.replace(/\s+/g, " ").trim()
+          : current.markText,
+          colors: colorsFromImage(image) || current.colors,
+      }));
       await refreshPreview();
       toast({ title: "Изображение обработано", description: image.recognized_text ? "Проверьте распознанный текст." : "Текст не найден — это нормально для графического знака." });
     } catch (error) {
@@ -505,48 +704,105 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
     } finally { setAudioUploading(false); }
   };
 
-  const save = async () => {
-    if (!form.name.trim() || !form.markName.trim()) {
-      toast({ title: "Заполните обязательные поля", description: "Нужны заявитель и обозначение.", variant: "destructive" });
-      return;
+  const save = async (): Promise<boolean> => {
+    if (!form.markName.trim()) {
+      toast({ title: "Укажите обозначение", description: "Введите название знака или короткое рабочее название.", variant: "destructive" });
+      return false;
+    }
+    if (mode === "review" && !form.name.trim()) {
+      toast({ title: "Укажите заявителя", description: "Наименование организации или ФИО нужны для заявления.", variant: "destructive" });
+      return false;
+    }
+    if (mode === "review" && !form.signatoryName.trim()) {
+      toast({ title: "Укажите подписанта", description: "Нужно ФИО человека, который подпишет заявление.", variant: "destructive" });
+      return false;
+    }
+    if (mode === "review" && client?.type === "company" && !form.signatoryPosition.trim()) {
+      toast({ title: "Укажите должность подписанта", description: "Например: генеральный директор или представитель по доверенности.", variant: "destructive" });
+      return false;
+    }
+    if (mode === "review" && !form.signatureDate) {
+      toast({ title: "Укажите дату подписания", description: "По умолчанию установлена сегодняшняя дата; при необходимости измените её.", variant: "destructive" });
+      return false;
     }
     if (imageMark && !markImage) {
       toast({ title: "Загрузите изображение знака", description: "Оно обязательно для изобразительного и комбинированного обозначения.", variant: "destructive" });
-      return;
+      return false;
     }
     if (soundMark && !markAudio) {
       toast({ title: "Загрузите аудиозапись знака", description: "Для звукового обозначения нужен файл MP3 или WAV.", variant: "destructive" });
-      return;
+      return false;
     }
     setSaving(true);
     try {
+      if (mode === "upload") {
+        await Promise.all([
+          api.put(`/applications/${application.id}`, {
+            mark_name: form.markName.trim(),
+            mark_text: form.markType === "figurative" ? "" : (form.markText || form.markName).trim(),
+            mark_type: form.markType,
+            business_description: form.business.trim() || null,
+            goods_services_raw: form.goods.trim() || form.business.trim() || null,
+            description_of_mark: form.description.trim() || null,
+            colors_claimed: form.colors.trim() || null,
+            transliteration: form.transliteration.trim() || null,
+            translation: form.translation.trim() || null,
+          }),
+          client ? api.put(`/clients/${client.id}`, {
+            full_name_or_company_name: form.name.trim() || client.fullNameOrCompanyName,
+            inn: form.inn.trim() || null,
+            ogrn_or_ogrnip: form.ogrn.trim() || null,
+            kpp: form.kpp.trim() || null,
+            address: form.address.trim() || null,
+            country: form.country || "RU",
+            email: form.email.trim() || null,
+            phone: form.phone.trim() || null,
+          }) : Promise.resolve(),
+        ]);
+        toast({ title: "Материалы сохранены", description: "Теперь проверьте сведения, которые система подготовила для заявления." });
+        await onSaved();
+        onNext?.();
+        return true;
+      }
       await Promise.all([
-        client ? api.put(`/clients/${client.id}`, {
+          client ? api.put(`/clients/${client.id}`, {
           full_name_or_company_name: form.name.trim(), inn: form.inn.trim() || null,
           ogrn_or_ogrnip: form.ogrn.trim() || null, address: form.address.trim() || null,
+          kpp: form.kpp.trim() || null,
           country: form.country || "RU", email: form.email.trim() || null, phone: form.phone.trim() || null,
         }) : Promise.resolve(),
         api.put(`/applications/${application.id}`, {
           mark_name: form.markName.trim(),
           mark_text: form.markType === "figurative" ? "" : (form.markType === "combined" ? form.markText.trim() : form.markName.trim()),
           mark_type: form.markType,
-          business_description: form.business.trim() || null, goods_services_raw: form.goods.trim() || null,
+          business_description: activityDescription.trim() || null, goods_services_raw: activityDescription.trim() || null,
           description_of_mark: form.description.trim() || null, colors_claimed: form.colors.trim() || null,
           transliteration: form.transliteration.trim() || null, translation: form.translation.trim() || null,
           territory: COUNTRY_OPTIONS.find((item) => item.code === form.country)?.name || "Россия",
+          filing_method: form.filingMethod,
+          signatory_name: form.signatoryName.trim() || null,
+          signatory_position: form.signatoryPosition.trim() || null,
+          signature_date: form.signatureDate || null,
         }),
       ]);
       toast({ title: "Данные сохранены" });
-      onSaved();
-      onNext();
+      await onSaved();
+      onNext?.();
+      return true;
     } catch (error) {
       toast({ title: "Не удалось сохранить", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" });
+      return false;
     } finally { setSaving(false); }
   };
 
   return (
-    <ClientPanel title="Проверьте основные данные" description="Поля с пометкой «вручную» нужно заполнить вам. Если реквизиты были найдены в выписке, они уже подставлены — достаточно проверить.">
-      <section className="mb-8 rounded-[1.3rem] border-2 border-[#0d9f9b]/25 bg-[#eef9f8] p-5 sm:p-6">
+    <ClientPanel
+      title={mode === "upload" ? "Загрузите материалы" : "Проверьте сведения для заявки"}
+      description={mode === "upload"
+        ? "Добавьте документы заявителя и сам товарный знак. Система прочитает доступные сведения и покажет их на следующем экране."
+        : "Здесь собрана вся информация, которая пойдёт в заявление. Проверьте реквизиты, описание знака и товары или услуги; всё можно исправить."}
+    >
+      {mode === "upload" && <section className="mb-8 rounded-[1.3rem] border-2 border-[#0d9f9b]/25 bg-[#eef9f8] p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-3">
@@ -601,13 +857,14 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
           <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0d9f9b]" />
           После загрузки проверьте обновившиеся поля ниже. На следующий шаг попадут именно значения, которые вы сохраните здесь.
         </p>
-      </section>
-      <div className="grid gap-8 lg:grid-cols-2">
-        <FormGroup title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
+      </section>}
+      <div className={cn("grid gap-8", mode === "review" && "lg:grid-cols-2")}>
+        {mode === "review" && <FormGroup title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
           <MarkedField label="Наименование или ФИО" mode="manual"><Input value={form.name} onChange={(e) => set("name", e.target.value)} /></MarkedField>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <MarkedField label="ИНН" mode={form.inn ? "document" : "manual"}><Input value={form.inn} onChange={(e) => set("inn", e.target.value)} /></MarkedField>
             <MarkedField label="ОГРН / ОГРНИП" mode={form.ogrn ? "document" : "manual"}><Input value={form.ogrn} onChange={(e) => set("ogrn", e.target.value)} /></MarkedField>
+            {client?.type === "company" && <MarkedField label="КПП" mode={form.kpp ? "document" : "manual"}><Input value={form.kpp} onChange={(e) => set("kpp", e.target.value)} /></MarkedField>}
           </div>
           <MarkedField label="Адрес" mode={form.address ? "document" : "manual"}><Input value={form.address} onChange={(e) => set("address", e.target.value)} /></MarkedField>
           <MarkedField label={<span className="inline-flex items-center gap-1">Код страны <HelpTip text="Двухбуквенный код страны заявителя по стандарту ВОИС ST.3. Для заявителей из России используется RU." /></span>} mode="manual">
@@ -620,7 +877,28 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
             <MarkedField label="Телефон для переписки" mode="manual"><Input value={form.phone} onChange={(e) => set("phone", e.target.value)} /></MarkedField>
           </div>
           <p className="text-xs leading-relaxed text-[#6d6d7d]">Адрес, телефон и e-mail будут использованы в черновике как контакты для переписки с Роспатентом.</p>
-        </FormGroup>
+          <div className="rounded-xl border border-[#11113f]/10 bg-white p-4">
+            <h4 className="font-semibold text-[#11113f]">Кто подпишет заявление</h4>
+            <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Укажите человека, который вправе действовать от имени заявителя. Для организации обычно это руководитель или представитель по доверенности.</p>
+            <div className="mt-4 space-y-4">
+              <MarkedField label="Способ подачи" mode="manual">
+                <Select value={form.filingMethod} onValueChange={(value) => set("filingMethod", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="electronic">Электронно через официальный сервис</SelectItem><SelectItem value="paper">На бумаге</SelectItem></SelectContent></Select>
+              </MarkedField>
+              <MarkedField label="ФИО подписанта" mode={form.signatoryName ? "document" : "manual"}><Input value={form.signatoryName} onChange={(event) => set("signatoryName", event.target.value)} placeholder="Например: Иванов Иван Иванович" /></MarkedField>
+              {client?.type === "company" && <MarkedField label="Должность" mode={form.signatoryPosition ? "document" : "manual"}><Input value={form.signatoryPosition} onChange={(event) => set("signatoryPosition", event.target.value)} placeholder="Например: генеральный директор" /></MarkedField>}
+              <MarkedField label="Дата подписания" mode="manual"><Input type="date" value={form.signatureDate} onChange={(event) => set("signatureDate", event.target.value)} /></MarkedField>
+              <div className="rounded-lg bg-[#eef9f8] p-3 text-xs leading-relaxed text-[#315c5a]">{form.filingMethod === "electronic" ? "Рисовать подпись здесь не нужно. При отправке заявление подписывается электронной подписью в официальном сервисе Роспатента." : "Скачайте и распечатайте заявление, затем поставьте собственноручную подпись в оставленном поле. Картинка или нарисованная мышкой подпись её не заменяет."}</div>
+            </div>
+          </div>
+          {mode === "review" && appId && onAnalysis && onAnalysisComplete && (
+            <ClientCheck
+              appId={appId}
+              onAnalysis={onAnalysis}
+              onAnalysisComplete={onAnalysisComplete}
+              beforeAction={save}
+            />
+          )}
+        </FormGroup>}
 
         <FormGroup title="О товарном знаке" hint="По описанию система предложит классы товаров и услуг и выполнит поиск">
           <MarkedField label={<span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает написанное название. Изобразительный — картинку без текста. Комбинированный — название и изображение вместе." /></span>} mode="manual">
@@ -703,23 +981,33 @@ function ClientDataForm({ application, client, onSaved, onNext }: { application:
               )}
             </div>
           )}
-          <MarkedField label="Чем вы занимаетесь" mode="manual"><Textarea rows={3} value={form.business} onChange={(e) => set("business", e.target.value)} placeholder="Например: производство одежды и продажа через интернет-магазин" /></MarkedField>
-          <MarkedField label={<span className="inline-flex items-center gap-1">Товары и услуги <HelpTip text="Перечислите то, что вы продаёте или делаете под этим названием. Например: одежда, доставка еды, обучение, разработка программ. От этого зависит объём защиты знака." /></span>} mode="manual"><Textarea rows={3} value={form.goods} onChange={(e) => set("goods", e.target.value)} placeholder="Например: одежда, обувь, розничная торговля" /></MarkedField>
-          <details className="rounded-xl border border-[#11113f]/10 bg-white p-4">
-            <summary className="cursor-pointer font-semibold text-[#11113f]">Сведения о знаке для заявления</summary>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs leading-relaxed text-[#6d6d7d]">Система заполнит применимые поля. Вам останется их проверить.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Заполнить автоматически</Button></div>
+          {mode === "review" && <><MarkedField label={<span className="inline-flex items-center gap-1">Что вы продаёте или какие услуги оказываете <HelpTip text="Перечислите всё, что вы продаёте или делаете под этим названием. По этому описанию система подберёт классы МКТУ — группы товаров и услуг, для которых будет действовать защита знака." /></span>} mode="manual">
+            <Textarea
+              rows={3}
+              value={activityDescription}
+              onChange={(event) => setForm((old) => ({
+                ...old,
+                business: event.target.value,
+                goods: event.target.value,
+              }))}
+              placeholder="Например: ремонт квартир, пошив одежды или доставка еды"
+            />
+          </MarkedField>
+          <details open className="rounded-xl border border-[#11113f]/10 bg-white p-4">
+            <summary className="cursor-pointer font-semibold text-[#11113f]">Описание и цвета для заявления</summary>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-xs leading-relaxed text-[#6d6d7d]">Система подготовит описание, основные цвета, написание латиницей и перевод. Проверьте результат перед сохранением.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Подготовить сведения</Button></div>
             <div className="mt-4 space-y-4">
-              <div><Label className="text-sm font-semibold">Описание обозначения</Label><Textarea className="mt-2" rows={3} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Заполнить автоматически»" /></div>
-              <div><Label className="text-sm font-semibold">Цвета</Label><Input className="mt-2" value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></div>
+              <div><Label className="text-sm font-semibold">Описание обозначения</Label><Textarea className="mt-2" rows={6} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Подготовить сведения»" /></div>
+              <div><Label className="text-sm font-semibold">Основные цвета обозначения</Label><Input className="mt-2" value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div><Label className="text-sm font-semibold">Написание латиницей</Label><Input className="mt-2" value={form.transliteration} onChange={(e) => set("transliteration", e.target.value)} placeholder="Определится автоматически" /></div>
-                <div><Label className="text-sm font-semibold">Перевод</Label><Input className="mt-2" value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Останется пустым, если перевод не нужен" /></div>
+                <div><Label className="text-sm font-semibold">Перевод названия</Label><Input className="mt-2" value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Например: Friendly Neighbor" /></div>
               </div>
             </div>
-          </details>
+          </details></>}
         </FormGroup>
       </div>
-      <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={save} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Сохранить и продолжить <ChevronRight className="h-4 w-4" /></Button></div>
+      {mode === "upload" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Перейти к проверке данных <ChevronRight className="h-4 w-4" /></Button></div>}
     </ClientPanel>
   );
 }
@@ -732,12 +1020,14 @@ function MarkedField({ label, mode, children }: { label: React.ReactNode; mode: 
   return <div><div className="mb-2 flex flex-wrap items-center justify-between gap-2"><Label className="text-sm font-semibold">{label}</Label><span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", mode === "manual" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")}>{mode === "manual" ? "Заполнить вручную" : "Из документа — проверьте"}</span></div>{children}</div>;
 }
 
-function ClientCheck({ appId, onResult }: { appId: number; onResult: () => void }) {
+function ClientCheck({ appId, onAnalysis, onAnalysisComplete, beforeAction }: { appId: number; onAnalysis: () => void; onAnalysisComplete: () => void; beforeAction: () => Promise<boolean> }) {
   const { toast } = useToast();
-  const [reconciliation, setReconciliation] = useState<ReconciliationDto | null>(null);
+  const initialLoadStarted = useRef(false);
   const [classes, setClasses] = useState<ClassSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [decidingClassId, setDecidingClassId] = useState<number | null>(null);
   const [recalculatingClasses, setRecalculatingClasses] = useState(false);
   const [phase, setPhase] = useState(0);
 
@@ -759,34 +1049,42 @@ function ClientCheck({ appId, onResult }: { appId: number; onResult: () => void 
 
   const load = async (autoSuggest = true) => {
     setLoading(true);
-    const [fields, classData] = await Promise.all([
-      api.get<ReconciliationDto>(`/applications/${appId}/field-reconciliation`).catch(() => null),
-      api.get<{ suggestions: ClassSuggestion[] }>(`/applications/${appId}/classes`).catch(() => ({ suggestions: [] })),
-    ]);
+    const classData = await api.get<{ suggestions: ClassSuggestion[] }>(`/applications/${appId}/classes`).catch(() => ({ suggestions: [] }));
     if (autoSuggest && classData.suggestions.length === 0) {
       await api.post(`/applications/${appId}/nice-classes/suggest`).catch(() => undefined);
       return load(false);
     }
-    setReconciliation(fields); setClasses(classData.suggestions); setLoading(false);
+    setClasses(classData.suggestions);
+    setLoading(false);
   };
-  useEffect(() => { void load(); }, [appId]);
+  useEffect(() => {
+    if (initialLoadStarted.current) return;
+    initialLoadStarted.current = true;
+    void load();
+  }, [appId]);
 
   const decide = async (item: ClassSuggestion, approved: boolean) => {
+    setDecidingClassId(item.id);
     try { await api.put(`/applications/${appId}/classes/${item.id}/approve`, { suggestion_id: item.id, approved }); await load(); }
     catch (error) { toast({ title: "Не удалось сохранить выбор", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" }); }
+    finally { setDecidingClassId(null); }
   };
 
   const recalculateClasses = async () => {
     setRecalculatingClasses(true);
+    if (!(await beforeAction())) { setRecalculatingClasses(false); return; }
     try {
       const result = await api.post<{
         status: string;
         suggestions?: unknown[];
+        reason?: string;
       }>(`/applications/${appId}/nice-classes/suggest?replace_all=true`);
       await load(false);
       toast({
-        title: "Классы подобраны заново",
-        description: `Прежний список заменён. По актуальным данным предложено классов: ${result.suggestions?.length || 0}.`,
+        title: result.status === "ok" ? "Классы подобраны моделью" : "Использован справочник МКТУ",
+        description: result.status === "ok"
+          ? `Прежний список заменён. По актуальным данным предложено классов: ${result.suggestions?.length || 0}.`
+          : `Модель не дала надёжного ответа. Система применила проверенные правила и официальный справочник. ${result.reason || ""}`.trim(),
       });
     } catch (error) {
       toast({
@@ -800,30 +1098,30 @@ function ClientCheck({ appId, onResult }: { appId: number; onResult: () => void 
   };
 
   const run = async () => {
+    setPreparing(true);
+    if (!(await beforeAction())) { setPreparing(false); return; }
+    setPreparing(false);
     setRunning(true);
-    try { await api.post(`/applications/${appId}/full-analysis`); toast({ title: "Проверка завершена", description: "Результат и основные риски готовы." }); onResult(); }
+    onAnalysis();
+    try { await api.post(`/applications/${appId}/full-analysis`); toast({ title: "Проверка завершена", description: "Результат и основные риски готовы." }); }
     catch (error) { toast({ title: "Проверка не выполнена", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" }); }
-    finally { setRunning(false); }
+    finally { setRunning(false); onAnalysisComplete(); }
   };
 
   if (loading) return <div className="flex min-h-48 items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Проверяем данные…</div>;
 
-  const attention = reconciliation?.items.filter((item) => item.blocks_document_generation || ["missing", "conflict", "needs_review"].includes(item.status)) ?? [];
   const approved = classes.filter((item) => item.approved === true).length;
+  const hasPendingClasses = classes.some((item) => item.approved === null);
+  const usedCatalogFallback = classes.some((item) => item.rationale?.startsWith("Справочник МКТУ:"));
 
   return (
-    <ClientPanel title="Проверьте данные и классы" description="Перед анализом убедитесь, что сведения верны. Здесь нет технических деталей — только решения, которые влияют на заявку.">
-      <div className="grid gap-5 lg:grid-cols-2">
-        <section className="rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6">
-          <div className="flex items-center justify-between gap-3"><h3 className="text-xl font-semibold">Данные заявления</h3><Badge variant="outline">{attention.length ? `Нужно проверить: ${attention.length}` : "Готово"}</Badge></div>
-          <div className="mt-5 space-y-3">
-            {attention.length === 0 ? <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-900"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /><div><p className="font-semibold">Обязательные данные заполнены</p><p className="mt-1 text-sm text-emerald-800">Перейдите к выбору классов и запуску проверки.</p></div></div> : attention.slice(0, 6).map((item) => <div key={item.case_field} className="flex items-start gap-3 rounded-xl bg-amber-50 p-4"><AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /><div><p className="font-semibold">{item.label}</p><p className="mt-1 text-sm text-amber-900/70">{item.registry_value || item.case_value ? "Проверьте найденное значение" : "Нужно заполнить вручную в разделе «Данные»"}</p></div></div>)}
-          </div>
-        </section>
-
-        <section className="rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6">
+    <section className="mt-8 border-t border-[#11113f]/10 pt-7">
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Последнее перед анализом</p>
+      <h3 className="mt-2 text-xl font-semibold text-[#11113f]">Проверьте классы товаров и услуг</h3>
+      <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Класс показывает, для каких именно товаров или услуг будет защищён знак. Отметьте каждый предложенный вариант.</p>
+        <section className="mt-5 rounded-[1.3rem] border border-[#0d9f9b]/20 bg-white p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="inline-flex items-center gap-1 text-xl font-semibold">Классы товаров и услуг <HelpTip text="МКТУ — международный справочник из 45 классов. Классы 1–34 относятся к товарам, 35–45 — к услугам. Знак защищается не вообще, а только для выбранных товаров и услуг." /></h3>
+            <h4 className="inline-flex items-center gap-1 font-semibold">Предложенные классы <HelpTip text="МКТУ — международный справочник из 45 классов. Классы 1–34 относятся к товарам, 35–45 — к услугам. Знак защищается не вообще, а только для выбранных товаров и услуг." /></h4>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">Выбрано: {approved}</Badge>
               <Button
@@ -844,17 +1142,33 @@ function ClientCheck({ appId, onResult }: { appId: number; onResult: () => void 
           <p className="mt-2 rounded-lg bg-[#f8f7f4] px-3 py-2 text-xs leading-relaxed text-[#5f6072]">
             Изменили документы, описание бизнеса или перечень товаров? Нажмите «Подобрать заново». Прежние классы будут удалены, а список сформируется заново по актуальным данным.
           </p>
+          {usedCatalogFallback && <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p><span className="font-semibold">Языковая модель не дала надёжного результата.</span> Эти варианты подобраны по официальному справочнику и встроенным правилам. Обязательно проверьте их перед анализом.</p></div>}
           <div className="mt-5 space-y-3">
-            {classes.length === 0 ? <div className="rounded-xl bg-[#f8f7f4] p-4 text-sm text-[#6d6d7d]">Предложений пока нет. Запустите проверку — система сначала подберёт классы по вашему описанию товаров и услуг.</div> : classes.map((item) => <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-amber-200 bg-amber-50")}><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">Класс {item.class_number}</p><p className="mt-1 text-sm text-[#6d6d7d]">{item.class_description || "Описание класса будет уточнено при анализе"}</p>{item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}</div><div className="flex gap-2"><Button size="sm" variant={item.approved === true ? "default" : "outline"} className="rounded-full" onClick={() => void decide(item, true)}><Check className="h-4 w-4" /> Подходит</Button><Button size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>Не подходит</Button></div></div></div>)}
+            {classes.length === 0 ? (
+              <div className="rounded-xl bg-[#f8f7f4] p-4 text-sm text-[#6d6d7d]">Предложений пока нет. Нажмите «Подобрать заново» — система предложит классы по вашему описанию услуг.</div>
+            ) : classes.map((item) => (
+              <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-amber-200 bg-amber-50")}>
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <p className="font-semibold">Класс {item.class_number}</p>
+                    <p className="mt-1 text-sm text-[#6d6d7d]">{item.class_description || "Описание класса будет уточнено при анализе"}</p>
+                    {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button disabled={decidingClassId !== null} size="sm" variant={item.approved === true ? "default" : "outline"} className="rounded-full" onClick={() => void decide(item, true)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {decidingClassId === item.id ? "Сохраняем…" : "Подходит"}</Button>
+                    <Button disabled={decidingClassId !== null} size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {decidingClassId === item.id ? "Сохраняем…" : "Не подходит"}</Button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </section>
-      </div>
-      <div className="mt-7 rounded-[1.2rem] bg-[#11113f] p-5 text-white sm:flex sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{running ? phases[phase] : "Готовы проверить знак?"}</p><p className="mt-1 text-sm text-white/65">{running ? "Обычно проверка занимает до двух минут. Можно дождаться результата на этом экране." : "Поиск проводится прежде всего в выбранных классах товаров и услуг."}</p>{running && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={running} onClick={run} className="mt-4 rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d] sm:mt-0">{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {running ? "Идёт проверка" : "Запустить проверку"}</Button></div>
-    </ClientPanel>
+      <div className="mt-7 rounded-[1.2rem] bg-[#11113f] p-5 text-white sm:flex sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем введённые данные" : running ? phases[phase] : hasPendingClasses ? "Сначала подтвердите классы" : approved === 0 ? "Выберите хотя бы один класс" : "Всё готово к анализу"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "После сохранения автоматически откроется следующий экран." : running ? "Вы уже можете следить за проверкой на следующем экране." : hasPendingClasses ? "Для каждого предложенного класса нажмите «Подходит» или «Не подходит»." : "Поиск проводится прежде всего в выбранных классах товаров и услуг."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || hasPendingClasses || approved === 0} onClick={() => void run()} className="mt-4 rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d] sm:mt-0">{preparing || running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : "Продолжить к анализу"}</Button></div>
+    </section>
   );
 }
 
-function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draftRequest: number; onEditData: () => void }) {
+function ClientResult({ appId, analysisPending, onReview, onApplication, onEditData }: { appId: number; analysisPending: boolean; onReview: () => void; onApplication: () => void; onEditData: () => void }) {
   const { toast } = useToast();
   const [report, setReport] = useState<RiskReport | null>(null);
   const [memo, setMemo] = useState<Recommendation | null>(null);
@@ -871,166 +1185,232 @@ function ClientResult({ appId, draftRequest, onEditData }: { appId: number; draf
     ]);
     setReport(risk); setMemo(recommendation); setClasses(classData.suggestions); setLoading(false);
   };
-  useEffect(() => { void load(); }, [appId]);
+  useEffect(() => {
+    if (!analysisPending) void load();
+  }, [appId, analysisPending]);
 
   const rerun = async () => { setRunning(true); try { await api.post(`/applications/${appId}/full-analysis`); await load(); } catch (error) { toast({ title: "Не удалось обновить результат", description: messageOf(error, "Попробуйте позже"), variant: "destructive" }); } finally { setRunning(false); } };
   const findings = useMemo(() => Object.values(report?.sections || {}).flatMap((section) => section?.findings || []), [report]);
   const risk = report?.overall_risk;
   const incomplete = report?.is_complete === false;
+  const relativeSection = report?.sections?.relative_grounds;
+  const absoluteSection = report?.sections?.absolute_grounds;
+  const lastCompletedRelativeSection = report?.last_completed_sections?.relative_grounds;
+  const registryConnectionFailed = Boolean(
+    relativeSection?.provenance?.verification?.search_errors?.length
+    && (relativeSection.provenance.verification.records_examined || 0) === 0
+  );
+  const llmConnectionFailed = Boolean(
+    absoluteSection?.is_inconclusive
+    && (absoluteSection.missing_data || []).some((item) => item.toLocaleLowerCase("ru-RU").includes("ответ языковой модели"))
+  );
+  const externalServicesUnavailable = registryConnectionFailed || llmConnectionFailed;
+  const effectiveRelativeSection = relativeSection && !relativeSection.is_inconclusive
+    ? relativeSection
+    : lastCompletedRelativeSection;
+  const registryResultIsPrevious = Boolean(
+    relativeSection?.is_inconclusive && lastCompletedRelativeSection
+  );
+  const registryFindings = effectiveRelativeSection?.findings || [];
+  const registrySearchComplete = Boolean(effectiveRelativeSection && !effectiveRelativeSection.is_inconclusive);
+  const absoluteCheckIncomplete = Boolean(absoluteSection?.is_inconclusive);
+  const allAdverseFindings = findings.filter((item) => ["medium", "high", "critical"].includes(item.level || ""));
+  const rawAdverseFindings = allAdverseFindings.filter((item) => {
+    if (item.category !== "descriptive") return true;
+    const text = item.explanation.toLocaleLowerCase("ru-RU");
+    return ![
+      "может восприниматься",
+      "может указывать",
+      "может ассоциироваться",
+      "по-соседски",
+      "состоит из общеупотребительных слов",
+    ].some((phrase) => text.includes(phrase));
+  });
+  const adverseFindings = rawAdverseFindings.filter((item) => {
+    if (!item.verification?.image_comparison || !item.verification.similarity) return true;
+    const similarity = item.verification.similarity;
+    // Грубая оценка картинки показывается юристу как подсказка, но не должна
+    // пугать клиента, если слова, звучание и смысл обозначений различаются.
+    return Math.max(similarity.phonetic || 0, similarity.visual || 0, similarity.semantic || 0) >= 0.5;
+  });
+  const onlyRoughImageRisks = rawAdverseFindings.length > 0 && adverseFindings.length === 0;
+  const onlySpeculativeDescriptiveRisks = allAdverseFindings.length > 0 && rawAdverseFindings.length === 0;
+  const displayedRisk = onlyRoughImageRisks || onlySpeculativeDescriptiveRisks
+    ? (incomplete ? null : "low")
+    : risk;
   // Уже установленный высокий риск важнее технической незавершённости
   // другой части проверки. Иначе экран одновременно советовал не подавать
   // знак, но прятал основание под заголовком «проверку нужно завершить».
-  const presentation = risk ? {
+  const presentation = displayedRisk ? {
     low: { title: "Можно продолжать", tone: "border-emerald-200 bg-emerald-50", icon: ShieldCheck, color: "text-emerald-700" },
     medium: { title: "Продолжайте с осторожностью", tone: "border-amber-200 bg-amber-50", icon: ShieldAlert, color: "text-amber-700" },
     high: { title: "Сначала доработайте знак", tone: "border-orange-200 bg-orange-50", icon: ShieldAlert, color: "text-orange-700" },
     critical: { title: "Подача не рекомендуется", tone: "border-red-200 bg-red-50", icon: AlertCircle, color: "text-red-700" },
-  }[risk] : incomplete
-    ? { title: "Проверку нужно завершить", tone: "border-amber-200 bg-amber-50", icon: ShieldAlert, color: "text-amber-700" }
+  }[displayedRisk] : incomplete
+    ? { title: externalServicesUnavailable ? "Не удалось обновить проверку" : registrySearchComplete ? "По реестру явных препятствий не найдено" : "Проверку нужно завершить", tone: "border-amber-200 bg-amber-50", icon: ShieldAlert, color: "text-amber-700" }
     : null;
+
+  if (analysisPending) return (
+    <ClientPanel title="Проверяем товарный знак" description="Экран открылся автоматически. Можно ничего не нажимать — результат появится здесь после завершения проверки.">
+      <div className="rounded-[1.3rem] border border-[#0d9f9b]/25 bg-[#eef9f8] p-6 sm:p-8">
+        <div className="flex items-start gap-4">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#0d9f9b]"><Loader2 className="h-6 w-6 animate-spin" /></span>
+          <div>
+            <h3 className="text-xl font-semibold text-[#11113f]">Анализ выполняется</h3>
+            <p className="mt-2 leading-relaxed text-[#5f6072]">Сначала система ищет совпадения в подтверждённых вами классах, затем проверяет возможные причины отказа и готовит понятные рекомендации.</p>
+            <div className="mt-5 flex gap-2" aria-label="Ход анализа">
+              {[0, 1, 2, 3].map((item) => <span key={item} className="h-2 w-12 animate-pulse rounded-full bg-[#0d9f9b]/35" style={{ animationDelay: `${item * 180}ms` }} />)}
+            </div>
+          </div>
+        </div>
+      </div>
+    </ClientPanel>
+  );
 
   if (loading) return <div className="flex min-h-48 items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем результат…</div>;
 
   if (!presentation) return <ClientPanel title="Результата пока нет" description="Запустите проверку на предыдущем шаге. Система подберёт классы, найдёт сходные товарные знаки и подготовит понятную рекомендацию."><Button onClick={rerun} disabled={running} className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]">{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Запустить проверку</Button></ClientPanel>;
 
   const ResultIcon = presentation.icon;
-  const adverseFindings = findings.filter((item) =>
-    ["medium", "high", "critical"].includes(item.level || ""),
-  );
-  const sectionReasons = Object.values(report?.sections || {})
-    .filter((item) => item?.is_inconclusive)
-    .map((item) => item?.inconclusive_reason)
-    .filter((item): item is string => Boolean(item));
-  const incompleteReasons = report?.incomplete_checks?.length
-    ? report.incomplete_checks
-    : sectionReasons;
   const visibleRiskFindings = adverseFindings.slice(0, 3);
-  const fallbackRisks = adverseFindings.length === 0 && !incomplete && risk && risk !== "low"
+  const fallbackRisks = adverseFindings.length === 0 && !onlyRoughImageRisks && !incomplete && displayedRisk && displayedRisk !== "low"
     ? (memo?.key_risks_json || []).slice(0, 3)
     : [];
   const hasVisibleRisks = visibleRiskFindings.length > 0 || fallbackRisks.length > 0;
-  const friendlyIncomplete = (value: string) => {
-    const normalized = value.toLocaleLowerCase("ru-RU");
-    if (normalized.includes("абсолют") || normalized.includes("подтверждённых данных")) {
-      return "Не завершена проверка графических элементов изображения по требованиям статьи 1483. Поиск похожих знаков в выбранных классах уже выполнен.";
-    }
-    if (normalized.includes("относитель") || normalized.includes("сходных")) {
-      return "Не завершён поиск похожих товарных знаков в реестре.";
-    }
-    if (normalized.includes("мкту") || normalized.includes("класс")) {
-      return "Нужно подтвердить выбранные классы товаров и услуг.";
-    }
-    return `Не завершена проверка: ${value}`;
-  };
-  const shortFinding = (item: RiskFindingSummary) => {
+  const approvedClasses = classes.filter((item) => item.approved === true);
+  const selectedClassNumbers = new Set(approvedClasses.map((item) => item.class_number));
+  const rankedRegistryFindings = [...registryFindings].sort((left, right) => {
+    const leftInClasses = left.verification?.search_scope === "selected_classes" ? 1 : 0;
+    const rightInClasses = right.verification?.search_scope === "selected_classes" ? 1 : 0;
+    if (leftInClasses !== rightInClasses) return rightInClasses - leftInClasses;
+    const leftActive = ["registered", "pending"].includes(left.verification?.registry_record?.status || "") ? 1 : 0;
+    const rightActive = ["registered", "pending"].includes(right.verification?.registry_record?.status || "") ? 1 : 0;
+    return rightActive - leftActive;
+  });
+  const classLabel = approvedClasses.length === 1
+    ? `классе ${approvedClasses[0].class_number}`
+    : approvedClasses.length > 1
+      ? `классах ${approvedClasses.map((item) => item.class_number).join(", ")}`
+    : "выбранных классах";
+  const registryAdvice = registrySearchComplete
+    ? registryFindings.length > 0
+      ? `Поиск в ${classLabel} завершён. Среди найденных знаков нет обозначений, которые по предварительной оценке создают высокий риск отказа. Сейчас менять ваше обозначение не требуется.`
+      : `Поиск в ${classLabel} завершён. Похожих товарных знаков не найдено. Сейчас менять ваше обозначение не требуется.`
+    : "Поиск похожих товарных знаков пока не завершён.";
+  const unfinishedLegalCheck = externalServicesUnavailable
+    ? `Во время последнего запуска система не смогла связаться ${registryConnectionFailed && llmConnectionFailed ? "с поиском Роспатента и языковой моделью" : registryConnectionFailed ? "с поиском Роспатента" : "с языковой моделью"}. Поэтому новый юридический вывод не сформирован. Это техническая ошибка, а не обнаруженный риск регистрации.`
+    : absoluteCheckIncomplete
+    ? "Не завершена проверка самостоятельных оснований для отказа по статье 1483 ГК РФ: нужно ещё оценить, не является ли обозначение описательным, общеупотребительным или вводящим в заблуждение. Это не обнаруженный недостаток знака — по этой части пока нет надёжного вывода."
+    : "Одна из предусмотренных проверок пока не завершена. Это не означает, что найдено основание для отказа.";
+  const clientFinding = (item: RiskFindingSummary) => {
     const record = item.verification?.registry_record;
     if (record?.mark_text) {
-      const selected = new Set(classes.filter((entry) => entry.approved !== false).map((entry) => entry.class_number));
+      const selected = new Set(classes.filter((entry) => entry.approved === true).map((entry) => entry.class_number));
       const overlap = (record.classes || []).filter((value) => selected.has(Number(value)));
       return `Похожий знак «${record.mark_text}»${overlap.length ? ` найден в ваших классах: ${overlap.join(", ")}` : " требует дополнительной проверки"}.`;
     }
     const firstSentence = item.explanation.split(/(?<=[.!?])\s/)[0] || item.explanation;
-    return firstSentence.length > 150 ? `${firstSentence.slice(0, 147)}…` : firstSentence;
+    return firstSentence;
   };
-  const clientSummary = risk ? {
+  const clientSummary = displayedRisk ? {
     low: "Серьёзных препятствий не найдено. Можно готовить заявку.",
     medium: "Есть моменты, которые лучше проверить перед подачей.",
     high: "Найдены существенные препятствия. Сначала лучше доработать знак.",
     critical: "В выбранных классах найдены опасные совпадения. Без изменений подавать заявку рискованно.",
-  }[risk] : "Проверка выполнена не полностью. Завершите оставшийся шаг.";
-  const selectedClassNumbers = new Set(classes.filter((item) => item.approved !== false).map((item) => item.class_number));
-  const visualMatches = findings
-    .filter((item) => item.verification?.image_comparison)
-    .sort((left, right) => {
-      const inSelectedClasses = (item: RiskFindingSummary) => (item.verification?.registry_record?.classes || [])
-        .some((value) => selectedClassNumbers.has(Number(value)));
-      return Number(inSelectedClasses(right)) - Number(inSelectedClasses(left))
-        || (right.verification?.image_comparison?.score || 0) - (left.verification?.image_comparison?.score || 0);
-    });
-  const strongestVisualMatch = visualMatches.reduce((best, item) =>
-    (item.verification?.image_comparison?.score || 0) > (best?.verification?.image_comparison?.score || 0) ? item : best,
-  null as RiskFindingSummary | null);
+  }[displayedRisk] : externalServicesUnavailable
+    ? "Последний запуск прервался из-за недоступности внешних сервисов. Введённые данные и предыдущий успешный поиск сохранены."
+    : registrySearchComplete
+    ? "Поиск сходных знаков завершён. До окончательной рекомендации нужно закончить отдельную правовую проверку самого обозначения."
+    : "Проверка выполнена не полностью. Завершите оставшийся шаг.";
+  const nextSteps = displayedRisk === "critical" || displayedRisk === "high"
+    ? ["Изменить название или заметные элементы знака.", "Уточнить перечень товаров и услуг — иногда риск можно снизить, сузив его.", "Перед подачей показать новый вариант специалисту."]
+    : displayedRisk === "medium"
+      ? ["Посмотреть самые важные совпадения ниже.", "При необходимости уточнить товары и услуги.", "После проверки перейти к подготовке заявления."]
+      : incomplete
+        ? externalServicesUnavailable
+          ? ["Повторить проверку сейчас — подключение к внешним сервисам восстановлено.", "Предыдущий успешный поиск по реестру сохранён и не будет потерян."]
+          : ["Повторить только незавершённую проверку — готовый поиск по реестру сохранится.", "Если результат снова не появится, передать обозначение юристу для ручной оценки по статье 1483 ГК РФ."]
+        : ["Перейти к расчёту пошлин и проверить доступные льготы.", "После этого скачать комплект документов для подачи."];
   return (
-    <ClientPanel title="Результат проверки" description="Главный вывод, выбранные классы и риски, которые важно учесть до подачи.">
+    <ClientPanel title="Результат проверки" description="Коротко: что получилось хорошо, что может помешать регистрации и что делать дальше.">
       <section className={cn("rounded-[1.5rem] border p-6 sm:p-8", presentation.tone)}>
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between"><div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white"><ResultIcon className={cn("h-6 w-6", presentation.color)} /></span><div><p className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.15em] text-[#6d6d7d]">Предварительный вывод <HelpTip text="Это автоматическая предварительная оценка. Окончательное решение принимает Роспатент." /></p><h3 className={cn("mt-1 text-3xl font-semibold", presentation.color)}>{presentation.title}</h3><p className="mt-3 max-w-3xl text-lg leading-relaxed text-[#11113f]">{clientSummary}</p></div></div><Button variant="outline" className="rounded-full bg-white" disabled={running} onClick={rerun}>{running && <Loader2 className="h-4 w-4 animate-spin" />} Обновить</Button></div>
+        <div className="flex items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white"><ResultIcon className={cn("h-6 w-6", presentation.color)} /></span><div><p className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.15em] text-[#6d6d7d]">Предварительный вывод <HelpTip text="Это автоматическая предварительная оценка. Окончательное решение принимает Роспатент." /></p><h3 className={cn("mt-1 text-3xl font-semibold", presentation.color)}>{presentation.title}</h3><p className="mt-3 max-w-3xl text-lg leading-relaxed text-[#11113f]">{running ? "Обновляем проверку по подтверждённым данным…" : clientSummary}</p></div></div>
       </section>
-      {visualMatches.length > 0 && (
-        <section className="mt-6 rounded-[1.3rem] border border-[#0d9f9b]/25 bg-[#edf9f8] p-5 sm:p-6">
-          <div className="flex items-start gap-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-[#0d9f9b]"><ImageIcon className="h-5 w-5" /></span>
-            <div>
-              <h3 className="text-xl font-semibold">Изображение проанализировано</h3>
-              <p className="mt-2 leading-relaxed text-[#55556f]">Сравнили {visualMatches.length} изображений.{strongestVisualMatch && <> Самое похожее — «{strongestVisualMatch.verification?.registry_record?.mark_text || "знак без названия"}», сходство <strong className="text-[#11113f]">{Math.round((strongestVisualMatch.verification?.image_comparison?.score || 0) * 100)}%</strong>.</>}</p>
-            </div>
+      <div className="mt-6 grid gap-5 lg:grid-cols-3">
+        <section className={cn("rounded-[1.3rem] border p-5 sm:p-6", registryResultIsPrevious ? "border-[#0d9f9b]/25 bg-[#eef9f8]" : "border-emerald-200 bg-emerald-50/60")}>
+          <h3 className={cn("flex items-center gap-2 text-xl font-semibold", registryResultIsPrevious ? "text-[#087c78]" : "text-emerald-900")}><CheckCircle2 className="h-5 w-5" /> Похожие товарные знаки</h3>
+          <div className="mt-4 space-y-3 text-sm leading-relaxed text-emerald-950/80">
+            <p>{registryAdvice}</p>
+            {registryResultIsPrevious && <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">Повторная проверка реестра временно недоступна. Сейчас показан последний полученный результат.</p>}
           </div>
         </section>
-      )}
-      <div className="mt-6 grid gap-5 lg:grid-cols-2">
-        <section className="rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6"><h3 className="text-xl font-semibold">Что делать дальше</h3><p className="mt-3 leading-relaxed text-[#55556f]">{memo?.recommended_action ? ACTION_LABELS[memo.recommended_action] ?? "Проверьте результат перед подачей" : incomplete ? "Дождитесь завершения всех проверок и повторите анализ." : "Проверьте выбранные классы и переходите к подготовке заявления."}</p><div className="mt-5 flex flex-wrap gap-2">{classes.filter((item) => item.approved !== false).map((item) => <Badge key={item.id} className="bg-[#e8f7f6] text-[#087c78] hover:bg-[#e8f7f6]">МКТУ {item.class_number}</Badge>)}</div></section>
-        <section className="rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6">
-          <h3 className="text-xl font-semibold">{hasVisibleRisks ? "Главные риски" : incomplete ? "Что осталось проверить" : "Результат проверки"}</h3>
+
+        <section className={cn("rounded-[1.3rem] border p-5 sm:p-6", hasVisibleRisks ? "border-red-200 bg-red-50/60" : incomplete ? "border-amber-200 bg-amber-50/60" : "border-emerald-200 bg-emerald-50/60")}>
+          <h3 className="flex items-center gap-2 text-xl font-semibold"><AlertCircle className={cn("h-5 w-5", hasVisibleRisks ? "text-red-600" : incomplete ? "text-amber-600" : "text-emerald-600")} /> {hasVisibleRisks ? "Что может помешать регистрации" : externalServicesUnavailable ? "Почему нет нового результата" : incomplete ? "Что ещё нужно проверить" : "Юридически значимых рисков не найдено"}</h3>
           <div className="mt-4 space-y-3">
-            {visibleRiskFindings.map((item) => <div key={item.id} className="rounded-xl bg-[#f8f7f4] p-4"><div className="flex items-start gap-3 text-sm font-medium leading-relaxed text-[#11113f]"><span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#ef5b62]" />{shortFinding(item)}</div><details className="mt-2 pl-5 text-sm text-[#6d6d7d]"><summary className="cursor-pointer text-[#0d8f8b]">Почему это важно</summary><p className="mt-2 leading-relaxed">{item.explanation}</p></details></div>)}
-            {fallbackRisks.map((item, index) => <div key={index} className="flex items-start gap-3 text-sm leading-relaxed text-[#55556f]"><span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-[#ef5b62]" />{item.split(/(?<=[.!?])\s/)[0]}</div>)}
-            {!hasVisibleRisks && incompleteReasons.map((item, index) => <div key={index} className="flex items-start gap-3 text-sm leading-relaxed text-[#55556f]"><span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-500" />{friendlyIncomplete(item)}</div>)}
-            {incomplete && incompleteReasons.length === 0 && !hasVisibleRisks && <p className="text-sm text-[#6d6d7d]">Одна часть проверки пока не завершена.</p>}
-            {!incomplete && !hasVisibleRisks && <div className="flex items-start gap-3 rounded-xl bg-emerald-50 p-4 text-emerald-900"><CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /><p className="text-sm leading-relaxed">Серьёзных препятствий не найдено.</p></div>}
+            {visibleRiskFindings.map((item) => <p key={item.id} className="text-sm font-medium leading-relaxed text-[#33334f]">{clientFinding(item)}</p>)}
+            {fallbackRisks.map((item, index) => <p key={index} className="text-sm leading-relaxed text-[#55556f]">{item.split(/(?<=[.!?])\s/)[0]}</p>)}
+            {!hasVisibleRisks && incomplete && <p className="text-sm leading-relaxed text-amber-900">{unfinishedLegalCheck}</p>}
+            {!incomplete && !hasVisibleRisks && <p className="text-sm font-semibold text-emerald-900">Серьёзных препятствий не найдено.</p>}
           </div>
+        </section>
+
+        <section className="rounded-[1.3rem] border border-[#11113f]/10 bg-white p-5 sm:p-6">
+          <h3 className="text-xl font-semibold">Рекомендация</h3>
+          <ol className="mt-4 space-y-3">
+            {nextSteps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-relaxed text-[#55556f]"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e8f7f6] text-xs font-bold text-[#087c78]">{index + 1}</span>{step}</li>)}
+          </ol>
         </section>
       </div>
-      {incomplete && hasVisibleRisks && (
-        <section className="mt-5 rounded-[1.2rem] border border-amber-200 bg-amber-50 p-5">
-          <h3 className="font-semibold text-amber-900">Что ещё требует проверки</h3>
-          <div className="mt-3 space-y-2">{incompleteReasons.map((item, index) => <div key={index} className="flex items-start gap-3 text-sm text-amber-900/80"><span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-amber-500" />{friendlyIncomplete(item)}</div>)}</div>
-        </section>
-      )}
-      {visualMatches.length > 0 && (
-        <section className="mt-6 rounded-[1.3rem] border border-[#11113f]/10 p-5 sm:p-6">
-          <h3 className="text-xl font-semibold">Похожие изображения</h3>
-          <p className="mt-2 text-sm text-[#6d6d7d]">Сначала показываем самые похожие знаки из выбранных классов.</p>
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
-            {visualMatches.slice(0, 3).map((finding) => <ClientVisualMatch key={finding.id} appId={appId} finding={finding} />)}
+
+      {rankedRegistryFindings.length > 0 && (
+        <details className="mt-6 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-5 sm:p-6">
+          <summary className="cursor-pointer list-none font-semibold text-[#11113f]">Какие совпадения проверены <span className="ml-2 text-sm font-normal text-[#6d6d7d]">Показать наиболее близкие</span></summary>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            {rankedRegistryFindings.slice(0, 3).map((item) => {
+              const record = item.verification?.registry_record;
+              const overlap = (record?.classes || []).filter((value) => selectedClassNumbers.has(Number(value)));
+              const status = record?.status === "pending" ? "заявка рассматривается" : record?.status === "expired" ? "регистрация прекращена" : "зарегистрирован";
+              return (
+                <article key={item.id} className="rounded-xl bg-[#f8f7f4] p-4">
+                  <p className="font-semibold text-[#11113f]">«{record?.mark_text || "Обозначение без названия"}»</p>
+                  <p className="mt-1 text-xs text-[#6d6d7d]">{status}{overlap.length ? ` · пересекается класс ${overlap.join(", ")}` : " · вне выбранного класса"}</p>
+                  <p className="mt-3 text-sm leading-relaxed text-[#55556f]">Словесная часть и общий смысл отличаются. По предварительной оценке знак не создаёт очевидной вероятности смешения, но учтён в итоговом выводе.</p>
+                </article>
+              );
+            })}
           </div>
-          {visualMatches.length > 3 && <details className="mt-5"><summary className="cursor-pointer font-semibold text-[#0d8f8b]">Показать ещё {visualMatches.length - 3}</summary><div className="mt-4 grid gap-4 lg:grid-cols-2">{visualMatches.slice(3).map((finding) => <ClientVisualMatch key={finding.id} appId={appId} finding={finding} />)}</div></details>}
-        </section>
+        </details>
       )}
-      <ClientDraftPreview appId={appId} analysisComplete={!incomplete} openRequest={draftRequest} onEditData={onEditData} />
-      <p className="mt-6 text-sm leading-relaxed text-[#6d6d7d]">Результат сформирован автоматически на основе введённых данных, выбранных классов и доступных реестров. Он помогает принять решение, но не является гарантией регистрации или юридической консультацией.</p>
+
+      <div className="mt-7 flex flex-col gap-3 rounded-[1.2rem] bg-[#f8f7f4] p-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="max-w-2xl text-sm leading-relaxed text-[#6d6d7d]">Это предварительная проверка по доступным данным. Окончательное решение о регистрации принимает Роспатент.</p>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button variant="outline" className="rounded-full bg-white" onClick={onReview}>Изменить классы</Button>
+          <Button variant="outline" className="rounded-full bg-white" onClick={onEditData}>Изменить данные</Button>
+          {incomplete ? (
+            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Повторяем проверку…" : externalServicesUnavailable ? "Повторить сейчас" : "Повторить проверку"}</Button>
+          ) : (
+            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={onApplication}>Перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button>
+          )}
+        </div>
+      </div>
     </ClientPanel>
   );
 }
 
-function ClientVisualMatch({ appId, finding }: { appId: number; finding: RiskFindingSummary }) {
-  const comparison = finding.verification?.image_comparison;
-  const record = finding.verification?.registry_record;
+function ClientApplicationStep({ appId, draftRequest, onEditData }: { appId: number; draftRequest: number; onEditData: () => void }) {
+  const report = useApi<RiskReport>(`/applications/${appId}/risk-report`);
   return (
-    <article className="rounded-2xl border border-[#11113f]/10 bg-[#f8f7f4] p-4">
-      <div className="grid grid-cols-2 gap-3">
-        <ProtectedImage path={`/applications/${appId}/mark-image/content`} label="Ваш знак" />
-        <ProtectedImage path={`/risk-findings/${finding.id}/registry-image`} label="Найденный знак" />
-      </div>
-      <div className="mt-3 flex items-start justify-between gap-3">
-        <div><p className="font-semibold text-[#11113f]">{record?.mark_text || "Знак без словесного элемента"}</p><p className="mt-1 text-xs text-[#6d6d7d]">МКТУ {(record?.classes || []).join(", ") || "не указаны"}</p></div>
-        <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-bold text-amber-800">{Math.round((comparison?.score || 0) * 100)}%</span>
-      </div>
-    </article>
+    <ClientPanel title="Заявление в Роспатент" description="Проверьте сведения, дополните недостающие поля и скачайте рабочий файл заявления.">
+      <ClientDraftPreview
+        appId={appId}
+        analysisComplete={report.data?.is_complete === true}
+        openRequest={Math.max(1, draftRequest)}
+        onEditData={onEditData}
+      />
+    </ClientPanel>
   );
-}
-
-function ProtectedImage({ path, label }: { path: string; label: string }) {
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    let active = true;
-    let objectUrl: string | null = null;
-    api.blob(path).then((blob) => {
-      if (!active) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    }).catch(() => undefined);
-    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [path]);
-  return <div><p className="mb-1 text-[11px] font-semibold text-[#6d6d7d]">{label}</p><div className="flex h-32 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-2">{url ? <img src={url} alt={label} className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-[#6d6d7d]">Нет изображения</span>}</div></div>;
 }
 
 interface DraftField {
@@ -1079,7 +1459,7 @@ function ClientDraftPreview({ appId, analysisComplete, openRequest, onEditData }
         <div className="flex items-start gap-4">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#087c78]"><FileSignature className="h-6 w-6" /></span>
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#087c78]">Следующий шаг</p>
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#087c78]">Рабочий документ</p>
             <h3 className="mt-1 text-2xl font-semibold text-[#11113f]">Черновик заявления в Роспатент</h3>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#55556f]">
               Здесь видно, какие сведения уже попадут в заявление и какие поля ещё нужно заполнить до формирования файла.
@@ -1139,10 +1519,10 @@ interface FeeEstimate {
 
 const rubles = (value: number | null) => value == null ? "—" : `${new Intl.NumberFormat("ru-RU").format(value)} ₽`;
 
-function ClientFeeEstimate({ appId }: { appId: number }) {
+function ClientFeeEstimate({ appId, onDocuments }: { appId: number; onDocuments: () => void }) {
   const fees = useApi<FeeEstimate>(`/applications/${appId}/fees`);
   const [benefitOpen, setBenefitOpen] = useState(false);
-  const [benefit, setBenefit] = useState("individual");
+  const [benefit, setBenefit] = useState("regular");
   return (
     <section className="mt-6 overflow-hidden rounded-[1.4rem] border border-[#11113f]/10 bg-white">
       <div className="flex items-start gap-4 p-6">
@@ -1160,11 +1540,18 @@ function ClientFeeEstimate({ appId }: { appId: number }) {
         <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">п. {payment.code}</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
         <p className="mt-4 text-sm text-[#55556f]">Расчёт для {fees.data.class_count} кл. МКТУ. Бумажное свидетельство по желанию: +{rubles(fees.data.paper_certificate_extra)}.</p>
         <div className="mt-5 rounded-xl border border-[#11113f]/10 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-[#11113f]">Есть право на льготу?</p><p className="mt-1 text-xs text-[#6d6d7d]">Проверим основание, не уменьшая сумму без подтверждающего документа.</p></div><Button type="button" variant="outline" onClick={() => setBenefitOpen((value) => !value)}>Проверить льготу</Button></div>
-          {benefitOpen && <div className="mt-4 space-y-3"><Select value={benefit} onValueChange={setBenefit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="individual">Физлицо или самозанятый</SelectItem><SelectItem value="entrepreneur">ИП или субъект МСП</SelectItem><SelectItem value="public">Государственный орган из п. 13¹ Положения</SelectItem><SelectItem value="other">Иное специальное основание</SelectItem></SelectContent></Select><div className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{benefit === "public" ? "Возможное освобождение требует проверки статуса заявителя и подтверждающих документов. Сумма не изменена автоматически." : "Сам статус физлица, самозанятого, ИП или МСП не даёт общей скидки на обычную российскую заявку на товарный знак. Если у вас есть специальное основание, выберите «Иное» и передайте подтверждающий документ специалисту."}</div></div>}
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-[#11113f]">Какие льготы возможны?</p><p className="mt-1 text-xs text-[#6d6d7d]">Для обычной заявки на товарный знак льгот немного. Проверьте, относится ли заявитель к одной из специальных категорий.</p></div><Button type="button" variant="outline" onClick={() => setBenefitOpen((value) => !value)}>{benefitOpen ? "Скрыть" : "Проверить моё основание"}</Button></div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#44445d]"><p className="font-semibold text-[#11113f]">Освобождение от части пошлин</p><p className="mt-1">Может применяться к федеральным и региональным органам власти, а также к «Росатому» и «Роскосмосу» при управлении правами Российской Федерации.</p></div>
+            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#44445d]"><p className="font-semibold text-[#11113f]">Кому общая льгота не предоставляется</p><p className="mt-1">Статус физлица, самозанятого, ИП, субъекта МСП, пенсионера, студента, инвалида или ветерана сам по себе не уменьшает пошлины за регистрацию товарного знака.</p></div>
+          </div>
+          {benefitOpen && <div className="mt-4 space-y-3"><Select value={benefit} onValueChange={setBenefit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="regular">Обычный заявитель: физлицо, самозанятый, ИП или организация</SelectItem><SelectItem value="authority">Федеральный или региональный орган власти</SelectItem><SelectItem value="corporation">«Росатом» или «Роскосмос» при управлении правами РФ</SelectItem><SelectItem value="unsure">Не уверен — нужна проверка</SelectItem></SelectContent></Select><div className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{benefit === "authority" || benefit === "corporation" ? "Возможно освобождение от пошлины за экспертизу обозначения. Потребуется ходатайство и подтверждение статуса или полномочий заявителя. Расчёт не будет уменьшен, пока основание не подтверждено." : benefit === "unsure" ? "Не оплачивайте меньшую сумму самостоятельно. Передайте специалисту сведения о заявителе и документ, на котором, по вашему мнению, основана льгота." : "Для этой категории общей льготы на регистрацию товарного знака нет. Рассчитывайте полную сумму, указанную выше."}</div></div>}
         </div>
         <div className="mt-4 rounded-xl bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">{fees.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>
-        <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="mt-4 inline-block text-xs font-semibold text-[#087c78] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#087c78] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
+          <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={onDocuments}>Перейти к документам <ChevronRight className="h-4 w-4" /></Button>
+        </div>
       </div>}
       {fees.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось рассчитать пошлины: {fees.error}</div>}
     </section>
@@ -1185,10 +1572,127 @@ interface FilingPackageStatus {
   total_fee: number | null;
 }
 
-function ClientFilingPackage({ appId, onEditData }: { appId: number; onEditData: () => void }) {
+function ClientFilingPackage({
+  appId,
+  application,
+  client,
+  onSaved,
+  onReview,
+}: {
+  appId: number;
+  application: Application;
+  client: Client | null;
+  onSaved: () => void | Promise<void>;
+  onReview: () => void;
+}) {
   const pack = useApi<FilingPackageStatus>(`/applications/${appId}/filing-package`);
   const [downloading, setDownloading] = useState(false);
+  const [savingMissing, setSavingMissing] = useState(false);
+  const [uploadingMissing, setUploadingMissing] = useState<string | null>(null);
+  const [completion, setCompletion] = useState({
+    applicantName: client?.fullNameOrCompanyName || "",
+    inn: client?.inn || "",
+    ogrn: client?.ogrnOrOgrnip || "",
+    kpp: client?.kpp || "",
+    address: client?.address || "",
+    country: client?.countryCode || "RU",
+    email: client?.email || "",
+    phone: client?.phone || "",
+    territory: application.territory || "Россия",
+    markDescription: application.descriptionOfMark || "",
+    signatoryName: application.signatoryName || (client?.type === "company" ? "" : client?.fullNameOrCompanyName || ""),
+    signatoryPosition: application.signatoryPosition || "",
+    signatureDate: application.signatureDate || new Date().toISOString().slice(0, 10),
+  });
   const { toast } = useToast();
+
+  useEffect(() => {
+    setCompletion({
+      applicantName: client?.fullNameOrCompanyName || "",
+      inn: client?.inn || "",
+      ogrn: client?.ogrnOrOgrnip || "",
+      kpp: client?.kpp || "",
+      address: client?.address || "",
+      country: client?.countryCode || "RU",
+      email: client?.email || "",
+      phone: client?.phone || "",
+      territory: application.territory || "Россия",
+      markDescription: application.descriptionOfMark || "",
+      signatoryName: application.signatoryName || (client?.type === "company" ? "" : client?.fullNameOrCompanyName || ""),
+      signatoryPosition: application.signatoryPosition || "",
+      signatureDate: application.signatureDate || new Date().toISOString().slice(0, 10),
+    });
+  }, [application.updatedAt, client?.id, client?.fullNameOrCompanyName, client?.address]);
+
+  const blockerCodes = new Set(pack.data?.blockers.map((item) => item.code) || []);
+  const hasGenericRequiredFields = blockerCodes.has("required_field");
+  const hasInlineTextFields = hasGenericRequiredFields || [
+    "territory",
+    "mark_description",
+    "signatory_name",
+    "signatory_position",
+    "signature_date",
+  ].some((code) => blockerCodes.has(code));
+  const uploadBlockers = pack.data?.blockers.filter((item) =>
+    ["mark_image", "mark_audio", "power_of_attorney", "priority_proof"].includes(item.code),
+  ) || [];
+  const checkBlockers = pack.data?.blockers.filter((item) => item.section === "check") || [];
+
+  const saveMissingFields = async () => {
+    if (!completion.applicantName.trim()) {
+      toast({ title: "Укажите заявителя", description: "Наименование организации или ФИО обязательны для заявления.", variant: "destructive" });
+      return;
+    }
+    setSavingMissing(true);
+    try {
+      await Promise.all([
+        client ? api.put(`/clients/${client.id}`, {
+          full_name_or_company_name: completion.applicantName.trim(),
+          inn: completion.inn.trim() || null,
+          ogrn_or_ogrnip: completion.ogrn.trim() || null,
+          kpp: completion.kpp.trim() || null,
+          address: completion.address.trim() || null,
+          country: completion.country || "RU",
+          email: completion.email.trim() || null,
+          phone: completion.phone.trim() || null,
+        }) : Promise.resolve(),
+        api.put(`/applications/${appId}`, {
+          territory: completion.territory.trim() || "Россия",
+          description_of_mark: completion.markDescription.trim() || null,
+          signatory_name: completion.signatoryName.trim() || null,
+          signatory_position: completion.signatoryPosition.trim() || null,
+          signature_date: completion.signatureDate || null,
+        }),
+      ]);
+      await onSaved();
+      pack.reload();
+      toast({ title: "Данные сохранены", description: "Повторно проверяем готовность документов." });
+    } catch (error) {
+      toast({ title: "Не удалось сохранить", description: messageOf(error, "Проверьте поля и попробуйте ещё раз"), variant: "destructive" });
+    } finally {
+      setSavingMissing(false);
+    }
+  };
+
+  const uploadMissingFile = async (code: string, file?: File) => {
+    if (!file) return;
+    setUploadingMissing(code);
+    try {
+      if (code === "mark_image") {
+        await api.upload(`/applications/${appId}/mark-image`, file);
+      } else {
+        const document = await api.upload<SourceDocumentDto>(`/applications/${appId}/source-documents`, file);
+        const kind = code === "power_of_attorney" ? "power_of_attorney" : code === "priority_proof" ? "other" : null;
+        if (kind) await api.put(`/source-documents/${document.id}/kind`, { document_kind: kind });
+      }
+      pack.reload();
+      toast({ title: "Файл добавлен", description: "Повторно проверяем комплект документов." });
+    } catch (error) {
+      toast({ title: "Не удалось добавить файл", description: messageOf(error, "Проверьте формат файла и попробуйте снова"), variant: "destructive" });
+    } finally {
+      setUploadingMissing(null);
+    }
+  };
 
   const download = async () => {
     setDownloading(true);
@@ -1272,8 +1776,50 @@ function ClientFilingPackage({ appId, onEditData }: { appId: number; onEditData:
                   </div>
                 ))}
               </div>
-              {pack.data.blockers.some((item) => item.section === "data") && (
-                <Button variant="outline" className="mt-4 rounded-full bg-white" onClick={onEditData}><PencilLine className="h-4 w-4" /> Перейти к данным</Button>
+              {hasInlineTextFields && (
+                <div className="mt-5 rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
+                  <div>
+                    <p className="font-semibold text-[#11113f]">Дополните сведения здесь</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">После сохранения экран сам повторно проверит пакет. Возвращаться к началу заявки не нужно.</p>
+                  </div>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    {hasGenericRequiredFields && <MarkedField label="Наименование или ФИО заявителя" mode="manual"><Input value={completion.applicantName} onChange={(event) => setCompletion((old) => ({ ...old, applicantName: event.target.value }))} /></MarkedField>}
+                    {hasGenericRequiredFields && <MarkedField label="ИНН" mode="manual"><Input value={completion.inn} onChange={(event) => setCompletion((old) => ({ ...old, inn: event.target.value }))} /></MarkedField>}
+                    {hasGenericRequiredFields && <MarkedField label="ОГРН / ОГРНИП" mode="manual"><Input value={completion.ogrn} onChange={(event) => setCompletion((old) => ({ ...old, ogrn: event.target.value }))} /></MarkedField>}
+                    {hasGenericRequiredFields && client?.type === "company" && <MarkedField label="КПП" mode="manual"><Input value={completion.kpp} onChange={(event) => setCompletion((old) => ({ ...old, kpp: event.target.value }))} /></MarkedField>}
+                    {hasGenericRequiredFields && <div className="sm:col-span-2"><MarkedField label="Адрес заявителя" mode="manual"><Input value={completion.address} onChange={(event) => setCompletion((old) => ({ ...old, address: event.target.value }))} /></MarkedField></div>}
+                    {hasGenericRequiredFields && <MarkedField label="Код страны" mode="manual"><select value={completion.country} onChange={(event) => setCompletion((old) => ({ ...old, country: event.target.value }))} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">{COUNTRY_OPTIONS.map((country) => <option key={country.code} value={country.code}>{country.name} — {country.code}</option>)}</select></MarkedField>}
+                    {hasGenericRequiredFields && <MarkedField label="E-mail" mode="manual"><Input type="email" value={completion.email} onChange={(event) => setCompletion((old) => ({ ...old, email: event.target.value }))} /></MarkedField>}
+                    {hasGenericRequiredFields && <MarkedField label="Телефон" mode="manual"><Input value={completion.phone} onChange={(event) => setCompletion((old) => ({ ...old, phone: event.target.value }))} /></MarkedField>}
+                    {blockerCodes.has("territory") && <MarkedField label="Территория регистрации" mode="manual"><Input value={completion.territory} onChange={(event) => setCompletion((old) => ({ ...old, territory: event.target.value }))} /></MarkedField>}
+                    {blockerCodes.has("mark_description") && <div className="sm:col-span-2"><MarkedField label="Описание обозначения" mode="manual"><Textarea rows={4} value={completion.markDescription} onChange={(event) => setCompletion((old) => ({ ...old, markDescription: event.target.value }))} /></MarkedField></div>}
+                    {blockerCodes.has("signatory_name") && <MarkedField label="ФИО подписанта" mode="manual"><Input value={completion.signatoryName} onChange={(event) => setCompletion((old) => ({ ...old, signatoryName: event.target.value }))} /></MarkedField>}
+                    {blockerCodes.has("signatory_position") && <MarkedField label="Должность подписанта" mode="manual"><Input value={completion.signatoryPosition} onChange={(event) => setCompletion((old) => ({ ...old, signatoryPosition: event.target.value }))} /></MarkedField>}
+                    {blockerCodes.has("signature_date") && <MarkedField label="Дата подписания" mode="manual"><Input type="date" value={completion.signatureDate} onChange={(event) => setCompletion((old) => ({ ...old, signatureDate: event.target.value }))} /></MarkedField>}
+                  </div>
+                  <Button className="mt-4 rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" disabled={savingMissing} onClick={() => void saveMissingFields()}>{savingMissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savingMissing ? "Сохраняем…" : "Сохранить и проверить пакет"}</Button>
+                </div>
+              )}
+
+              {uploadBlockers.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  {uploadBlockers.map((item) => (
+                    <div key={item.code} className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div><p className="font-semibold text-[#11113f]">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.action}</p></div>
+                      <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f8f7f4]">
+                        {uploadingMissing === item.code ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {uploadingMissing === item.code ? "Загружаем…" : "Добавить файл"}
+                        <input type="file" className="sr-only" disabled={uploadingMissing !== null} accept={item.code === "mark_image" ? "image/png,image/jpeg" : item.code === "mark_audio" ? "audio/mpeg,audio/wav" : ".pdf,.docx,.txt,.png,.jpg,.jpeg"} onChange={(event) => void uploadMissingFile(item.code, event.target.files?.[0])} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {checkBlockers.length > 0 && (
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-semibold text-[#11113f]">Нужно завершить проверку</p><p className="mt-1 text-xs text-[#6d6d7d]">Классы и юридический анализ подтверждаются на предыдущем экране — загружать материалы заново не потребуется.</p></div>
+                  <Button variant="outline" className="shrink-0 rounded-full bg-white" onClick={onReview}><ChevronRight className="h-4 w-4" /> Перейти к проверке</Button>
+                </div>
               )}
             </div>
           )}

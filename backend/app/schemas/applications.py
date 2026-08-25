@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import List, Optional
+from datetime import date, datetime
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -31,6 +31,10 @@ class ApplicationCreate(BaseModel):
     territory: Optional[str] = Field(default=None, max_length=255)
     priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
+    filing_method: Literal["electronic", "paper"] = "electronic"
+    signatory_name: Optional[str] = Field(default=None, max_length=255)
+    signatory_position: Optional[str] = Field(default=None, max_length=255)
+    signature_date: Optional[date] = None
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
@@ -52,6 +56,10 @@ class ApplicationUpdate(BaseModel):
     territory: Optional[str] = Field(default=None, max_length=255)
     priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
+    filing_method: Optional[Literal["electronic", "paper"]] = None
+    signatory_name: Optional[str] = Field(default=None, max_length=255)
+    signatory_position: Optional[str] = Field(default=None, max_length=255)
+    signature_date: Optional[date] = None
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
@@ -80,6 +88,10 @@ class ApplicationResponse(BaseModel):
     goods_services_raw: Optional[str] = None
     territory: Optional[str] = None
     priority_claim: Optional[str] = None
+    filing_method: Literal["electronic", "paper"] = "electronic"
+    signatory_name: Optional[str] = None
+    signatory_position: Optional[str] = None
+    signature_date: Optional[date] = None
     notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime

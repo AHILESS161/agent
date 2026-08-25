@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Enum,
     Float,
@@ -16,6 +17,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -247,6 +249,7 @@ class Client(Base):
     country: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     inn: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     ogrn_or_ogrnip: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    kpp: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -322,6 +325,12 @@ class TrademarkApplicationDraft(Base):
     goods_services_raw: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     territory: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     priority_claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    filing_method: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="electronic", server_default="electronic"
+    )
+    signatory_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    signatory_position: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    signature_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     # Срочность в работе — не конвенционный приоритет заявки.
     priority: Mapped[CasePriority] = mapped_column(
         Enum(CasePriority, name="casepriority"),
@@ -391,6 +400,58 @@ class TrademarkApplicationDraft(Base):
         cascade="all, delete-orphan",
         foreign_keys="SourceDocument.application_id",
     )
+    office_action_responses: Mapped[list["OfficeActionResponse"]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
+
+
+class OfficeActionResponse(Base):
+    """Черновик ответа на уведомление Роспатента и подтверждённые клиентом факты."""
+
+    __tablename__ = "office_action_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("trademark_application_drafts.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    notice_document_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("source_documents.id", ondelete="RESTRICT"), nullable=False
+    )
+    created_by_user_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="draft")
+    response_deadline: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+    homogeneity_facts_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    distinctiveness_evidence_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    additional_facts: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    notice_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    response_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    missing_evidence_json: Mapped[Any] = mapped_column(JSON, nullable=False, default=list)
+    draft_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    application: Mapped["TrademarkApplicationDraft"] = relationship(
+        back_populates="office_action_responses"
+    )
+    notice_document: Mapped["SourceDocument"] = relationship(
+        "SourceDocument", foreign_keys=[notice_document_id]
+    )
+    created_by: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[created_by_user_id]
+    )
 
 
 class GoodsServicesItem(Base):
@@ -419,6 +480,13 @@ class GoodsServicesItem(Base):
 
 class NiceClassSuggestion(Base):
     __tablename__ = "nice_class_suggestions"
+    __table_args__ = (
+        UniqueConstraint(
+            "application_id",
+            "class_number",
+            name="uq_nice_class_suggestions_application_class",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     application_id: Mapped[int] = mapped_column(

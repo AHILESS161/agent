@@ -65,6 +65,7 @@ export interface Client {
   countryCode: string;
   inn: string;
   ogrnOrOgrnip: string;
+  kpp: string;
   createdAt: string;
 }
 
@@ -86,6 +87,10 @@ export interface Application {
   goodsServicesRaw: string;
   territory: string;
   priorityClaim: string;
+  filingMethod: "electronic" | "paper";
+  signatoryName: string;
+  signatoryPosition: string;
+  signatureDate: string;
   notes: string;
   assigneeId?: number;
   createdAt: string;

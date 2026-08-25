@@ -20,7 +20,10 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.classification.rag_class_analyzer import RagNiceClassAnalyzer
+from app.agents.classification.rag_class_analyzer import (
+    ClassSuggestion,
+    RagNiceClassAnalyzer,
+)
 from app.core.logging import get_logger
 from app.infrastructure.database.models import (
     ItemSource,
@@ -29,7 +32,7 @@ from app.infrastructure.database.models import (
     TrademarkApplicationDraft,
 )
 from app.infrastructure.rag.store import load_active_chunks
-from app.services.nice_catalog import search as search_nice_catalog
+from app.services.nice_catalog import load_catalog, search as search_nice_catalog
 
 logger = get_logger(__name__)
 
@@ -38,6 +41,56 @@ _CATEGORY_MAP = {
     "secondary": NiceCategory.secondary,
     "borderline": NiceCategory.borderline,
 }
+
+_REPAIR_RE = re.compile(
+    r"\b(ремонт\w*|почин\w*|тех(?:ническ\w*)?\s*обслужив\w*|"
+    r"установк\w*|монтаж\w*)\b",
+    re.IGNORECASE,
+)
+_GOODS_ACTIVITY_RE = re.compile(
+    r"\b(продаж\w*|прода\w*|торгов\w*|производ\w*|изготов\w*|поставк\w*|"
+    r"магазин\w*|товар\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _service_intent(text: str) -> tuple[set[int], bool]:
+    """Вернуть обязательные сервисные классы и признак чистой услуги.
+
+    Название ремонтируемого устройства не превращает услугу ремонта в
+    заявление самого устройства как товара. Для ремонта, установки и
+    технического обслуживания оборудования основной класс — 37.
+    """
+    normalized = " ".join((text or "").split())
+    if not _REPAIR_RE.search(normalized):
+        return set(), False
+    return {37}, not bool(_GOODS_ACTIVITY_RE.search(normalized))
+
+
+def _apply_service_intent(
+    suggestions: list[ClassSuggestion], source_text: str
+) -> list[ClassSuggestion]:
+    required, service_only = _service_intent(source_text)
+    if service_only:
+        suggestions = [item for item in suggestions if item.class_number >= 35]
+
+    by_number = {item.class_number: item for item in suggestions}
+    for number in required:
+        if number in by_number:
+            continue
+        catalog_item = next((item for item in load_catalog() if item.number == number), None)
+        by_number[number] = ClassSuggestion(
+            class_number=number,
+            rationale=(
+                "Заявлена услуга ремонта, установки или технического обслуживания; "
+                "такие работы относятся к классу 37."
+            ),
+            category="primary",
+            goods_services=[catalog_item.title if catalog_item else "услуги ремонта"],
+            confidence=0.95,
+            citations=[],
+        )
+    return list(by_number.values())
 
 
 @dataclass
@@ -137,6 +190,17 @@ async def run_class_analysis(
             preserve_approved=preserve_approved,
         )
 
+    source_text = " ".join(
+        part for part in (
+            application.goods_services_raw or "",
+            application.business_description or "",
+        ) if part.strip()
+    )
+    outcome.result.suggestions = _apply_service_intent(
+        outcome.result.suggestions,
+        source_text,
+    )
+
     existing = await load_class_context(session, application.id)
     approved_numbers = (
         {item.class_number for item in existing.approved}
@@ -157,7 +221,11 @@ async def run_class_analysis(
     await session.flush()
 
     created: list[dict[str, Any]] = []
+    seen_numbers: set[int] = set()
     for suggestion in outcome.result.suggestions:
+        if suggestion.class_number in seen_numbers:
+            continue
+        seen_numbers.add(suggestion.class_number)
         if suggestion.class_number in approved_numbers:
             # Решение специалиста по этому классу уже есть.
             continue
@@ -219,24 +287,66 @@ async def _catalog_fallback(
     Справочник ищет русские слова по заголовкам и составу классов. Результат
     остаётся предложением и обязательно подтверждается человеком.
     """
-    source = "\n".join(
+    logger.warning(
+        "Использован резервный подбор классов МКТУ",
+        application_id=application.id,
+        reason=reason,
+    )
+    source_parts = [
         part for part in (
             application.goods_services_raw or "",
             application.business_description or "",
         ) if part.strip()
-    )
-    phrases = [p.strip() for p in re.split(r"[;,\n]+", source) if len(p.strip()) >= 3]
-    if source.strip() and source.strip() not in phrases:
-        phrases.append(source.strip())
+    ]
+    raw_phrases = [
+        p.strip() for part in source_parts
+        for p in re.split(r"[;,\n]+", part)
+        if len(p.strip()) >= 3
+    ]
+    # После объединения клиентских полей одно описание намеренно хранится
+    # в business_description и goods_services_raw. Не ищем его дважды.
+    phrases: list[str] = []
+    seen_phrases: set[str] = set()
+    for phrase in raw_phrases:
+        key = phrase.casefold()
+        if key not in seen_phrases:
+            seen_phrases.add(key)
+            phrases.append(phrase)
 
     found = {}
     for phrase in phrases[:20]:
-        for item in search_nice_catalog(phrase, limit=2):
+        required_service_classes, service_only = _service_intent(phrase)
+        for number in required_service_classes:
+            item = next((entry for entry in load_catalog() if entry.number == number), None)
+            if item:
+                found.setdefault(number, (item, phrase))
+        if service_only:
+            continue
+        # Второе совпадение часто основано на одном общем слове. Например,
+        # у «ремонта бытовой техники» после правильного класса 37 шёл класс
+        # 16 лишь из-за слов «бытовой клей». Для автоматического предложения
+        # оставляем только наиболее релевантный класс каждой позиции.
+        for item in search_nice_catalog(phrase, limit=1):
             found.setdefault(item.number, (item, phrase))
             if len(found) >= 6:
                 break
         if len(found) >= 6:
             break
+
+    # Торговля — самостоятельная услуга класса 35, но не подразумевается
+    # автоматически при упоминании любого товара. Добавляем её только когда
+    # пользователь прямо написал о продаже, магазине или продвижении.
+    if re.search(
+        r"\b(продаж\w*|прода\w*|торгов\w*|магазин\w*|маркетплейс\w*|реклам\w*|продвижен\w*)\b",
+        " ".join(source_parts),
+        flags=re.IGNORECASE,
+    ):
+        trade_class = next((item for item in load_catalog() if item.number == 35), None)
+        if trade_class:
+            found.setdefault(
+                trade_class.number,
+                (trade_class, "продажа и продвижение товаров"),
+            )
 
     if not found:
         return {"status": "inconclusive", "reason": reason, "suggestions": []}
@@ -280,8 +390,8 @@ async def _catalog_fallback(
         })
     await session.flush()
     return {
-        "status": "fallback",
-        "summary": "Классы предложены по справочнику МКТУ без языковой модели.",
+        "status": "catalog",
+        "summary": "Классы подобраны по актуальному официальному справочнику МКТУ.",
         "reason": reason,
         "suggestions": created,
         "already_approved": sorted(approved_numbers),

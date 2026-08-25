@@ -10,8 +10,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,6 +52,7 @@ async def ingest_file(
     path: Path,
     source_type: KnowledgeSourceType = KnowledgeSourceType.regulation,
     url: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> IngestResult:
     """Загрузить файл в базу знаний с разбиением на фрагменты."""
     content = path.read_text(encoding="utf-8")
@@ -62,6 +65,14 @@ async def ingest_file(
     ).scalar_one_or_none()
 
     if existing and existing.version == version:
+        # Метаданные происхождения могут обновиться без изменения локального
+        # снимка. Их всё равно нужно сохранить, иначе в аудите останутся
+        # устаревшие дата действия и официальный URL.
+        existing.source_type = source_type
+        existing.url = url
+        existing.metadata_json = metadata or None
+        existing.is_active = True
+        await session.flush()
         chunk_count = len(
             (
                 await session.execute(
@@ -98,6 +109,8 @@ async def ingest_file(
         source.version = version
         source.name = title
         source.source_type = source_type
+        source.url = url
+        source.metadata_json = metadata or None
         source.is_active = True
     else:
         source = KnowledgeSource(
@@ -106,6 +119,7 @@ async def ingest_file(
             file_path=str(path),
             url=url,
             version=version,
+            metadata_json=metadata or None,
             is_active=True,
         )
         session.add(source)
@@ -162,10 +176,60 @@ async def ingest_directory(
     pattern: str = "*.md",
 ) -> list[IngestResult]:
     """Проиндексировать все документы каталога."""
+    manifest = _load_manifest(directory)
     results = []
     for path in sorted(directory.glob(pattern)):
-        results.append(await ingest_file(session, path, detect_source_type(path)))
+        source_config = manifest.get(path.name, {})
+        if source_config.get("active") is False:
+            existing = (
+                await session.execute(
+                    select(KnowledgeSource).where(
+                        KnowledgeSource.file_path == str(path)
+                    )
+                )
+            ).scalar_one_or_none()
+            if existing:
+                existing.is_active = False
+                await session.flush()
+            continue
+
+        configured_type = source_config.get("source_type")
+        source_type = (
+            KnowledgeSourceType(configured_type)
+            if configured_type
+            else detect_source_type(path)
+        )
+        metadata = {
+            key: value
+            for key, value in source_config.items()
+            if key not in {"active", "source_type", "url"}
+        }
+        results.append(
+            await ingest_file(
+                session,
+                path,
+                source_type,
+                url=source_config.get("url"),
+                metadata=metadata,
+            )
+        )
     return results
+
+
+def _load_manifest(directory: Path) -> dict[str, dict[str, Any]]:
+    """Прочитать проверяемое происхождение и срок действия источников."""
+    path = directory / "sources.json"
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    sources = payload.get("sources", payload)
+    if not isinstance(sources, dict):
+        raise ValueError("knowledge/sources.json: поле sources должно быть объектом")
+    return {
+        str(name): dict(config)
+        for name, config in sources.items()
+        if isinstance(config, dict)
+    }
 
 
 @dataclass
@@ -183,6 +247,8 @@ class StoredChunk:
     # Тип источника: по нему анализы отбирают свой корпус. Нормы нужны
     # для оценки оснований отказа, справочник МКТУ — для подбора классов.
     source_type: str = "regulation"
+    source_url: str | None = None
+    source_metadata: dict[str, Any] | None = None
 
     @property
     def citation_id(self) -> str:
@@ -211,6 +277,8 @@ async def load_active_chunks(session: AsyncSession) -> list[StoredChunk]:
                 source_name=source.name,
                 source_version=source.version,
                 source_type=source.source_type.value,
+                source_url=source.url,
+                source_metadata=source.metadata_json,
                 content=chunk.content,
                 anchor=meta.get("anchor") or "без раздела",
                 article=meta.get("article"),
@@ -236,5 +304,20 @@ async def knowledge_base_version(session: AsyncSession) -> str:
 
     if not sources:
         return "empty"
-    combined = "|".join(f"{s.id}:{s.version or '-'}" for s in sources)
+    combined = "|".join(
+        ":".join(
+            (
+                str(source.id),
+                source.version or "-",
+                source.url or "-",
+                json.dumps(
+                    source.metadata_json or {},
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        )
+        for source in sources
+    )
     return hashlib.sha256(combined.encode("utf-8")).hexdigest()[:16]

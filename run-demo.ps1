@@ -22,7 +22,7 @@ try {
     & $python -m alembic upgrade head
 
     Write-Host "`n[2/4] Демо-аккаунты без фейковых клиентов и заявок..." -ForegroundColor Cyan
-    & $python -m app.seed.init_db --users-only
+    & $python -m app.seed.init_db
 
     Write-Host "`n[3/4] Индексация базы знаний (нужна для правового анализа)..." -ForegroundColor Cyan
     & $python -m scripts.ingest_knowledge

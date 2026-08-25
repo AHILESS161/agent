@@ -1,9 +1,4 @@
-"""Полнота подбора классов МКТУ.
-
-Пропустить класс дороже, чем предложить лишний: после подачи заявки
-класс не добавить — нужна новая заявка и новая пошлина. Специалист
-лишнее уберёт сам.
-"""
+"""Точность подбора классов МКТУ и явное основание для класса 35."""
 
 from __future__ import annotations
 
@@ -15,6 +10,8 @@ from app.agents.classification.rag_class_analyzer import (
     SYSTEM_PROMPT,
 )
 from app.infrastructure.rag.store import StoredChunk
+from app.services.class_analysis import _apply_service_intent, _service_intent
+from app.agents.classification.rag_class_analyzer import ClassSuggestion
 
 
 def _chunk(chunk_id: int, anchor: str, content: str) -> StoredChunk:
@@ -44,26 +41,30 @@ def corpus() -> list[StoredChunk]:
     ]
 
 
-class TestTradeServicesAlwaysOffered:
-    """Класс 35 нужен почти любому, кто продаёт, в том числе онлайн."""
+class TestTradeServicesRequireExplicitActivity:
+    """Класс 35 нужен при явно заявленной торговле, но не производству вообще."""
 
     def test_trade_class_is_declared(self):
         assert any("35" in marker for marker in ALWAYS_INCLUDE_CLASSES)
 
-    def test_trade_class_is_added_when_search_misses_it(self, corpus):
-        """Поиск по названию товара класс 35 не находит: в его описании
-        нет ни «одежды», ни «игрушек»."""
+    def test_trade_class_is_not_added_for_product_only(self, corpus):
         analyzer = RagNiceClassAnalyzer(llm_provider=None, chunks=corpus)
         found = analyzer._retriever.retrieve("игрушки", top_k=2)
-        assert all("Класс 35" not in item.chunk.anchor for item in found)
+        enriched = analyzer._with_trade_services(found, "производство игрушек")
 
-        enriched = analyzer._with_trade_services(found)
+        assert all("Класс 35" not in item.chunk.anchor for item in enriched)
+
+    def test_trade_class_is_added_for_explicit_sales(self, corpus):
+        analyzer = RagNiceClassAnalyzer(llm_provider=None, chunks=corpus)
+        found = analyzer._retriever.retrieve("игрушки", top_k=2)
+        enriched = analyzer._with_trade_services(found, "продажа игрушек")
+
         assert any("Класс 35" in item.chunk.anchor for item in enriched)
 
     def test_trade_class_is_not_duplicated(self, corpus):
         analyzer = RagNiceClassAnalyzer(llm_provider=None, chunks=corpus)
         found = analyzer._retriever.retrieve("реклама торговля", top_k=3)
-        enriched = analyzer._with_trade_services(found)
+        enriched = analyzer._with_trade_services(found, "реклама и торговля")
 
         anchors = [item.chunk.anchor for item in enriched]
         assert sum("Класс 35" in anchor for anchor in anchors) == 1
@@ -74,7 +75,8 @@ class TestTradeServicesAlwaysOffered:
 
         analyzer = RagNiceClassAnalyzer(llm_provider=None, chunks=corpus)
         enriched = analyzer._with_trade_services(
-            analyzer._retriever.retrieve("игрушки", top_k=2)
+            analyzer._retriever.retrieve("игрушки", top_k=2),
+            "продажа игрушек через интернет-магазин",
         )
         context, sources = build_context(enriched)
 
@@ -82,13 +84,53 @@ class TestTradeServicesAlwaysOffered:
         assert any("розничной" in text for text in sources.values())
 
 
-class TestPromptAsksForCompleteness:
-    def test_prompt_prefers_more_classes(self):
-        assert "лишний раз" in SYSTEM_PROMPT
-        assert "пошлину" in SYSTEM_PROMPT or "пошлин" in SYSTEM_PROMPT
+class TestPromptAsksForPrecision:
+    def test_prompt_rejects_speculative_classes(self):
+        assert "только классы" in SYSTEM_PROMPT
+        assert "на всякий случай" in SYSTEM_PROMPT
 
     def test_prompt_mentions_online_trade(self):
         assert "интернет" in SYSTEM_PROMPT.lower()
 
     def test_prompt_asks_to_mark_uncertain(self):
         assert "borderline" in SYSTEM_PROMPT
+
+
+class TestServiceIntentCorrection:
+    def test_phone_and_computer_repair_is_class_37(self):
+        required, service_only = _service_intent(
+            "Ремонтирую телефоны и компьютеры"
+        )
+
+        assert required == {37}
+        assert service_only is True
+
+    def test_repair_does_not_claim_the_devices_as_goods(self):
+        wrong_product = ClassSuggestion(
+            class_number=9,
+            rationale="Телефоны и компьютеры являются устройствами класса 9.",
+            goods_services=["телефоны", "компьютеры"],
+            confidence=0.7,
+        )
+
+        corrected = _apply_service_intent(
+            [wrong_product],
+            "Ремонтирую телефоны и компьютеры",
+        )
+
+        assert [item.class_number for item in corrected] == [37]
+
+    def test_sales_and_repair_keep_goods_and_service_classes(self):
+        product = ClassSuggestion(
+            class_number=9,
+            rationale="Продажа телефонов и компьютеров относится к устройствам.",
+            goods_services=["телефоны", "компьютеры"],
+            confidence=0.8,
+        )
+
+        corrected = _apply_service_intent(
+            [product],
+            "Продаю и ремонтирую телефоны и компьютеры",
+        )
+
+        assert {item.class_number for item in corrected} == {9, 37}

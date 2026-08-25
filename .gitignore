@@ -63,11 +63,15 @@ desktop.ini
 .continue/
 .scratch/
 .runtime/
+.review/
 /.pytest-tmp-*/
+/.pytest-cache-*/
 tmp/
 *.bak
 *.tmp
 *.log
+backups/
+.env.production
 
 # --- Runtime DB artifacts ---
 trademark.db

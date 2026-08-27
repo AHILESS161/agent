@@ -88,6 +88,7 @@ export interface Application {
   territory: string;
   priorityClaim: string;
   filingMethod: "electronic" | "paper";
+  requestPaperCertificate: boolean;
   signatoryName: string;
   signatoryPosition: string;
   signatureDate: string;

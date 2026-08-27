@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.infrastructure.database.models import GoodsServicesItem
+from app.infrastructure.database.models import GoodsServicesItem, TrademarkApplicationDraft
 from app.services.class_analysis import load_class_context
 
 SOURCE_URL = "https://rospatent.gov.ru/ru/activities/dues/table"
@@ -45,6 +45,10 @@ async def calculate_trademark_fees(
     session: AsyncSession, application_id: int
 ) -> dict[str, Any]:
     context = await load_class_context(session, application_id)
+    application = await session.get(TrademarkApplicationDraft, application_id)
+    paper_requested = bool(
+        application and application.request_paper_certificate
+    )
     selected = context.effective
     class_numbers = sorted({item.class_number for item in selected})
 
@@ -93,6 +97,8 @@ async def calculate_trademark_fees(
             "registration_total": None,
             "total_electronic": None,
             "paper_certificate_extra": 3000,
+            "paper_certificate_requested": paper_requested,
+            "total_selected": None,
             "calculated_at": date.today().isoformat(),
             "rules_effective_from": RULES_EFFECTIVE_FROM,
             "source_url": SOURCE_URL,
@@ -107,7 +113,11 @@ async def calculate_trademark_fees(
 
     warnings = [
         "Расчёт не включает льготы, просрочку, изменения заявки и услуги представителей.",
-        "Бумажное свидетельство необязательно и оплачивается отдельно — 3 000 ₽.",
+        (
+            "В расчёт включено бумажное свидетельство — 3 000 ₽."
+            if paper_requested
+            else "По умолчанию выдаётся электронное свидетельство. Бумажное можно заказать отдельно за 3 000 ₽."
+        ),
     ]
     if not context.is_confirmed:
         warnings.insert(
@@ -149,6 +159,8 @@ async def calculate_trademark_fees(
         "registration_total": registration,
         "total_electronic": amounts["total_electronic"],
         "paper_certificate_extra": 3000,
+        "paper_certificate_requested": paper_requested,
+        "total_selected": amounts["total_electronic"] + (3000 if paper_requested else 0),
         "term_surcharge": term_surcharge,
         "calculated_at": date.today().isoformat(),
         "rules_effective_from": RULES_EFFECTIVE_FROM,

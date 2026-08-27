@@ -78,7 +78,6 @@ def _apply_service_intent(
     for number in required:
         if number in by_number:
             continue
-        catalog_item = next((item for item in load_catalog() if item.number == number), None)
         by_number[number] = ClassSuggestion(
             class_number=number,
             rationale=(
@@ -86,7 +85,9 @@ def _apply_service_intent(
                 "такие работы относятся к классу 37."
             ),
             category="primary",
-            goods_services=[catalog_item.title if catalog_item else "услуги ремонта"],
+            # Пользователю и заявлению нужен конкретный заявляемый перечень,
+            # а не полный заголовок класса 37 со строительством и бурением.
+            goods_services=[" ".join(source_text.split()) or "услуги ремонта"],
             confidence=0.95,
             citations=[],
         )
@@ -373,7 +374,10 @@ async def _catalog_fallback(
         record = NiceClassSuggestion(
             application_id=application.id,
             class_number=number,
-            class_description=item.title,
+            # В заявление переносится конкретный перечень пользователя, а не
+            # широкий заголовок всего класса МКТУ. Заголовок остаётся только
+            # справочным контекстом для подбора.
+            class_description=phrase,
             rationale=f"Справочник МКТУ: найдено по описанию «{phrase}».",
             confidence=0.55,
             category=NiceCategory.primary,
@@ -384,7 +388,7 @@ async def _catalog_fallback(
             "class_number": number,
             "category": "primary",
             "confidence": 0.55,
-            "goods_services": [item.title],
+            "goods_services": [phrase],
             "rationale": record.rationale,
             "citations": [],
         })

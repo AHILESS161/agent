@@ -902,6 +902,8 @@ async def approve_class(
 
     sug.approved = payload.approved
     sug.approved_by = current_user.id
+    if payload.class_description is not None:
+        sug.class_description = payload.class_description.strip() or None
     if payload.override_class is not None:
         sug.class_number = payload.override_class
 
@@ -911,7 +913,11 @@ async def approve_class(
         user=current_user,
         action="class_approve" if payload.approved else "class_reject",
         application=app,
-        new_val={"class_id": class_id, "approved": payload.approved},
+        new_val={
+            "class_id": class_id,
+            "approved": payload.approved,
+            "class_description": sug.class_description,
+        },
         ip_address=_get_client_ip(request),
     )
     await session.flush()

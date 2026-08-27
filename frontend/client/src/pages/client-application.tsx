@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError, DOCUMENT_KIND_LABELS, type SourceDocumentDto } from "@/lib/api";
@@ -263,7 +264,7 @@ export default function ClientApplicationPage() {
       <div className="rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 lg:p-10">
         {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => setSection("review")} />}
         {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); setSection("analysis"); }} onAnalysisComplete={() => setAnalysisPending(false)} />}
-        {section === "analysis" && <ClientResult appId={appId} analysisPending={analysisPending} onReview={() => setSection("review")} onApplication={() => setSection("fees")} onEditData={() => setSection("review")} />}
+        {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onReview={() => setSection("review")} onApplication={() => setSection("fees")} onEditData={() => setSection("review")} />}
         {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => setSection("documents")} />}
         {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onReview={() => setSection("review")} />}
         {section === "response" && <OfficeActionResponse appId={appId} />}
@@ -315,6 +316,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
     transliteration: application.transliteration || "",
     translation: application.translation || "",
     filingMethod: application.filingMethod || "electronic",
+    requestPaperCertificate: application.requestPaperCertificate || false,
     signatoryName: application.signatoryName
       || (client?.type === "company" ? "" : client?.fullNameOrCompanyName || ""),
     signatoryPosition: application.signatoryPosition || "",
@@ -325,6 +327,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   const activityDescription = form.goods || form.business;
   const imageMark = form.markType === "figurative" || form.markType === "combined";
   const soundMark = form.markType === "sound";
+  const foreignWording = /[A-Za-z]/.test(form.markText || form.markName);
   const hasGenericImageDescription = (value: string) => {
     const normalized = value.toLocaleLowerCase("ru-RU");
     return !normalized.trim()
@@ -747,6 +750,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             colors_claimed: form.colors.trim() || null,
             transliteration: form.transliteration.trim() || null,
             translation: form.translation.trim() || null,
+            request_paper_certificate: form.requestPaperCertificate,
           }),
           client ? api.put(`/clients/${client.id}`, {
             full_name_or_company_name: form.name.trim() || client.fullNameOrCompanyName,
@@ -780,6 +784,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           transliteration: form.transliteration.trim() || null, translation: form.translation.trim() || null,
           territory: COUNTRY_OPTIONS.find((item) => item.code === form.country)?.name || "Россия",
           filing_method: form.filingMethod,
+          request_paper_certificate: form.requestPaperCertificate,
           signatory_name: form.signatoryName.trim() || null,
           signatory_position: form.signatoryPosition.trim() || null,
           signature_date: form.signatureDate || null,
@@ -884,6 +889,16 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               <MarkedField label="Способ подачи" mode="manual">
                 <Select value={form.filingMethod} onValueChange={(value) => set("filingMethod", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="electronic">Электронно через официальный сервис</SelectItem><SelectItem value="paper">На бумаге</SelectItem></SelectContent></Select>
               </MarkedField>
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4">
+                <Checkbox
+                  checked={form.requestPaperCertificate}
+                  onCheckedChange={(checked) => setForm((current) => ({ ...current, requestPaperCertificate: checked === true }))}
+                />
+                <span>
+                  <span className="block text-sm font-semibold text-[#11113f]">Получить свидетельство на бумаге</span>
+                  <span className="mt-1 block text-xs leading-relaxed text-[#6d6d7d]">Необязательно. Электронное свидетельство выдаётся в любом случае; бумажный экземпляр увеличит пошлину на 3 000 ₽.</span>
+                </span>
+              </label>
               <MarkedField label="ФИО подписанта" mode={form.signatoryName ? "document" : "manual"}><Input value={form.signatoryName} onChange={(event) => set("signatoryName", event.target.value)} placeholder="Например: Иванов Иван Иванович" /></MarkedField>
               {client?.type === "company" && <MarkedField label="Должность" mode={form.signatoryPosition ? "document" : "manual"}><Input value={form.signatoryPosition} onChange={(event) => set("signatoryPosition", event.target.value)} placeholder="Например: генеральный директор" /></MarkedField>}
               <MarkedField label="Дата подписания" mode="manual"><Input type="date" value={form.signatureDate} onChange={(event) => set("signatureDate", event.target.value)} /></MarkedField>
@@ -999,10 +1014,10 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             <div className="mt-4 space-y-4">
               <div><Label className="text-sm font-semibold">Описание обозначения</Label><Textarea className="mt-2" rows={6} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Подготовить сведения»" /></div>
               <div><Label className="text-sm font-semibold">Основные цвета обозначения</Label><Input className="mt-2" value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></div>
-              <div className="grid gap-4 sm:grid-cols-2">
+              {foreignWording && <div className="grid gap-4 sm:grid-cols-2">
                 <div><Label className="text-sm font-semibold">Написание латиницей</Label><Input className="mt-2" value={form.transliteration} onChange={(e) => set("transliteration", e.target.value)} placeholder="Определится автоматически" /></div>
                 <div><Label className="text-sm font-semibold">Перевод названия</Label><Input className="mt-2" value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Например: Friendly Neighbor" /></div>
-              </div>
+              </div>}
             </div>
           </details></>}
         </FormGroup>
@@ -1065,7 +1080,7 @@ function ClientCheck({ appId, onAnalysis, onAnalysisComplete, beforeAction }: { 
 
   const decide = async (item: ClassSuggestion, approved: boolean) => {
     setDecidingClassId(item.id);
-    try { await api.put(`/applications/${appId}/classes/${item.id}/approve`, { suggestion_id: item.id, approved }); await load(); }
+    try { await api.put(`/applications/${appId}/classes/${item.id}/approve`, { suggestion_id: item.id, approved, class_description: item.class_description }); await load(); }
     catch (error) { toast({ title: "Не удалось сохранить выбор", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" }); }
     finally { setDecidingClassId(null); }
   };
@@ -1150,8 +1165,14 @@ function ClientCheck({ appId, onAnalysis, onAnalysisComplete, beforeAction }: { 
               <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-amber-200 bg-amber-50")}>
                 <div className="flex flex-col gap-4">
                   <div>
-                    <p className="font-semibold">Класс {item.class_number}</p>
-                    <p className="mt-1 text-sm text-[#6d6d7d]">{item.class_description || "Описание класса будет уточнено при анализе"}</p>
+                    <p className="font-semibold">Что будет защищено в классе {item.class_number}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Знак получит охрану только для перечисленного ниже, а не для всего класса. Удалите лишнее или уточните формулировку до подтверждения.</p>
+                    <Textarea
+                      className="mt-3 min-h-20 bg-white"
+                      value={item.class_description || ""}
+                      onChange={(event) => setClasses((current) => current.map((entry) => entry.id === item.id ? { ...entry, class_description: event.target.value } : entry))}
+                      placeholder="Например: установка, обслуживание и ремонт компьютеров"
+                    />
                     {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1168,7 +1189,7 @@ function ClientCheck({ appId, onAnalysis, onAnalysisComplete, beforeAction }: { 
   );
 }
 
-function ClientResult({ appId, analysisPending, onReview, onApplication, onEditData }: { appId: number; analysisPending: boolean; onReview: () => void; onApplication: () => void; onEditData: () => void }) {
+function ClientResult({ application, appId, analysisPending, onReview, onApplication, onEditData }: { application: Application; appId: number; analysisPending: boolean; onReview: () => void; onApplication: () => void; onEditData: () => void }) {
   const { toast } = useToast();
   const [report, setReport] = useState<RiskReport | null>(null);
   const [memo, setMemo] = useState<Recommendation | null>(null);
@@ -1216,15 +1237,25 @@ function ClientResult({ appId, analysisPending, onReview, onApplication, onEditD
   const absoluteCheckIncomplete = Boolean(absoluteSection?.is_inconclusive);
   const allAdverseFindings = findings.filter((item) => ["medium", "high", "critical"].includes(item.level || ""));
   const rawAdverseFindings = allAdverseFindings.filter((item) => {
+    const normalized = item.explanation.toLocaleLowerCase("ru-RU");
+    if (
+      application.markType === "combined"
+      && ["misleading", "deceptive"].includes(item.category || "")
+      && /(стиральн|холодильник|компьютер|инструмент)/.test(normalized)
+      && /(ремонт|обслуживан|установк)/.test(normalized)
+    ) {
+      // Изображение предмета оказываемой услуги само по себе не сообщает
+      // ложных сведений и не является основанием пугать клиента отказом.
+      return false;
+    }
     if (item.category !== "descriptive") return true;
-    const text = item.explanation.toLocaleLowerCase("ru-RU");
     return ![
       "может восприниматься",
       "может указывать",
       "может ассоциироваться",
       "по-соседски",
       "состоит из общеупотребительных слов",
-    ].some((phrase) => text.includes(phrase));
+    ].some((phrase) => normalized.includes(phrase));
   });
   const adverseFindings = rawAdverseFindings.filter((item) => {
     if (!item.verification?.image_comparison || !item.verification.similarity) return true;
@@ -1298,7 +1329,7 @@ function ClientResult({ appId, analysisPending, onReview, onApplication, onEditD
       : `Поиск в ${classLabel} завершён. Похожих товарных знаков не найдено. Сейчас менять ваше обозначение не требуется.`
     : "Поиск похожих товарных знаков пока не завершён.";
   const unfinishedLegalCheck = externalServicesUnavailable
-    ? `Во время последнего запуска система не смогла связаться ${registryConnectionFailed && llmConnectionFailed ? "с поиском Роспатента и языковой моделью" : registryConnectionFailed ? "с поиском Роспатента" : "с языковой моделью"}. Поэтому новый юридический вывод не сформирован. Это техническая ошибка, а не обнаруженный риск регистрации.`
+    ? "Одну часть проверки временно не удалось обновить. Это не найденный риск и не недостаток вашего знака: сохранён предыдущий готовый результат, а незавершённую часть можно повторить."
     : absoluteCheckIncomplete
     ? "Не завершена проверка самостоятельных оснований для отказа по статье 1483 ГК РФ: нужно ещё оценить, не является ли обозначение описательным, общеупотребительным или вводящим в заблуждение. Это не обнаруженный недостаток знака — по этой части пока нет надёжного вывода."
     : "Одна из предусмотренных проверок пока не завершена. Это не означает, что найдено основание для отказа.";
@@ -1309,6 +1340,12 @@ function ClientResult({ appId, analysisPending, onReview, onApplication, onEditD
       const overlap = (record.classes || []).filter((value) => selected.has(Number(value)));
       return `Похожий знак «${record.mark_text}»${overlap.length ? ` найден в ваших классах: ${overlap.join(", ")}` : " требует дополнительной проверки"}.`;
     }
+    if (item.category === "descriptive") {
+      return "В обозначении могут быть элементы, связанные с заявленными товарами или услугами. Это не означает автоматического отказа всему знаку, но такие элементы могут не получить самостоятельную охрану.";
+    }
+    if (["misleading", "deceptive"].includes(item.category || "")) {
+      return "Нужно проверить, не создаёт ли обозначение у покупателя конкретное неверное представление о товаре, услуге, изготовителе или месте происхождения.";
+    }
     const firstSentence = item.explanation.split(/(?<=[.!?])\s/)[0] || item.explanation;
     return firstSentence;
   };
@@ -1318,7 +1355,7 @@ function ClientResult({ appId, analysisPending, onReview, onApplication, onEditD
     high: "Найдены существенные препятствия. Сначала лучше доработать знак.",
     critical: "В выбранных классах найдены опасные совпадения. Без изменений подавать заявку рискованно.",
   }[displayedRisk] : externalServicesUnavailable
-    ? "Последний запуск прервался из-за недоступности внешних сервисов. Введённые данные и предыдущий успешный поиск сохранены."
+    ? "Не удалось обновить одну часть проверки. Это не означает, что со знаком что-то не так; готовые результаты сохранены."
     : registrySearchComplete
     ? "Поиск сходных знаков завершён. До окончательной рекомендации нужно закончить отдельную правовую проверку самого обозначения."
     : "Проверка выполнена не полностью. Завершите оставшийся шаг.";
@@ -1328,7 +1365,7 @@ function ClientResult({ appId, analysisPending, onReview, onApplication, onEditD
       ? ["Посмотреть самые важные совпадения ниже.", "При необходимости уточнить товары и услуги.", "После проверки перейти к подготовке заявления."]
       : incomplete
         ? externalServicesUnavailable
-          ? ["Повторить проверку сейчас — подключение к внешним сервисам восстановлено.", "Предыдущий успешный поиск по реестру сохранён и не будет потерян."]
+          ? ["Повторить незавершённую часть проверки.", "Если повторный запуск снова не завершится, попросить специалиста проверить только этот вопрос вручную."]
           : ["Повторить только незавершённую проверку — готовый поиск по реестру сохранится.", "Если результат снова не появится, передать обозначение юристу для ручной оценки по статье 1483 ГК РФ."]
         : ["Перейти к расчёту пошлин и проверить доступные льготы.", "После этого скачать комплект документов для подачи."];
   return (
@@ -1512,6 +1549,8 @@ interface FeeEstimate {
   registration_total: number | null;
   total_electronic: number | null;
   paper_certificate_extra: number;
+  paper_certificate_requested: boolean;
+  total_selected: number | null;
   calculated_at: string;
   source_url: string;
   warnings: string[];
@@ -1535,10 +1574,10 @@ function ClientFeeEstimate({ appId, onDocuments }: { appId: number; onDocuments:
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">При подаче заявки</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.filing_total)}</p></div>
           <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">После положительного решения</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.registration_total)}</p></div>
-          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">Всего, электронное свидетельство</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_electronic)}</p></div>
+          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">{fees.data.paper_certificate_requested ? "Всего с бумажным свидетельством" : "Всего, электронное свидетельство"}</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_selected ?? fees.data.total_electronic)}</p></div>
         </div>
-        <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">п. {payment.code}</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
-        <p className="mt-4 text-sm text-[#55556f]">Расчёт для {fees.data.class_count} кл. МКТУ. Бумажное свидетельство по желанию: +{rubles(fees.data.paper_certificate_extra)}.</p>
+          <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">подп. {payment.code} приложения № 1 к Положению о пошлинах</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
+        <p className="mt-4 text-sm text-[#55556f]">Расчёт для {fees.data.class_count} кл. МКТУ. {fees.data.paper_certificate_requested ? `Вы выбрали бумажное свидетельство: в итог включено ${rubles(fees.data.paper_certificate_extra)}.` : `Бумажное свидетельство не выбрано; при необходимости его можно заказать за ${rubles(fees.data.paper_certificate_extra)}.`}</p>
         <div className="mt-5 rounded-xl border border-[#11113f]/10 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-[#11113f]">Какие льготы возможны?</p><p className="mt-1 text-xs text-[#6d6d7d]">Для обычной заявки на товарный знак льгот немного. Проверьте, относится ли заявитель к одной из специальных категорий.</p></div><Button type="button" variant="outline" onClick={() => setBenefitOpen((value) => !value)}>{benefitOpen ? "Скрыть" : "Проверить моё основание"}</Button></div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">

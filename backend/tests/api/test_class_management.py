@@ -113,10 +113,15 @@ class TestApproval:
 
         approved = client.put(
             f"/api/v1/applications/{case}/classes/{created['id']}/approve",
-            json={"suggestion_id": created["id"], "approved": True},
+            json={
+                "suggestion_id": created["id"],
+                "approved": True,
+                "class_description": "ремонт и обслуживание компьютеров",
+            },
             headers=lawyer,
         )
         assert approved.json()["approved"] is True
+        assert approved.json()["class_description"] == "ремонт и обслуживание компьютеров"
 
 
 @pytest.mark.api

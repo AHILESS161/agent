@@ -15,6 +15,8 @@ interface FeeEstimate {
   registration_total: number | null;
   total_electronic: number | null;
   paper_certificate_extra: number;
+  paper_certificate_requested: boolean;
+  total_selected: number | null;
   source_url: string;
   warnings: string[];
 }
@@ -68,7 +70,7 @@ export function ProfessionalFeeEstimate({ appId }: { appId: number }) {
             <div className="grid gap-3 md:grid-cols-3">
               <FeeTotal label="При подаче заявки" value={fees.data.filing_total} />
               <FeeTotal label="После решения о регистрации" value={fees.data.registration_total} />
-              <FeeTotal label="Итого" value={fees.data.total_electronic} accent />
+              <FeeTotal label={fees.data.paper_certificate_requested ? "Итого с бумажным свидетельством" : "Итого"} value={fees.data.total_selected ?? fees.data.total_electronic} accent />
             </div>
 
             <div className="divide-y rounded-lg border">
@@ -76,7 +78,7 @@ export function ProfessionalFeeEstimate({ appId }: { appId: number }) {
                 <div key={payment.code} className="flex flex-col justify-between gap-2 p-3 sm:flex-row sm:items-center">
                   <div>
                     <p className="text-sm font-medium">{payment.title}</p>
-                    <p className="text-xs text-muted-foreground">Пункт {payment.code} · {payment.when}</p>
+                    <p className="text-xs text-muted-foreground">Подп. {payment.code} приложения № 1 к Положению о пошлинах · {payment.when}</p>
                   </div>
                   <span className="shrink-0 text-sm font-semibold">{rubles(payment.amount)}</span>
                 </div>
@@ -84,7 +86,7 @@ export function ProfessionalFeeEstimate({ appId }: { appId: number }) {
             </div>
 
             <p className="text-sm text-muted-foreground">
-              Бумажное свидетельство оформляется по желанию: дополнительно {rubles(fees.data.paper_certificate_extra)}.
+              {fees.data.paper_certificate_requested ? `Заявитель выбрал бумажное свидетельство; доплата ${rubles(fees.data.paper_certificate_extra)} включена в итог.` : `Бумажное свидетельство не выбрано; при необходимости доплата составит ${rubles(fees.data.paper_certificate_extra)}.`}
             </p>
 
             <div className="rounded-lg border p-4">

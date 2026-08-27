@@ -32,6 +32,7 @@ class ApplicationCreate(BaseModel):
     priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
     filing_method: Literal["electronic", "paper"] = "electronic"
+    request_paper_certificate: bool = False
     signatory_name: Optional[str] = Field(default=None, max_length=255)
     signatory_position: Optional[str] = Field(default=None, max_length=255)
     signature_date: Optional[date] = None
@@ -57,6 +58,7 @@ class ApplicationUpdate(BaseModel):
     priority: Optional[CasePriority] = None
     priority_claim: Optional[str] = None
     filing_method: Optional[Literal["electronic", "paper"]] = None
+    request_paper_certificate: Optional[bool] = None
     signatory_name: Optional[str] = Field(default=None, max_length=255)
     signatory_position: Optional[str] = Field(default=None, max_length=255)
     signature_date: Optional[date] = None
@@ -89,6 +91,7 @@ class ApplicationResponse(BaseModel):
     territory: Optional[str] = None
     priority_claim: Optional[str] = None
     filing_method: Literal["electronic", "paper"] = "electronic"
+    request_paper_certificate: bool = False
     signatory_name: Optional[str] = None
     signatory_position: Optional[str] = None
     signature_date: Optional[date] = None

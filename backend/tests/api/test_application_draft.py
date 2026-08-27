@@ -235,7 +235,7 @@ class TestExportRequiresApproval:
 class TestOfficialBlank:
     """Черновик — это заполненный бланк Роспатента, а не своя форма."""
 
-    def _render(self, filled, classes=None, mark_image=None, mark_type="word", include_goods_attachment=False):
+    def _render(self, filled, classes=None, mark_image=None, mark_type="word", include_goods_attachment=False, paper_certificate=False):
         from app.services.application_draft import (
             DraftContent,
             FilledField,
@@ -258,8 +258,10 @@ class TestOfficialBlank:
             signatory_name = None
             signatory_position = None
             signature_date = None
+            request_paper_certificate = False
 
         _App.mark_type = MarkType(mark_type)
+        _App.request_paper_certificate = paper_certificate
         return render_docx(
             content,
             _App(),
@@ -327,17 +329,34 @@ class TestOfficialBlank:
         image = io.BytesIO()
         Image.new("RGB", (800, 400), "navy").save(image, format="JPEG")
         payload = self._render(
-            {"application.mark.description": "Комбинированное обозначение"},
+            {
+                "application.mark.text": "ЗВЁЗДОЧКА",
+                "application.mark.description": "Комбинированное обозначение",
+                "application.mark.transliteration": "ZVEZDOCHKA",
+                "application.mark.translation": "STAR",
+            },
             mark_image=image.getvalue(),
+            mark_type="combined",
         )
         document = self._document(payload)
         outer = document.tables[0].rows[17].cells[2]
         left, right = outer.tables[0].rows[0].cells
         image_box = document.tables[0].rows[19].cells[1]
         assert not left._tc.xpath(".//w:drawing")
+        assert "ЗВЁЗДОЧКА" not in left.text
         assert image_box._tc.xpath(".//w:drawing")
         assert "Комбинированное обозначение" in right.text
+        assert "Транслитерация" not in right.text
+        assert "Перевод" not in right.text
         assert not right._tc.xpath(".//w:drawing")
+
+    def test_paper_certificate_checkbox_follows_user_choice(self):
+        unchecked = self._document(self._render({})).tables[0]
+        checked = self._document(
+            self._render({}, paper_certificate=True)
+        ).tables[0]
+        assert "X" not in unchecked.rows[83].cells[1].text
+        assert "X" in checked.rows[83].cells[1].text
 
     def test_known_checkboxes_are_filled_automatically(self):
         import io

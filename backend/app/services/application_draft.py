@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,6 +53,11 @@ _MARK_KIND_LABELS = {
     "color": "цветовой (558)",
     "other": "иной",
 }
+
+
+def _has_foreign_wording(value: str | None) -> bool:
+    """Нужны ли в заявлении перевод/транслитерация иностранного элемента."""
+    return bool(re.search(r"[A-Za-z]", value or ""))
 
 TEMPLATE_PATH = (
     Path(__file__).resolve().parents[2]
@@ -268,10 +274,18 @@ async def collect_draft_content(
                     )
                 )
 
+    language_fields = (
+        (
+            "application.mark.transliteration",
+            "Транслитерация",
+            application.transliteration,
+        ),
+        ("application.mark.translation", "Перевод", application.translation),
+    ) if _has_foreign_wording(mark_text) else ()
+
     for field_id, label, value in (
         ("application.mark.colors", "Цвет или цветовое сочетание", application.colors_claimed),
-        ("application.mark.transliteration", "Транслитерация", application.transliteration),
-        ("application.mark.translation", "Перевод", application.translation),
+        *language_fields,
         ("application.signatory.name", "ФИО подписанта", application.signatory_name),
         ("application.signatory.position", "Должность подписанта", application.signatory_position),
         (
@@ -726,16 +740,28 @@ def render_docx(
     mark_text = values.get("application.mark.text") or (
         application.mark_text or application.mark_name or ""
     )
+    # В поле (540) должно быть одно заявляемое обозначение. Для
+    # изобразительного и комбинированного знака это загруженная картинка в
+    # предназначенном формой квадрате; отдельное повторение слов сверху
+    # создаёт впечатление, что заявляются два обозначения.
+    if mark_image and getattr(application.mark_type, "value", None) in {
+        "figurative",
+        "combined",
+    }:
+        mark_text_for_form = ""
+    else:
+        mark_text_for_form = mark_text
+    include_language = _has_foreign_wording(mark_text)
     description_lines = [
         values.get("application.mark.description", ""),
-        f"Транслитерация: {values['application.mark.transliteration']}" if values.get("application.mark.transliteration") else "",
-        f"Перевод: {values['application.mark.translation']}" if values.get("application.mark.translation") else "",
+        f"Транслитерация: {values['application.mark.transliteration']}" if include_language and values.get("application.mark.transliteration") else "",
+        f"Перевод: {values['application.mark.translation']}" if include_language and values.get("application.mark.translation") else "",
     ]
     anchor = _find_cell(table, "(540)")
     if anchor is not None:
         _fill_mark_block(
             anchor,
-            mark_text=mark_text,
+            mark_text=mark_text_for_form,
             description_lines=[line for line in description_lines if line],
         )
     if mark_image:
@@ -772,6 +798,11 @@ def render_docx(
     # Загруженное обозначение входит в состав электронной заявки.
     if mark_image or mark_type in {"sound", "3d"}:
         _fill_attachment_row(table, 90)
+
+    # Просьба о бумажном свидетельстве — отдельный осознанный выбор
+    # заявителя. По умолчанию остаётся электронное свидетельство.
+    if getattr(application, "request_paper_certificate", False):
+        _check_box(table, 83, 1)
 
     # --- (511) перечень товаров и услуг ---
     if content.classes:

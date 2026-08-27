@@ -175,7 +175,11 @@ def _fees_document(fees: dict[str, Any]) -> bytes:
     )
     for payment in fees.get("payments", []):
         document.add_heading(payment["title"], level=1)
-        _add_label(document, "Пункт", payment["code"])
+        _add_label(
+            document,
+            "Основание тарифа",
+            f"подпункт {payment['code']} приложения № 1 к Положению о патентных и иных пошлинах",
+        )
         _add_label(document, "Когда оплачивать", payment["when"])
         _add_label(document, "Сумма", f"{payment['amount']:,} ₽".replace(",", " "))
     _add_label(
@@ -186,13 +190,39 @@ def _fees_document(fees: dict[str, Any]) -> bytes:
     _add_label(
         document,
         "Всего при положительном решении",
-        f"{fees['total_electronic']:,} ₽".replace(",", " "),
+        f"{fees.get('total_selected') or fees['total_electronic']:,} ₽".replace(",", " "),
     )
     document.add_paragraph()
     document.add_paragraph(f"Официальная таблица пошлин: {fees['source_url']}")
     for warning in fees.get("warnings", []):
         document.add_paragraph(warning, style="List Bullet")
     return _docx_bytes(document)
+
+
+_RISK_LABELS = {
+    "low": "низкий",
+    "medium": "средний",
+    "high": "высокий",
+    "critical": "критический",
+}
+
+
+def _client_analysis_summary(kind: str, assessment: RiskAssessment) -> str:
+    """Свести юридический результат без внутренних ошибок интеграций."""
+    if assessment.is_inconclusive:
+        if kind == AnalysisKind.absolute_grounds.value:
+            return (
+                "Проверку самого обозначения пока не удалось завершить. "
+                "Повторите её перед подачей; если результат снова не появится, "
+                "передайте обозначение специалисту для ручной оценки."
+            )
+        return (
+            "Поиск сходных обозначений пока не завершён. Повторите поиск перед "
+            "подачей или передайте его специалисту."
+        )
+    return assessment.summary or (
+        "По доступным данным обстоятельств, требующих отдельного предупреждения, не выявлено."
+    )
 
 
 def _analysis_document(application: TrademarkApplicationDraft, assessments: dict[str, RiskAssessment]) -> bytes:
@@ -213,11 +243,11 @@ def _analysis_document(application: TrademarkApplicationDraft, assessments: dict
         _add_label(
             document,
             "Уровень риска",
-            assessment.overall_risk.value if assessment.overall_risk else "не определён",
+            _RISK_LABELS.get(assessment.overall_risk.value, assessment.overall_risk.value)
+            if assessment.overall_risk
+            else "не определён",
         )
-        document.add_paragraph(assessment.summary or "Проверка завершена без текстового резюме.")
-        for limitation in assessment.limitations_json or []:
-            document.add_paragraph(str(limitation), style="List Bullet")
+        document.add_paragraph(_client_analysis_summary(key, assessment))
     return _docx_bytes(document)
 
 
@@ -629,7 +659,7 @@ async def filing_package_status(
         "overall_risk": overall_risk,
         "filing_fee": fees.get("filing_total"),
         "registration_fee": fees.get("registration_total"),
-        "total_fee": fees.get("total_electronic"),
+        "total_fee": fees.get("total_selected") or fees.get("total_electronic"),
         "generated_for": date.today().isoformat(),
         "_content": content,
         "_fees": fees,

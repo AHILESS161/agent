@@ -88,6 +88,11 @@ class ClassApprovalRequest(BaseModel):
 
     suggestion_id: int
     approved: bool
+    class_description: Optional[str] = Field(
+        default=None,
+        max_length=4000,
+        description="Точный перечень товаров и услуг, который заявитель подтверждает",
+    )
     override_class: Optional[int] = Field(
         default=None, ge=1, le=45, description="Override the AI-suggested class number"
     )

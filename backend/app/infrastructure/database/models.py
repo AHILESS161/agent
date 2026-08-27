@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -327,6 +328,9 @@ class TrademarkApplicationDraft(Base):
     priority_claim: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     filing_method: Mapped[str] = mapped_column(
         String(20), nullable=False, default="electronic", server_default="electronic"
+    )
+    request_paper_certificate: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
     signatory_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     signatory_position: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)

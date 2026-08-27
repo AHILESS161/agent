@@ -37,6 +37,24 @@ def _case(client, headers, mark="ЗВЁЗДОЧКА", client_id=None) -> dict:
 
 
 @pytest.mark.api
+class TestClientTextEncoding:
+    def test_client_update_repairs_utf8_exposed_as_latin1(self, client, lawyer):
+        client_id = _client_id(client, lawyer)
+        expected = "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «ЦЕНТРПРОЕКТ»"
+        damaged_once = expected.encode("utf-8").decode("latin-1")
+        damaged = damaged_once.encode("utf-8").decode("latin-1")
+
+        response = client.put(
+            f"/api/v1/clients/{client_id}",
+            json={"full_name_or_company_name": damaged},
+            headers=lawyer,
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["full_name_or_company_name"] == expected
+
+
+@pytest.mark.api
 class TestPriority:
     """Срочность в работе — не конвенционный приоритет заявки."""
 

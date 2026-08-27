@@ -29,6 +29,40 @@ from tests.conftest import login_headers
 
 @pytest.mark.api
 class TestFilingPackage:
+    async def test_signatory_fields_with_date_can_be_saved(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("filing-signatory@test.ru", UserRole.client)
+        headers = login_headers(client, "filing-signatory@test.ru")
+        applicant = client.post(
+            "/api/v1/clients",
+            json={
+                "type": "company",
+                "full_name_or_company_name": 'ООО "Тест"',
+            },
+            headers=headers,
+        ).json()
+        application = client.post(
+            "/api/v1/applications",
+            json={"client_id": applicant["id"], "mark_name": "ТЕСТ", "mark_type": "word"},
+            headers=headers,
+        ).json()
+
+        response = client.put(
+            f"/api/v1/applications/{application['id']}",
+            json={
+                "signatory_name": "Алексеенко Андрей Сергеевич",
+                "signatory_position": "Директор",
+                "signature_date": "2026-08-25",
+            },
+            headers=headers,
+        )
+
+        assert response.status_code == 200, response.text
+        assert response.json()["signatory_name"] == "Алексеенко Андрей Сергеевич"
+        assert response.json()["signatory_position"] == "Директор"
+        assert response.json()["signature_date"] == "2026-08-25"
+
     async def test_sound_mark_requires_audio_attachment(self, client, api_user_factory):
         await api_user_factory("filing-sound@test.ru", UserRole.client)
         headers = login_headers(client, "filing-sound@test.ru")

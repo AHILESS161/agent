@@ -342,7 +342,8 @@ async def update_application(
     _ensure_access(app, current_user)
 
     old_val = {"status": app.status.value}
-    for field, value in payload.model_dump(exclude_none=True).items():
+    update_values = payload.model_dump(exclude_none=True)
+    for field, value in update_values.items():
         setattr(app, field, value)
 
     await _create_audit(
@@ -351,7 +352,10 @@ async def update_application(
         action="application_update",
         application=app,
         old_val=old_val,
-        new_val=payload.model_dump(exclude_none=True),
+        # JSON columns cannot serialize Python ``date`` objects.  Keep native
+        # values for the ORM above, but use Pydantic's JSON representation in
+        # the audit trail.
+        new_val=payload.model_dump(exclude_none=True, mode="json"),
         ip_address=_get_client_ip(request),
     )
     await session.flush()

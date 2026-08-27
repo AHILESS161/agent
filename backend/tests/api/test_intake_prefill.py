@@ -107,6 +107,14 @@ class TestPrefillEgrul:
         assert prefill["signatory_middle_name"] == "Сергеевич"
         assert prefill["signatory_position"] == "ДИРЕКТОР"
 
+    def test_egrul_repairs_utf8_text_exposed_as_latin1(self, client, auth):
+        damaged = EGRUL_TEXT.encode("utf-8").decode("latin-1")
+        body = _prefill(client, auth, "egrul.txt", damaged).json()
+
+        assert body["prefill"]["name"] == (
+            "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ ПРИМЕР"
+        )
+
 
 @pytest.mark.api
 class TestPrefillNonRegistry:

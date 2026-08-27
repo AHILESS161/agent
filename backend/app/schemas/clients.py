@@ -5,9 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.infrastructure.database.models import ClientType
+from app.services.text_encoding import repair_utf8_mojibake
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +61,13 @@ class ClientCreate(BaseModel):
     kpp: Optional[str] = Field(default=None, max_length=20)
     representatives: Optional[List[ClientRepresentativeCreate]] = None
 
+    @field_validator(
+        "full_name_or_company_name", "short_name", "contact_person", "address", mode="before"
+    )
+    @classmethod
+    def repair_text_encoding(cls, value):
+        return repair_utf8_mojibake(value) if isinstance(value, str) else value
+
 
 class ClientUpdate(BaseModel):
     """Payload for partially updating a client."""
@@ -75,6 +83,13 @@ class ClientUpdate(BaseModel):
     inn: Optional[str] = Field(default=None, max_length=20)
     ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
     kpp: Optional[str] = Field(default=None, max_length=20)
+
+    @field_validator(
+        "full_name_or_company_name", "short_name", "contact_person", "address", mode="before"
+    )
+    @classmethod
+    def repair_text_encoding(cls, value):
+        return repair_utf8_mojibake(value) if isinstance(value, str) else value
 
 
 class ClientResponse(BaseModel):

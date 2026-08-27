@@ -1665,7 +1665,7 @@ function ClientFilingPackage({
         }),
       ]);
       await onSaved();
-      pack.reload();
+      await pack.reload();
       toast({ title: "Данные сохранены", description: "Повторно проверяем готовность документов." });
     } catch (error) {
       toast({ title: "Не удалось сохранить", description: messageOf(error, "Проверьте поля и попробуйте ещё раз"), variant: "destructive" });

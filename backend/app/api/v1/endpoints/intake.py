@@ -33,6 +33,7 @@ from app.services.document_text_extractor import (
     extract_pages_from_bytes,
     extract_text_from_bytes,
 )
+from app.services.text_encoding import repair_utf8_mojibake
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +218,13 @@ async def prefill_registrant(
             detail=f"Не удалось разобрать файл (возможно, он повреждён): {exc}",
         ) from exc
 
-    full_text = "\n".join(p.text for p in pages)
+    # Некоторые PDF-генераторы отдают UTF-8 как Latin-1 (``ÐÐÐ©...``).
+    # Чиним текст до классификации и regex-извлечения, иначе повреждённое
+    # наименование сразу попадёт в карточку клиента.
+    normalized_pages = [
+        (p.page_number, repair_utf8_mojibake(p.text) or "") for p in pages
+    ]
+    full_text = "\n".join(text for _, text in normalized_pages)
     classification = classify_document(full_text)
     pattern_set = _PREFILL_PATTERNS.get(classification.kind)
 
@@ -238,8 +245,7 @@ async def prefill_registrant(
             "notice": _PREFILL_NOTICE,
         }
 
-    paged = [(p.page_number, p.text) for p in pages]
-    results = extract_registry_fields(paged, pattern_set)
+    results = extract_registry_fields(normalized_pages, pattern_set)
 
     prefill: dict[str, str] = {}
     fields: list[dict] = []

@@ -32,6 +32,7 @@ interface ApplicationDto {
   priority_claim?: string | null;
   filing_method?: "electronic" | "paper";
   request_paper_certificate?: boolean;
+  representative_id?: number | null;
   signatory_name?: string | null;
   signatory_position?: string | null;
   signature_date?: string | null;
@@ -88,6 +89,7 @@ function toApplication(dto: ApplicationDto): Application {
     priorityClaim: dto.priority_claim ?? "",
     filingMethod: dto.filing_method ?? "electronic",
     requestPaperCertificate: dto.request_paper_certificate ?? false,
+    representativeId: dto.representative_id ?? null,
     signatoryName: dto.signatory_name ?? "",
     signatoryPosition: dto.signatory_position ?? "",
     signatureDate: dto.signature_date ?? "",

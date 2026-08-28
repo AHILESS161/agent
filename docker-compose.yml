@@ -44,20 +44,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # -----------------------------------------------------------------------
-  # Будущие сервисы (закомментированы, не нужны для MVP)
-  # -----------------------------------------------------------------------
-
+  # Для локальной разработки worker встроен в API. Чтобы проверить раздельный
+  # production-контур, установите ANALYSIS_WORKER_MODE=external у api и
+  # раскомментируйте сервис ниже.
   # worker:
   #   build: ./backend
-  #   command: celery -A app.worker worker --loglevel=info --concurrency=4
+  #   command: python -m app.workers.full_analysis
   #   volumes:
   #     - ./backend:/app
   #   env_file: .env
   #   depends_on:
-  #     - redis
   #     - api
   #   restart: unless-stopped
+
+  # -----------------------------------------------------------------------
+  # Будущие сервисы (закомментированы, не нужны для MVP)
+  # -----------------------------------------------------------------------
 
   # vector-store:
   #   image: qdrant/qdrant:latest

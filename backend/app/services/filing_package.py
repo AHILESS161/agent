@@ -38,10 +38,13 @@ from app.services.application_draft import (
     load_mark_image_content,
     render_docx,
 )
-from app.services.blank_layout import build_form
 from app.services.class_analysis import load_class_context
 from app.services.fee_calculator import calculate_trademark_fees
-from app.services.reconciliation import load_reconciliation
+from app.services.filing_requirements import (
+    filing_requirements_manifest,
+    missing_required_items,
+)
+from app.services.field_provenance import field_sources_manifest
 
 SERVICE_URL = (
     "https://rospatent.gov.ru/ru/stateservices/"
@@ -439,63 +442,61 @@ async def filing_package_status(
     session: AsyncSession, application: TrademarkApplicationDraft
 ) -> dict[str, Any]:
     content = await collect_draft_content(session, application)
-    rows, _ = await load_reconciliation(session, application.id)
-    form = build_form(
-        content,
-        rows,
-        client_type=application.client.type.value if application.client else None,
-    )
     classes = await load_class_context(session, application.id)
     fees = await calculate_trademark_fees(session, application.id)
     assessments = await _latest_assessments(session, application.id)
-    attachments, source_documents = await _filing_attachments(session, application)
+    attachments, _ = await _filing_attachments(session, application)
+    representative = (
+        (
+            await session.execute(
+                select(ClientRepresentative).where(
+                    ClientRepresentative.id == application.representative_id,
+                    ClientRepresentative.client_id == application.client_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if application.representative_id
+        else None
+    )
+    attachment_codes = {
+        {
+            "Изображение обозначения": "mark_image",
+            "Аудиозапись звукового обозначения": "mark_audio",
+            "Доверенность представителя": "power_of_attorney",
+            "Документ, подтверждающий приоритет": "priority_proof",
+        }[item.title]
+        for item in attachments
+        if item.title in {
+            "Изображение обозначения",
+            "Аудиозапись звукового обозначения",
+            "Доверенность представителя",
+            "Документ, подтверждающий приоритет",
+        }
+    }
+    requirements = filing_requirements_manifest(
+        application,
+        has_representative=representative is not None,
+        representative=representative,
+        available_attachments=attachment_codes,
+    )
+    field_sources = await field_sources_manifest(session, application)
 
     blockers: list[dict[str, str]] = []
-    for label in form.get("blocking", []):
-        blockers.append(
-            _blocker("required_field", label, "Заполните или подтвердите поле", "data")
-        )
-    # Для обычной российской заявки страна заявителя уже даёт понятное
-    # значение по умолчанию; заставлять клиента повторно вводить «Россия» не
-    # нужно. Отдельное поле остаётся для действительно иной территории.
-    if not application.territory and not (application.client and application.client.country):
-        blockers.append(
-            _blocker("territory", "Территория регистрации", "Укажите Россию или другую территорию", "data")
-        )
-    if not application.description_of_mark:
-        blockers.append(
-            _blocker("mark_description", "Описание обозначения", "Добавьте краткое описание знака", "data")
-        )
-    if not application.signatory_name:
+    from app.services.data_confirmation import data_confirmation_state
+
+    confirmation = await data_confirmation_state(session, application)
+    if not confirmation["confirmed"]:
         blockers.append(
             _blocker(
-                "signatory_name",
-                "Кто подпишет заявление",
-                "Укажите ФИО подписанта",
-                "data",
+                "data_confirmation",
+                "Подтверждение сведений",
+                "Сверьте реквизиты и данные знака, затем подтвердите их",
+                "check",
             )
         )
-    if (
-        application.client
-        and application.client.type.value == "company"
-        and not application.signatory_position
-    ):
+    for item in missing_required_items(requirements):
         blockers.append(
-            _blocker(
-                "signatory_position",
-                "Должность подписанта",
-                "Укажите должность руководителя или представителя",
-                "data",
-            )
-        )
-    if not application.signature_date:
-        blockers.append(
-            _blocker(
-                "signature_date",
-                "Дата подписания",
-                "Укажите дату подписания заявления",
-                "data",
-            )
+            _blocker(item["code"], item["title"], item["action"], item["section"])
         )
     if not classes.is_confirmed:
         blockers.append(
@@ -516,56 +517,6 @@ async def filing_package_status(
                 assessment.inconclusive_reason
                 or "Одна из предварительных проверок не дала надёжного вывода"
             )
-    mark_attachments = [item for item in attachments if item.title == "Изображение обозначения"]
-    if application.mark_type in {MarkType.figurative, MarkType.combined} and not mark_attachments:
-        blockers.append(
-            _blocker("mark_image", "Изображение обозначения", "Загрузите изображение знака", "data")
-        )
-    audio_attachments = [
-        item for item in attachments
-        if item.title == "Аудиозапись звукового обозначения"
-    ]
-    if application.mark_type is MarkType.sound and not audio_attachments:
-        blockers.append(
-            _blocker(
-                "mark_audio",
-                "Аудиозапись звукового обозначения",
-                "Загрузите аудиозапись звукового знака",
-                "data",
-            )
-        )
-    representatives = (
-        list(
-            (
-                await session.execute(
-                    select(ClientRepresentative).where(
-                        ClientRepresentative.client_id == application.client_id
-                    )
-                )
-            )
-            .scalars()
-            .all()
-        )
-        if application.client
-        else []
-    )
-    poa_attachments = [item for item in attachments if item.title == "Доверенность представителя"]
-    if representatives and not poa_attachments:
-        blockers.append(
-            _blocker("power_of_attorney", "Доверенность представителя", "Загрузите доверенность", "data")
-        )
-    if application.priority_claim and not any(
-        document.document_kind is DocumentKind.other and not document.kind_requires_confirmation
-        for document in source_documents
-    ):
-        blockers.append(
-            _blocker(
-                "priority_proof",
-                "Документ о заявленном приоритете",
-                "Загрузите подтверждение приоритета отдельным файлом",
-                "data",
-            )
-        )
     if not fees.get("can_calculate"):
         blockers.append(_blocker("fees", "Расчёт пошлин", "Подтвердите классы МКТУ", "check"))
 
@@ -651,6 +602,8 @@ async def filing_package_status(
         "application_id": application.id,
         "ready": not blockers,
         "blockers": blockers,
+        "requirements": requirements,
+        "field_sources": field_sources,
         "warnings": warnings,
         "documents": manifest,
         "filing_document_count": sum(1 for item in manifest if item["folder"] == "01_ДЛЯ_ПОДАЧИ"),

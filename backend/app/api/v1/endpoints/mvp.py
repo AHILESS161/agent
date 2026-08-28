@@ -448,7 +448,9 @@ async def _step_recommendation(
         "mark_text": app.mark_text or app.mark_name or "",
         "mark_type": (app.mark_type.value if app.mark_type else "словесное"),
         "classes": app.classes or [],
-        "applicant_name": (app.client.full_name_or_company_name if app.client else ""),
+        # ФИО/наименование заявителя не влияет на юридическую оценку знака и
+        # не должно без необходимости уходить во внешний LLM-провайдер.
+        "applicant_name": "Заявитель",
         "intake_result": intake_result,
         "absolute_grounds_result": pipeline_context.get("absolute", {}),
         "relative_grounds_result": pipeline_context.get("relative", {}),
@@ -511,7 +513,7 @@ async def _step_documents(
     application_data: dict[str, Any] = {
         "mark_text": app.mark_text or app.mark_name or "",
         "mark_type": (app.mark_type.value if app.mark_type else "словесное"),
-        "applicant_name": (app.client.full_name_or_company_name if app.client else ""),
+        "applicant_name": "Заявитель",
         "applicant_inn": (app.client.inn if app.client else ""),
         "goods_services": app.goods_services_raw or "",
         "classes": app.classes or [],

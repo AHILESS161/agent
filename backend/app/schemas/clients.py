@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -21,9 +21,17 @@ class ClientRepresentativeCreate(BaseModel):
     full_name: str = Field(max_length=255)
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(default=None, max_length=50)
+    address: Optional[str] = None
     role: Optional[str] = Field(default=None, max_length=100)
+    is_patent_attorney: bool = False
+    patent_attorney_registration_number: Optional[str] = Field(default=None, max_length=50)
+    authority_type: Literal["power_of_attorney", "law", "charter"] = "power_of_attorney"
     poa_reference: Optional[str] = Field(default=None, max_length=255)
     personal_data_consent_reference: Optional[str] = Field(default=None, max_length=255)
+
+
+class ClientRepresentativeUpdate(ClientRepresentativeCreate):
+    """Complete editable profile of an applicant representative."""
 
 
 class ClientRepresentativeResponse(BaseModel):
@@ -36,7 +44,11 @@ class ClientRepresentativeResponse(BaseModel):
     full_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
+    address: Optional[str] = None
     role: Optional[str] = None
+    is_patent_attorney: bool = False
+    patent_attorney_registration_number: Optional[str] = None
+    authority_type: Literal["power_of_attorney", "law", "charter"] = "power_of_attorney"
     poa_reference: Optional[str] = None
     personal_data_consent_reference: Optional[str] = None
 

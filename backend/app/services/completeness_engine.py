@@ -10,10 +10,10 @@ from enum import Enum
 from typing import Callable, List, Optional
 
 from app.infrastructure.database.models import (
-    ClientType,
     MarkType,
     TrademarkApplicationDraft,
 )
+from app.services.filing_requirements import filing_requirements_manifest
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +89,31 @@ def _has_foreign_elements(app: TrademarkApplicationDraft) -> bool:
 
 
 def _has_representatives(app: TrademarkApplicationDraft) -> bool:  # type: ignore[override]
-    """Check if the application's client has any representatives loaded."""
-    try:
-        return bool(app.client and app.client.representatives)
-    except Exception:
-        return False
+    """Check whether this application, rather than merely the client, uses a representative."""
+    return bool(getattr(app, "representative_id", None))
+
+
+def _filing_requirement(app: TrademarkApplicationDraft, code: str) -> dict:
+    """Одна и та же применимость используется на всех этапах процесса."""
+    manifest = filing_requirements_manifest(
+        app,
+        has_representative=_has_representatives(app),
+        representative=getattr(app, "representative", None),
+        available_attachments=(
+            {"mark_image"} if getattr(app, "mark_image_file_id", None) else set()
+        ),
+    )
+    return next(item for item in manifest["requirements"] if item["code"] == code)
+
+
+def _required_missing(app: TrademarkApplicationDraft, code: str) -> bool:
+    item = _filing_requirement(app, code)
+    return bool(item["applicable"] and item["required"] and not item["satisfied"])
+
+
+def _is_required(app: TrademarkApplicationDraft, code: str) -> bool:
+    item = _filing_requirement(app, code)
+    return bool(item["applicable"] and item["required"])
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +140,7 @@ class CompletenessEngine:
             message="Тип обозначения (mark_type) не указан.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: app.mark_type is None,
+            condition=lambda app: _required_missing(app, "mark_type"),
             requested_from="client",
         ),
         CompletenessRule(
@@ -128,7 +148,7 @@ class CompletenessEngine:
             message="Наименование обозначения не указано.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not app.mark_name,
+            condition=lambda app: _required_missing(app, "mark_name"),
             requested_from="client",
         ),
         CompletenessRule(
@@ -144,7 +164,7 @@ class CompletenessEngine:
             message="Перечень товаров/услуг не указан.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not app.goods_services_raw,
+            condition=lambda app: _required_missing(app, "goods_services"),
             requested_from="client",
         ),
         # ---- Company → INN + OGRN required -------------------------------------
@@ -153,10 +173,9 @@ class CompletenessEngine:
             message="ИНН обязателен для юридического лица.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not (app.client and app.client.inn),
-            applies_when=lambda app: bool(
-                app.client and app.client.type == ClientType.company
-            ),
+            condition=lambda app: _required_missing(app, "applicant_inn"),
+            applies_when=lambda app: _is_required(app, "applicant_inn")
+            and getattr(getattr(app, "client", None), "type", None).value == "company",
             requested_from="client",
         ),
         CompletenessRule(
@@ -164,22 +183,9 @@ class CompletenessEngine:
             message="ОГРН обязателен для юридического лица.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not (app.client and app.client.ogrn_or_ogrnip),
-            applies_when=lambda app: bool(
-                app.client and app.client.type == ClientType.company
-            ),
-            requested_from="client",
-        ),
-        # ---- Individual client → INN required ----------------------------------
-        CompletenessRule(
-            field="inn",
-            message="ИНН обязателен для физического лица.",
-            severity="blocking",
-            stage=ApplicationStage.intake,
-            condition=lambda app: not (app.client and app.client.inn),
-            applies_when=lambda app: bool(
-                app.client and app.client.type == ClientType.individual
-            ),
+            condition=lambda app: _required_missing(app, "applicant_registry_number"),
+            applies_when=lambda app: _is_required(app, "applicant_registry_number")
+            and getattr(getattr(app, "client", None), "type", None).value == "company",
             requested_from="client",
         ),
         # ---- Sole proprietor → ОГРНИП required ---------------------------------
@@ -188,10 +194,9 @@ class CompletenessEngine:
             message="ОГРНИП обязателен для индивидуального предпринимателя.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not (app.client and app.client.ogrn_or_ogrnip),
-            applies_when=lambda app: bool(
-                app.client and app.client.type == ClientType.sole_proprietor
-            ),
+            condition=lambda app: _required_missing(app, "applicant_registry_number"),
+            applies_when=lambda app: _is_required(app, "applicant_registry_number")
+            and getattr(getattr(app, "client", None), "type", None).value == "sole_proprietor",
             requested_from="client",
         ),
         # ---- Figurative / combined mark → image required -----------------------
@@ -200,9 +205,8 @@ class CompletenessEngine:
             message="Изображение обозначения (mark_image_file_id) обязательно для изобразительного или комбинированного знака.",
             severity="blocking",
             stage=ApplicationStage.intake,
-            condition=lambda app: not app.mark_image_file_id,
-            applies_when=lambda app: app.mark_type
-            in (MarkType.figurative, MarkType.combined),
+            condition=lambda app: _required_missing(app, "mark_image"),
+            applies_when=lambda app: _is_required(app, "mark_image"),
             requested_from="client",
         ),
         # ---- Foreign elements → transliteration + translation ------------------
@@ -235,34 +239,6 @@ class CompletenessEngine:
             requested_from="client",
         ),
         # ---- Representative present → POA + personal data consent --------------
-        CompletenessRule(
-            field="poa_reference",
-            message="Ссылка на доверенность обязательна при наличии представителя.",
-            severity="blocking",
-            stage=ApplicationStage.intake,
-            condition=lambda app: any(
-                not r.poa_reference
-                for r in (
-                    (app.client.representatives if app.client else None) or []
-                )
-            ),
-            applies_when=_has_representatives,
-            requested_from="client",
-        ),
-        CompletenessRule(
-            field="personal_data_consent_reference",
-            message="Ссылка на согласие на обработку персональных данных обязательна для представителей.",
-            severity="blocking",
-            stage=ApplicationStage.intake,
-            condition=lambda app: any(
-                not r.personal_data_consent_reference
-                for r in (
-                    (app.client.representatives if app.client else None) or []
-                )
-            ),
-            applies_when=_has_representatives,
-            requested_from="client",
-        ),
         # ---- Classification stage rules ----------------------------------------
         CompletenessRule(
             field="goods_services_raw",
@@ -303,7 +279,7 @@ class CompletenessEngine:
             message="[Документы] Территория регистрации обязательна.",
             severity="blocking",
             stage=ApplicationStage.document_generation,
-            condition=lambda app: not app.territory,
+            condition=lambda app: _required_missing(app, "territory"),
             requested_from="lawyer",
         ),
         CompletenessRule(
@@ -311,7 +287,7 @@ class CompletenessEngine:
             message="[Документы] Описание обозначения обязательно.",
             severity="blocking",
             stage=ApplicationStage.document_generation,
-            condition=lambda app: not app.description_of_mark,
+            condition=lambda app: _required_missing(app, "mark_description"),
             requested_from="lawyer",
         ),
         CompletenessRule(
@@ -319,10 +295,9 @@ class CompletenessEngine:
             message="[Документы] ИНН обязателен для юридического лица.",
             severity="blocking",
             stage=ApplicationStage.document_generation,
-            condition=lambda app: not (app.client and app.client.inn),
-            applies_when=lambda app: bool(
-                app.client and app.client.type == ClientType.company
-            ),
+            condition=lambda app: _required_missing(app, "applicant_inn"),
+            applies_when=lambda app: _is_required(app, "applicant_inn")
+            and getattr(getattr(app, "client", None), "type", None).value == "company",
             requested_from="lawyer",
         ),
         # ---- Submission hard-stop ----------------------------------------------
@@ -331,7 +306,7 @@ class CompletenessEngine:
             message="[Подача] Тип обозначения обязателен.",
             severity="blocking",
             stage=ApplicationStage.submission,
-            condition=lambda app: app.mark_type is None,
+            condition=lambda app: _required_missing(app, "mark_type"),
             requested_from="manager",
         ),
         CompletenessRule(
@@ -339,7 +314,7 @@ class CompletenessEngine:
             message="[Подача] Перечень товаров/услуг обязателен.",
             severity="blocking",
             stage=ApplicationStage.submission,
-            condition=lambda app: not app.goods_services_raw,
+            condition=lambda app: _required_missing(app, "goods_services"),
             requested_from="manager",
         ),
         CompletenessRule(
@@ -347,7 +322,7 @@ class CompletenessEngine:
             message="[Подача] Территория регистрации обязательна.",
             severity="blocking",
             stage=ApplicationStage.submission,
-            condition=lambda app: not app.territory,
+            condition=lambda app: _required_missing(app, "territory"),
             requested_from="manager",
         ),
     ]

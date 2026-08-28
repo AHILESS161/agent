@@ -91,18 +91,39 @@ class ConfirmFieldRequest(BaseModel):
 # Вспомогательное
 # ---------------------------------------------------------------------------
 
-def _require_write_access(user: User) -> None:
-    if user.role not in _WRITE_ROLES:
+def _has_application_access(user: User, application: TrademarkApplicationDraft) -> bool:
+    return user.role is UserRole.admin or user.id in {
+        application.created_by_user_id,
+        application.assigned_lawyer_id,
+        application.assigned_manager_id,
+    }
+
+
+def _require_application_access(
+    user: User, application: TrademarkApplicationDraft
+) -> None:
+    if not _has_application_access(user, application):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к данным заявки",
+        )
+
+
+def _require_write_access(
+    user: User, application: TrademarkApplicationDraft | None = None
+) -> None:
+    if user.role not in _WRITE_ROLES and user.role is not UserRole.client:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Недостаточно прав для изменения данных дела",
         )
+    if application is not None:
+        _require_application_access(user, application)
 
 
 def _require_client_application_access(user: User, application: TrademarkApplicationDraft) -> None:
-    """Для клиентской роли разрешены действия только в собственной заявке."""
-    if user.role is UserRole.client and application.created_by_user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к данным заявки")
+    """Backward-compatible alias for case-level authorization."""
+    _require_application_access(user, application)
 
 
 async def _application_for_document(
@@ -235,10 +256,7 @@ async def extract_fields(
     """
     document = await _load_document(session, document_id)
     application = await _application_for_document(session, document)
-    if current_user.role is UserRole.client:
-        _require_client_application_access(current_user, application)
-    else:
-        _require_write_access(current_user)
+    _require_write_access(current_user, application)
 
     pattern_set = _EXTRACTABLE.get(document.document_kind)
     if pattern_set is None:
@@ -330,7 +348,9 @@ async def list_extracted_fields(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    await _load_document(session, document_id)
+    document = await _load_document(session, document_id)
+    application = await _application_for_document(session, document)
+    _require_application_access(current_user, application)
     result = await session.execute(
         select(ExtractedField)
         .where(ExtractedField.document_id == document_id)
@@ -369,8 +389,6 @@ async def add_manual_field(
     Повторный вызов для того же поля обновляет значение, а не плодит
     дубликаты: в сверке одно поле — одна строка.
     """
-    _require_write_access(current_user)
-
     application = (
         await session.execute(
             select(TrademarkApplicationDraft).where(
@@ -383,7 +401,7 @@ async def add_manual_field(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Дело {application_id} не найдено",
         )
-    _require_client_application_access(current_user, application)
+    _require_write_access(current_user, application)
 
     existing = (
         await session.execute(
@@ -484,8 +502,6 @@ async def skip_field(
     бланка убрать нельзя — иначе заявление окажется неполным,
     а система не показала бы этого.
     """
-    _require_write_access(current_user)
-
     application = (
         await session.execute(
             select(TrademarkApplicationDraft).where(
@@ -585,8 +601,6 @@ async def delete_field(
     документа поле — часть результата разбора, и его следует
     отклонить, а не стирать, чтобы решение осталось в истории.
     """
-    _require_write_access(current_user)
-
     field = (
         await session.execute(
             select(ExtractedField).where(ExtractedField.id == field_id)
@@ -596,6 +610,14 @@ async def delete_field(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=f"Поле {field_id} не найдено"
         )
+
+    application = await session.get(TrademarkApplicationDraft, field.application_id)
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка поля не найдена",
+        )
+    _require_write_access(current_user, application)
 
     if field.extraction_method is not ExtractionMethod.manual:
         raise HTTPException(
@@ -649,7 +671,7 @@ async def field_reconciliation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Дело {application_id} не найдено",
         )
-    _require_client_application_access(current_user, application)
+    _require_application_access(current_user, application)
 
     fields_result = await session.execute(
         select(ExtractedField)
@@ -822,8 +844,6 @@ async def confirm_field(
     Каждое решение записывается в историю с указанием пользователя,
     прежнего и нового значения.
     """
-    _require_write_access(current_user)
-
     result = await session.execute(
         select(ExtractedField)
         .where(ExtractedField.id == field_id)
@@ -835,6 +855,14 @@ async def confirm_field(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Поле {field_id} не найдено",
         )
+
+    application = await session.get(TrademarkApplicationDraft, field.application_id)
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка поля не найдена",
+        )
+    _require_write_access(current_user, application)
 
     previous_value = field.normalized_value
     new_value = previous_value
@@ -943,8 +971,21 @@ async def confirm_field(
 async def field_history(
     field_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
+    field = await session.get(ExtractedField, field_id)
+    if field is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Поле {field_id} не найдено",
+        )
+    application = await session.get(TrademarkApplicationDraft, field.application_id)
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка поля не найдена",
+        )
+    _require_application_access(current_user, application)
     result = await session.execute(
         select(FieldConfirmation)
         .where(FieldConfirmation.field_id == field_id)

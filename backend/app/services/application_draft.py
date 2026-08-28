@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.infrastructure.database.models import (
     ApplicationDraft,
+    ClientRepresentative,
     DraftStatus,
     ExtractedField,
     FieldStatus,
@@ -40,6 +41,7 @@ from app.infrastructure.database.models import (
 from app.document_processing.mappers.field_mapping import FieldMappingEngine
 from app.services.class_analysis import load_class_context
 from app.services.file_storage import read_file
+from app.services.filing_requirements import applicant_identifier_fields
 
 logger = get_logger(__name__)
 
@@ -88,6 +90,7 @@ class SkippedField:
 class DraftContent:
     """Данные для заполнения бланка."""
 
+    applicant_type: str | None = None
     filled: list[FilledField] = field(default_factory=list)
     skipped: list[SkippedField] = field(default_factory=list)
     checklist: list[str] = field(default_factory=list)
@@ -107,7 +110,21 @@ async def collect_draft_content(
     session: AsyncSession, application: TrademarkApplicationDraft
 ) -> DraftContent:
     """Собрать значения для заявления из подтверждённых полей дела."""
-    content = DraftContent()
+    client = application.client
+    representative = (
+        (
+            await session.execute(
+                select(ClientRepresentative).where(
+                    ClientRepresentative.id == application.representative_id,
+                    ClientRepresentative.client_id == application.client_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if getattr(application, "representative_id", None)
+        else None
+    )
+    client_type = client.type.value if client and client.type else None
+    content = DraftContent(applicant_type=client_type)
 
     rows = (
         (
@@ -122,7 +139,6 @@ async def collect_draft_content(
     )
     by_path = {row.field_path: row for row in rows}
 
-    client = application.client
     case_values = {
         "case.applicant.full_name": client.full_name_or_company_name if client else None,
         "case.applicant.inn": client.inn if client else None,
@@ -134,6 +150,9 @@ async def collect_draft_content(
 
     engine = FieldMappingEngine()
     for spec in engine.config.get("mappings", []):
+        applies_to = spec.get("applies_to")
+        if client_type and applies_to and client_type not in applies_to:
+            continue
         target = spec.get("application_field")
         if not target:
             continue
@@ -258,11 +277,99 @@ async def collect_draft_content(
     # Контакты и адрес для переписки берутся из данных заявителя. Для
     # самостоятельной подачи это ожидаемый вариант; отдельный адрес можно
     # будет добавить позднее, если он отличается.
-    if client:
+    if representative:
+        representative_lines = [representative.full_name]
+        if representative.is_patent_attorney:
+            status = "Патентный поверенный РФ"
+            if representative.patent_attorney_registration_number:
+                status += f", регистрационный № {representative.patent_attorney_registration_number}"
+            representative_lines.append(status)
+        elif representative.role:
+            representative_lines.append(representative.role)
+        authority_labels = {
+            "power_of_attorney": "Действует по доверенности",
+            "law": "Действует на основании закона",
+            "charter": "Действует на основании устава",
+        }
+        representative_lines.append(
+            authority_labels.get(representative.authority_type, representative.authority_type)
+        )
+        if representative.authority_type == "power_of_attorney" and representative.poa_reference:
+            representative_lines.append(f"Доверенность: {representative.poa_reference}")
+        content.filled.append(
+            FilledField(
+                field_id="application.representative.details",
+                label="Представитель заявителя",
+                value="\n".join(line for line in representative_lines if line),
+                source="данные представителя",
+            )
+        )
         for field_id, label, value in (
-            ("application.correspondence_address", "Адрес для переписки", client.address),
-            ("application.contact.phone", "Телефон для переписки", client.phone),
-            ("application.contact.email", "E-mail для переписки", client.email),
+            (
+                "application.representative.full_name",
+                "ФИО представителя",
+                representative.full_name,
+            ),
+            (
+                "application.representative.address",
+                "Адрес представителя",
+                representative.address,
+            ),
+            (
+                "application.representative.phone",
+                "Телефон представителя",
+                representative.phone,
+            ),
+            (
+                "application.representative.email",
+                "E-mail представителя",
+                representative.email,
+            ),
+            (
+                "application.representative.patent_attorney_number",
+                "Регистрационный номер патентного поверенного",
+                representative.patent_attorney_registration_number,
+            ),
+        ):
+            if value:
+                content.filled.append(
+                    FilledField(
+                        field_id=field_id,
+                        label=label,
+                        value=value,
+                        source="данные представителя",
+                    )
+                )
+        content.filled.append(
+            FilledField(
+                field_id="application.representative.kind",
+                label="Вид представителя",
+                value=(
+                    "patent_attorney"
+                    if representative.is_patent_attorney
+                    else "other_representative"
+                ),
+                source="данные представителя",
+            )
+        )
+
+    if client or representative:
+        for field_id, label, value in (
+            (
+                "application.correspondence_address",
+                "Адрес для переписки",
+                representative.address if representative and representative.address else client.address,
+            ),
+            (
+                "application.contact.phone",
+                "Телефон для переписки",
+                representative.phone if representative and representative.phone else client.phone,
+            ),
+            (
+                "application.contact.email",
+                "E-mail для переписки",
+                representative.email if representative and representative.email else client.email,
+            ),
         ):
             if value:
                 content.filled.append(
@@ -713,12 +820,9 @@ def render_docx(
     )
 
     # --- идентификаторы заявителя ---
+    identifier_fields = applicant_identifier_fields(content.applicant_type)
     identifiers: list[str] = []
-    for label, field_id in (
-        ("ОГРН", "application.applicant.ogrn"),
-        ("ИНН", "application.applicant.inn"),
-        ("КПП", "application.applicant.kpp"),
-    ):
+    for label, field_id in identifier_fields:
         value = values.get(field_id)
         if value:
             identifiers.append(f"{label}: {value}")
@@ -735,6 +839,44 @@ def render_docx(
         f"E-mail: {values['application.contact.email']}" if values.get("application.contact.email") else "",
     ]
     _write_into(_find_cell(table, "(750)"), [line for line in correspondence if line])
+
+    representative_details = values.get("application.representative.details")
+    if representative_details:
+        representative_kind = values.get("application.representative.kind")
+        if representative_kind == "patent_attorney":
+            _check_box(table, 9, 34)
+        else:
+            _check_box(table, 11, 34)
+
+        # В официальном бланке реквизиты представителя размещены не в заголовке
+        # раздела (740), а в отдельных строках сразу под выбором его вида.
+        _write_into(
+            table.rows[13].cells[0],
+            [values.get("application.representative.full_name", "")],
+        )
+        representative_contacts = [
+            (
+                f"Телефон: {values['application.representative.phone']}"
+                if values.get("application.representative.phone")
+                else ""
+            ),
+            (
+                f"E-mail: {values['application.representative.email']}"
+                if values.get("application.representative.email")
+                else ""
+            ),
+        ]
+        _write_into(
+            table.rows[13].cells[31],
+            [line for line in representative_contacts if line],
+        )
+        _write_into(
+            table.rows[14].cells[0],
+            [values.get("application.representative.address", "")],
+        )
+        representative_note = representative_details.splitlines()[1:]
+        if representative_note:
+            _write_into(table.rows[12].cells[31], representative_note)
 
     # --- (540) заявляемое обозначение ---
     mark_text = values.get("application.mark.text") or (

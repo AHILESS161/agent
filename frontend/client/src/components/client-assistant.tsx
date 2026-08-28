@@ -68,7 +68,13 @@ export function ClientAssistant() {
   return (
     <Sheet>
       <SheetTrigger asChild>
-        <Button className="fixed bottom-12 right-5 z-30 h-13 rounded-full bg-[#11113f] px-5 text-white shadow-[0_14px_35px_rgba(17,17,63,0.28)] hover:bg-[#22225c] sm:right-8">
+        <Button
+          className="fixed z-40 h-13 max-w-[calc(100vw-2.5rem)] whitespace-nowrap rounded-full bg-[#11113f] px-5 text-white shadow-[0_14px_35px_rgba(17,17,63,0.28)] transition-[transform,box-shadow,background-color] duration-200 hover:-translate-y-0.5 hover:bg-[#22225c] hover:shadow-[0_18px_42px_rgba(17,17,63,0.34)] motion-reduce:transform-none"
+          style={{
+            right: "max(1.25rem, env(safe-area-inset-right))",
+            bottom: "max(6rem, calc(env(safe-area-inset-bottom) + 1.5rem))",
+          }}
+        >
           <Sparkles className="h-5 w-5 text-[#43c7c2]" />
           <span className="hidden sm:inline">Спросить помощника</span>
           <span className="sm:hidden">Помощник</span>

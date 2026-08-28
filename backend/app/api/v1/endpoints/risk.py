@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -17,6 +18,8 @@ from app.core.security import get_current_user
 from app.infrastructure.database.models import (
     AnalysisKind,
     AuditLog,
+    BackgroundJob,
+    JobStatus,
     ReviewerDecision,
     RiskAssessment,
     RiskFinding,
@@ -34,6 +37,14 @@ from app.services.risk_analysis import (
     serialize_assessment,
 )
 from app.services.visual_mark_similarity import read_cached_registry_image
+from app.services.full_analysis_jobs import (
+    ACTIVE_JOB_STATUSES,
+    FULL_ANALYSIS_JOB_TYPE,
+    job_deduplication_key,
+    job_payload,
+    schedule_analysis_job,
+    serialize_analysis_job,
+)
 
 logger = get_logger(__name__)
 
@@ -41,10 +52,8 @@ router = APIRouter(tags=["risk-analysis"])
 
 _WRITE_ROLES = {UserRole.admin, UserRole.lawyer, UserRole.manager}
 
-# Один и тот же анализ нельзя запускать параллельно: в demo-режиме SQLite
-# допускает только одного писателя, а два долгих запроса создают дубли
-# оценок даже после перехода на PostgreSQL. Блокировка локальна процессу;
-# production-защита для нескольких workers должна использовать Redis/job id.
+# Прямой синхронный endpoint защищён локально. Фоновый endpoint ниже использует
+# уникальный deduplication_key и аренду BackgroundJob на уровне БД.
 _FULL_ANALYSIS_LOCKS: dict[int, asyncio.Lock] = {}
 
 
@@ -55,6 +64,10 @@ def _full_analysis_lock(application_id: int) -> asyncio.Lock:
 class FindingReviewRequest(BaseModel):
     decision: ReviewerDecision
     comment: str | None = Field(default=None, max_length=2000)
+
+
+class FullAnalysisJobRequest(BaseModel):
+    retry_incomplete_only: bool = False
 
 
 def _require_write_access(user: User) -> None:
@@ -194,6 +207,122 @@ async def run_full(
         # успеть начать запись в коротком промежутке между этими событиями.
         await session.commit()
         return result
+
+
+@router.post(
+    "/applications/{application_id}/full-analysis/jobs",
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Поставить полный анализ в фоновую очередь",
+)
+async def enqueue_full_analysis(
+    application_id: int,
+    body: FullAnalysisJobRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    application = await _load_application(session, application_id)
+    if current_user.role is UserRole.client:
+        _require_client_access(current_user, application)
+    else:
+        _require_write_access(current_user)
+        _require_application_access(current_user, application)
+
+    active_jobs = list(
+        (
+            await session.execute(
+                select(BackgroundJob)
+                .where(
+                    BackgroundJob.job_type == FULL_ANALYSIS_JOB_TYPE,
+                    BackgroundJob.status.in_(ACTIVE_JOB_STATUSES),
+                )
+                .order_by(BackgroundJob.id.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for existing in active_jobs:
+        if int(job_payload(existing).get("application_id") or 0) == application_id:
+            schedule_analysis_job(existing.id)
+            return serialize_analysis_job(existing)
+
+    request = body or FullAnalysisJobRequest()
+    deduplication_key = job_deduplication_key(application_id)
+    job = BackgroundJob(
+        job_type=FULL_ANALYSIS_JOB_TYPE,
+        status=JobStatus.queued,
+        payload_json={
+            "application_id": application_id,
+            "requested_by_user_id": current_user.id,
+            "retry_incomplete_only": request.retry_incomplete_only,
+            "progress": 0,
+            "current_step": "queued",
+            "message": "Проверка поставлена в очередь",
+        },
+        retry_count=0,
+        max_retries=2,
+        deduplication_key=deduplication_key,
+    )
+    session.add(job)
+    try:
+        await session.flush()
+        await session.commit()
+    except IntegrityError:
+        # Два API-процесса могли одновременно не увидеть активной строки.
+        # Уникальный ключ оставляет одну задачу, второй запрос возвращает её.
+        await session.rollback()
+        existing = (
+            await session.execute(
+                select(BackgroundJob).where(
+                    BackgroundJob.deduplication_key == deduplication_key
+                )
+            )
+        ).scalar_one_or_none()
+        if existing is None:
+            raise
+        schedule_analysis_job(existing.id)
+        return serialize_analysis_job(existing)
+    schedule_analysis_job(job.id)
+    return serialize_analysis_job(job)
+
+
+@router.get(
+    "/applications/{application_id}/full-analysis/jobs/latest",
+    summary="Состояние последнего фонового анализа",
+)
+async def latest_full_analysis_job(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    application = await _load_application(session, application_id)
+    _require_application_access(current_user, application)
+    jobs = list(
+        (
+            await session.execute(
+                select(BackgroundJob)
+                .where(BackgroundJob.job_type == FULL_ANALYSIS_JOB_TYPE)
+                .order_by(BackgroundJob.id.desc())
+                .limit(100)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    job = next(
+        (
+            item
+            for item in jobs
+            if int(job_payload(item).get("application_id") or 0) == application_id
+        ),
+        None,
+    )
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Проверка ещё не запускалась",
+        )
+    return serialize_analysis_job(job)
 
 
 @router.post(

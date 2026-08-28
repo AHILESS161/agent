@@ -151,8 +151,8 @@ class TestCompletenessEngineINN:
         assert len(inn_issues) > 0
         assert inn_issues[0].requested_from == "client"
 
-    def test_individual_without_inn_is_blocking(self):
-        """Individual clients also require INN."""
+    def test_individual_without_inn_is_not_blocking(self):
+        """ИНН физлица указывается при наличии и не должен блокировать путь."""
         engine = CompletenessEngine()
         client = _make_client(inn=None, ogrn=None, client_type=ClientType.individual)
         app = _make_app(client=client)
@@ -160,7 +160,7 @@ class TestCompletenessEngineINN:
         result = engine.validate(app, ApplicationStage.intake)
 
         blocking_fields = {i.field for i in result.blocking_issues}
-        assert "inn" in blocking_fields
+        assert "inn" not in blocking_fields
 
     def test_company_with_inn_passes_inn_check(self):
         """A company with INN should not trigger the INN rule."""

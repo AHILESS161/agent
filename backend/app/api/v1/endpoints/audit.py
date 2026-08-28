@@ -6,11 +6,16 @@ from datetime import datetime
 from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import require_roles
-from app.infrastructure.database.models import AuditLog, User
+from app.infrastructure.database.models import (
+    AuditLog,
+    TrademarkApplicationDraft,
+    User,
+    UserRole,
+)
 from app.infrastructure.database.session import get_session
 from app.schemas.common import PaginatedResponse
 
@@ -47,7 +52,7 @@ async def list_audit_logs(
     date_from: Optional[datetime] = Query(default=None),
     date_to: Optional[datetime] = Query(default=None),
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(require_roles("admin", "lawyer")),
+    current_user: User = Depends(require_roles("admin", "lawyer")),
 ) -> dict[str, Any]:
     """List audit log entries with optional filters.
 
@@ -58,6 +63,19 @@ async def list_audit_logs(
     - date_from / date_to: ISO datetime range filter
     """
     base_q = select(AuditLog)
+
+    # Администратор видит общий журнал. Юристу доступны только события по
+    # делам, которые он создал или ведёт. Записи без application_id намеренно
+    # исключены: в них могут быть сведения о чужих клиентах и пользователях.
+    if current_user.role is UserRole.lawyer:
+        accessible_applications = select(TrademarkApplicationDraft.id).where(
+            or_(
+                TrademarkApplicationDraft.created_by_user_id == current_user.id,
+                TrademarkApplicationDraft.assigned_lawyer_id == current_user.id,
+                TrademarkApplicationDraft.assigned_manager_id == current_user.id,
+            )
+        )
+        base_q = base_q.where(AuditLog.application_id.in_(accessible_applications))
 
     if entity_type:
         base_q = base_q.where(AuditLog.entity_type == entity_type)

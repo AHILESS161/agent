@@ -1,0 +1,9 @@
+{
+  "name": "registra-presentations",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pptxgenjs": "latest",
+    "sharp": "latest"
+  }
+}

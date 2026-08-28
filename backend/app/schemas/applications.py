@@ -39,6 +39,7 @@ class ApplicationCreate(BaseModel):
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
+    representative_id: Optional[int] = None
 
 
 class ApplicationUpdate(BaseModel):
@@ -65,6 +66,16 @@ class ApplicationUpdate(BaseModel):
     notes: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
+    representative_id: Optional[int] = None
+
+
+class MarkDetailsSuggestionRecord(BaseModel):
+    """Итоговые значения, которые интерфейс предложил пользователю автоматически."""
+
+    description: Optional[str] = None
+    colors: Optional[str] = None
+    transliteration: Optional[str] = None
+    translation: Optional[str] = None
 
 
 class ApplicationResponse(BaseModel):
@@ -76,6 +87,7 @@ class ApplicationResponse(BaseModel):
     client_id: int
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
+    representative_id: Optional[int] = None
     status: ApplicationStatus
     priority: CasePriority = CasePriority.medium
     mark_type: Optional[MarkType] = None
@@ -146,5 +158,6 @@ class ApplicationListItem(BaseModel):
     mark_name: Optional[str] = None
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
+    representative_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime

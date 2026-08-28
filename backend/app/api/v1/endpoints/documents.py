@@ -17,12 +17,14 @@ from app.core.logging import get_logger
 from app.core.security import get_current_user
 from app.document_processing.classifier import classify_document
 from app.infrastructure.database.models import (
+    ApplicationStatus,
     AuditLog,
     DocumentKind,
     DocumentPage,
     DocumentProcessingStatus,
     ExtractionMethod,
     MarkType,
+    OfficeActionResponse,
     SourceChannel,
     SourceDocument,
     TrademarkApplicationDraft,
@@ -31,6 +33,7 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.database.session import get_session
 from app.services import file_storage
+from app.services.document_lifecycle import delete_document_and_release_blob
 from app.services.document_text_extractor import (
     NoTextLayerError,
     UnsupportedDocumentType,
@@ -285,7 +288,6 @@ async def upload_mark_image(
             entity_type="SourceDocument",
             entity_id=str(document.id),
             new_value_json={
-                "filename": filename,
                 "sha256": stored.sha256,
                 "width": image.width,
                 "height": image.height,
@@ -365,7 +367,7 @@ async def upload_document(
                 action="mark_audio.upload",
                 entity_type="SourceDocument",
                 entity_id=str(document.id),
-                new_value_json={"filename": filename, "sha256": stored.sha256},
+                new_value_json={"sha256": stored.sha256},
             )
         )
         await session.flush()
@@ -582,6 +584,70 @@ async def get_document(
     application = await _load_application(session, document.application_id)
     _require_application_access(current_user, application)
     return _serialize(document)
+
+
+@router.delete(
+    "/source-documents/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Удалить исходный документ и его извлечённые данные",
+)
+async def delete_document(
+    document_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Physically remove an uploaded original when it is no longer needed.
+
+    The audit trail deliberately keeps no filename, page text or extracted
+    values: only the id, document kind and content hash remain as proof of the
+    deletion operation.
+    """
+
+    document = await _load_document(session, document_id)
+    application = await _load_application(session, document.application_id)
+    _require_write_access(current_user, application)
+
+    if application.status in {ApplicationStatus.submitted, ApplicationStatus.closed}:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Документ относится к поданной или закрытой заявке. "
+                "Для удаления обратитесь к администратору: сначала нужно "
+                "проверить обязанность сохранить материалы дела."
+            ),
+        )
+
+    used_in_response = await session.scalar(
+        select(OfficeActionResponse.id).where(
+            OfficeActionResponse.notice_document_id == document.id
+        ).limit(1)
+    )
+    if used_in_response is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Документ используется в черновике ответа Роспатенту. "
+                "Сначала удалите или замените связанный черновик."
+            ),
+        )
+
+    if application.mark_image_file_id == str(document.id):
+        application.mark_image_file_id = None
+
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=application.id,
+            action="document.deleted",
+            entity_type="SourceDocument",
+            entity_id=str(document.id),
+            old_value_json={
+                "document_kind": document.document_kind.value,
+                "sha256": document.sha256,
+            },
+        )
+    )
+    await delete_document_and_release_blob(session, document)
 
 
 @router.put(

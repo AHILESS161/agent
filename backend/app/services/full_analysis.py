@@ -17,6 +17,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy import select
@@ -38,6 +39,8 @@ from app.services.conflict_search import run_conflict_search
 from app.services.risk_analysis import run_absolute_grounds_analysis
 
 logger = get_logger(__name__)
+
+ProgressCallback = Callable[[str, int, str], Awaitable[None]]
 
 # Порядок уровней риска — от меньшего к большему.
 _RISK_ORDER = [RiskLevel.low, RiskLevel.medium, RiskLevel.high, RiskLevel.critical]
@@ -180,14 +183,21 @@ async def run_full_analysis(
     llm_provider: Any,
     registry_provider: Any,
     user_id: int | None = None,
+    progress_callback: ProgressCallback | None = None,
+    retry_incomplete_only: bool = False,
 ) -> dict[str, Any]:
     """Выполнить все проверки по делу и собрать общий вердикт."""
     steps: list[dict[str, Any]] = []
+
+    async def progress(step: str, percent: int, detail: str) -> None:
+        if progress_callback is not None:
+            await progress_callback(step, percent, detail)
 
     # --- 1. Классы МКТУ ---------------------------------------------------
     # От перечня классов зависит вывод об охраноспособности, поэтому
     # он определяется до правовых проверок. Уже подтверждённые
     # специалистом классы не трогаются.
+    await progress("classes", 10, "Проверяем выбранные классы товаров и услуг")
     class_context = await load_class_context(session, application.id)
     if class_context.as_numbers():
         steps.append(
@@ -212,29 +222,49 @@ async def run_full_analysis(
     classes = class_context.as_numbers()
 
     # --- 2. Абсолютные основания -----------------------------------------
-    absolute = await run_absolute_grounds_analysis(
-        session, application, llm_provider=llm_provider, user_id=user_id
+    await progress("absolute_grounds", 35, "Проверяем само обозначение")
+    absolute = (
+        await _latest(session, application.id, AnalysisKind.absolute_grounds)
+        if retry_incomplete_only
+        else None
     )
+    if absolute is None or absolute.is_inconclusive:
+        absolute = await run_absolute_grounds_analysis(
+            session, application, llm_provider=llm_provider, user_id=user_id
+        )
+        absolute_status = "inconclusive" if absolute.is_inconclusive else "ok"
+    else:
+        absolute_status = "reused"
     steps.append(
         {
             "step": "absolute_grounds",
-            "status": "inconclusive" if absolute.is_inconclusive else "ok",
+            "status": absolute_status,
             "detail": absolute.inconclusive_reason or absolute.summary,
         }
     )
 
     # --- 3. Относительные основания --------------------------------------
-    relative = await run_conflict_search(
-        session,
-        application,
-        registry_provider=registry_provider,
-        user_id=user_id,
-        llm_provider=llm_provider,
+    await progress("relative_grounds", 60, "Ищем сходные знаки прежде всего в выбранных классах")
+    relative = (
+        await _latest(session, application.id, AnalysisKind.relative_grounds)
+        if retry_incomplete_only
+        else None
     )
+    if relative is None or relative.is_inconclusive:
+        relative = await run_conflict_search(
+            session,
+            application,
+            registry_provider=registry_provider,
+            user_id=user_id,
+            llm_provider=llm_provider,
+        )
+        relative_status = "inconclusive" if relative.is_inconclusive else "ok"
+    else:
+        relative_status = "reused"
     steps.append(
         {
             "step": "relative_grounds",
-            "status": "inconclusive" if relative.is_inconclusive else "ok",
+            "status": relative_status,
             "detail": relative.inconclusive_reason or relative.summary,
         }
     )
@@ -279,6 +309,7 @@ async def run_full_analysis(
     # --- 5. Меморандум --------------------------------------------------
     # Итог анализа должен оставаться в деле, а не только на экране:
     # раздел «Рекомендации» читает именно его.
+    await progress("recommendation", 90, "Готовим понятный вывод и рекомендации")
     await _save_memo(
         session,
         application_id=application.id,
@@ -300,7 +331,7 @@ async def run_full_analysis(
         incomplete=len(incomplete),
     )
 
-    return {
+    result = {
         "application_id": application.id,
         "overall_risk": overall.value if overall else None,
         "verdict": verdict_code,
@@ -317,3 +348,5 @@ async def run_full_analysis(
             "информационный характер. Они требуют проверки специалистом."
         ),
     }
+    await progress("completed", 100, "Проверка завершена")
+    return result

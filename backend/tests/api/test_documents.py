@@ -46,6 +46,12 @@ async def lawyer_token(client, api_user_factory) -> dict[str, str]:
 
 
 @pytest.fixture
+async def other_lawyer_token(client, api_user_factory) -> dict[str, str]:
+    await api_user_factory("other-lawyer-docs@test.ru", UserRole.lawyer)
+    return login_headers(client, "other-lawyer-docs@test.ru")
+
+
+@pytest.fixture
 def application_id(client, lawyer_token) -> int:
     """Реальное дело в тестовой БД.
 
@@ -205,3 +211,69 @@ class TestMissingApplication:
     def test_missing_document_returns_404(self, client, lawyer_token):
         response = client.get("/api/v1/source-documents/999999", headers=lawyer_token)
         assert response.status_code == 404
+
+
+@pytest.mark.api
+class TestDocumentLifecycle:
+    def test_delete_document_removes_database_row_and_blob(
+        self, client, lawyer_token, application_id
+    ):
+        uploaded = _upload(client, lawyer_token, app_id=application_id)
+        assert uploaded.status_code == 201
+        document_id = uploaded.json()["id"]
+        stored_files = [path for path in file_storage.get_storage_root().rglob("*") if path.is_file()]
+        assert len(stored_files) == 1
+
+        response = client.delete(
+            f"/api/v1/source-documents/{document_id}", headers=lawyer_token
+        )
+
+        assert response.status_code == 204
+        assert client.get(
+            f"/api/v1/source-documents/{document_id}", headers=lawyer_token
+        ).status_code == 404
+        assert not stored_files[0].exists()
+
+    def test_shared_blob_is_kept_until_last_document_is_deleted(
+        self, client, lawyer_token, application_id
+    ):
+        first = _upload(client, lawyer_token, app_id=application_id).json()
+        second = _upload(client, lawyer_token, app_id=application_id).json()
+        stored_files = [path for path in file_storage.get_storage_root().rglob("*") if path.is_file()]
+        assert len(stored_files) == 1
+
+        assert client.delete(
+            f"/api/v1/source-documents/{first['id']}", headers=lawyer_token
+        ).status_code == 204
+        assert stored_files[0].exists()
+
+        assert client.delete(
+            f"/api/v1/source-documents/{second['id']}", headers=lawyer_token
+        ).status_code == 204
+        assert not stored_files[0].exists()
+
+    def test_delete_application_removes_its_unreferenced_blobs(
+        self, client, lawyer_token, application_id
+    ):
+        assert _upload(client, lawyer_token, app_id=application_id).status_code == 201
+        stored_files = [path for path in file_storage.get_storage_root().rglob("*") if path.is_file()]
+        assert len(stored_files) == 1
+
+        response = client.delete(
+            f"/api/v1/applications/{application_id}", headers=lawyer_token
+        )
+
+        assert response.status_code == 204
+        assert not stored_files[0].exists()
+
+    def test_unassigned_lawyer_cannot_read_extracted_fields(
+        self, client, lawyer_token, other_lawyer_token, application_id
+    ):
+        uploaded = _upload(client, lawyer_token, app_id=application_id).json()
+
+        response = client.get(
+            f"/api/v1/source-documents/{uploaded['id']}/fields",
+            headers=other_lawyer_token,
+        )
+
+        assert response.status_code == 403

@@ -93,7 +93,7 @@ async def update_user(
     """Update a user's details (admin only)."""
     user = await _get_user_or_404(user_id, session)
 
-    old_val = {"role": user.role.value, "is_active": user.is_active, "full_name": user.full_name}
+    old_val = {"role": user.role.value, "is_active": user.is_active}
     update_data = payload.model_dump(exclude_none=True)
 
     # Handle password separately — must be hashed
@@ -103,7 +103,7 @@ async def update_user(
     for field, value in update_data.items():
         setattr(user, field, value)
 
-    new_val = {"role": user.role.value, "is_active": user.is_active, "full_name": user.full_name}
+    new_val = {"role": user.role.value, "is_active": user.is_active}
     await _write_audit(session, current_user, "user_update", user_id, old_val, new_val)
 
     await session.flush()

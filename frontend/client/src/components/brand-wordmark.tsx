@@ -1,9 +1,11 @@
 import { cn } from "@/lib/utils";
 
 /**
- * Wordmark with a deliberately split first letter. The detached bowl gives
- * the Cyrillic «Р» the same stencil-like character as the visual reference
- * and keeps the mark independent from whatever UI font is loaded.
+ * Единый векторный wordmark «Регистра».
+ *
+ * Кириллическая «Р» повторяет фирменную разрезную геометрию: тёмная основа и
+ * бирюзовый верхний сегмент. Тонкое кольцо собирает её в самостоятельный знак,
+ * но это не буквальная латинская маркировка ®.
  */
 export function BrandWordmark({
   className,
@@ -13,18 +15,33 @@ export function BrandWordmark({
   accentEnd?: boolean;
 }) {
   return (
-    <span className={cn("brand-wordmark inline-flex items-baseline", className)} aria-label="Регистр">
+    <span
+      className={cn("brand-wordmark inline-flex items-center", className)}
+      data-accent={accentEnd ? "true" : "false"}
+      aria-label="Регистр"
+    >
       <svg
-        viewBox="0 0 54 64"
+        viewBox="0 0 72 72"
         aria-hidden="true"
-        className="mr-[0.01em] h-[0.94em] w-[0.76em] self-center overflow-visible"
-        fill="currentColor"
+        className="brand-wordmark__symbol"
       >
-        <path d="M1 2h11v60H1z" />
-        <path d="M18 2h14c12.2 0 20 6.4 20 17s-7.8 17-20 17H18V26h13.5c5.7 0 8.5-2.3 8.5-7s-2.8-7-8.5-7H18z" />
+        <path
+          className="brand-wordmark__ring"
+          d="M61.5 50A32 32 0 1 1 61.5 22"
+          fill="none"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+        />
+        <path
+          className="brand-wordmark__letter"
+          d="M18.5 13h20.2c12 0 20.3 7.9 20.3 19.6 0 11.8-8.3 19.7-20.3 19.7H29.2V61H18.5V38.7h20.2c6 0 9.6-2.2 9.6-6.1 0-4-3.6-6.2-9.6-6.2h-9.5v6.2H18.5V13Z"
+        />
+        <path
+          className="brand-wordmark__accent"
+          d="M18.5 32.6V21c0-4.4 3.6-8 8-8h9v13.4h-6.3v6.2H18.5Z"
+        />
       </svg>
-      <span>егист</span>
-      <span className={accentEnd ? "text-primary" : undefined}>р</span>
+      <span className="brand-wordmark__text">егистр</span>
     </span>
   );
 }

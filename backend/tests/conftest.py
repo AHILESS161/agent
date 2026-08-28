@@ -161,6 +161,9 @@ def disable_rate_limit(monkeypatch):
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "RATE_LIMIT_ENABLED", False)
+    # Lifespan TestClient не должен запускать worker против локальной БД,
+    # потому что API dependency в тесте заменена отдельной in-memory БД.
+    monkeypatch.setattr(settings, "ANALYSIS_WORKER_MODE", "disabled")
 
 
 # ---------------------------------------------------------------------------

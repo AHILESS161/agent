@@ -116,7 +116,7 @@ docker compose exec api python -m app.seed.init_db
 ## Тесты
 
 ```bash
-cd backend && python -m pytest                     # 772 теста на 26.08.2026
+cd backend && python -m pytest                     # 814 тестов на 28.08.2026
 cd frontend && npm run check && npm run build
 ```
 

@@ -26,6 +26,122 @@ def _create_case(api_client, headers: dict[str, str], mark: str = "КЛИЕНТ�
 
 @pytest.mark.api
 class TestClientApplicationRouting:
+    async def test_client_confirmation_is_recorded_and_invalidated_after_edit(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("customer-confirm@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-confirm@test.ru")
+        application = _create_case(client, customer, "ПРОВЕРЕННЫЕ ДАННЫЕ")
+
+        initial = client.get(
+            f"/api/v1/applications/{application['id']}/data-confirmation",
+            headers=customer,
+        )
+        assert initial.status_code == 200
+        assert initial.json()["confirmed"] is False
+
+        confirmed = client.post(
+            f"/api/v1/applications/{application['id']}/data-confirmation",
+            headers=customer,
+        )
+        assert confirmed.status_code == 201, confirmed.text
+        assert confirmed.json()["confirmed"] is True
+
+        changed = client.put(
+            f"/api/v1/applications/{application['id']}",
+            json={"mark_name": "ИЗМЕНЁННЫЕ ДАННЫЕ"},
+            headers=customer,
+        )
+        assert changed.status_code == 200, changed.text
+        assert client.get(
+            f"/api/v1/applications/{application['id']}/data-confirmation",
+            headers=customer,
+        ).json()["confirmed"] is False
+
+    async def test_client_confirmation_is_invalidated_after_class_change(
+        self, client, api_user_factory
+    ):
+        await api_user_factory("customer-class-confirm@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-class-confirm@test.ru")
+        application = _create_case(client, customer, "КЛАСС ИЗМЕНЁН")
+        changed = client.put(
+            f"/api/v1/applications/{application['id']}",
+            json={
+                "business_description": "Ремонт бытовой техники",
+                "goods_services_raw": "Ремонт бытовой техники",
+            },
+            headers=customer,
+        )
+        assert changed.status_code == 200, changed.text
+        suggestions = client.post(
+            f"/api/v1/applications/{application['id']}/nice-classes/suggest",
+            headers=customer,
+        )
+        assert suggestions.status_code == 201, suggestions.text
+        listed = client.get(
+            f"/api/v1/applications/{application['id']}/classes",
+            headers=customer,
+        )
+        assert listed.status_code == 200, listed.text
+        suggestion = listed.json()["suggestions"][0]
+
+        confirmed = client.post(
+            f"/api/v1/applications/{application['id']}/data-confirmation",
+            headers=customer,
+        )
+        assert confirmed.status_code == 201, confirmed.text
+        assert confirmed.json()["confirmed"] is True
+
+        approved = client.put(
+            f"/api/v1/applications/{application['id']}/classes/{suggestion['id']}/approve",
+            json={
+                "suggestion_id": suggestion["id"],
+                "approved": True,
+                "class_description": suggestion["class_description"],
+            },
+            headers=customer,
+        )
+        assert approved.status_code == 200, approved.text
+        assert client.get(
+            f"/api/v1/applications/{application['id']}/data-confirmation",
+            headers=customer,
+        ).json()["confirmed"] is False
+
+    async def test_client_can_enqueue_and_read_background_analysis(
+        self, client, api_user_factory, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "app.api.v1.endpoints.risk.schedule_analysis_job", lambda _job_id: None
+        )
+        await api_user_factory("customer-analysis@test.ru", UserRole.client)
+        customer = login_headers(client, "customer-analysis@test.ru")
+        application = _create_case(client, customer, "ФОНОВАЯ ПРОВЕРКА")
+
+        queued = client.post(
+            f"/api/v1/applications/{application['id']}/full-analysis/jobs",
+            json={"retry_incomplete_only": False},
+            headers=customer,
+        )
+
+        assert queued.status_code == 202, queued.text
+        assert queued.json()["status"] == "queued"
+        assert queued.json()["application_id"] == application["id"]
+
+        duplicate = client.post(
+            f"/api/v1/applications/{application['id']}/full-analysis/jobs",
+            json={"retry_incomplete_only": False},
+            headers=customer,
+        )
+        assert duplicate.status_code == 202, duplicate.text
+        assert duplicate.json()["id"] == queued.json()["id"]
+
+        latest = client.get(
+            f"/api/v1/applications/{application['id']}/full-analysis/jobs/latest",
+            headers=customer,
+        )
+        assert latest.status_code == 200, latest.text
+        assert latest.json()["id"] == queued.json()["id"]
+
     async def test_common_classification_uses_precise_local_catalog(
         self, client, api_user_factory
     ):

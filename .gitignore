@@ -66,6 +66,7 @@ desktop.ini
 .review/
 /.pytest-tmp-*/
 /.pytest-cache-*/
+backend/.test-temp-*/
 tmp/
 *.bak
 *.tmp

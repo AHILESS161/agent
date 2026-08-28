@@ -235,14 +235,14 @@ class TestExportRequiresApproval:
 class TestOfficialBlank:
     """Черновик — это заполненный бланк Роспатента, а не своя форма."""
 
-    def _render(self, filled, classes=None, mark_image=None, mark_type="word", include_goods_attachment=False, paper_certificate=False):
+    def _render(self, filled, classes=None, mark_image=None, mark_type="word", include_goods_attachment=False, paper_certificate=False, applicant_type=None):
         from app.services.application_draft import (
             DraftContent,
             FilledField,
             render_docx,
         )
 
-        content = DraftContent()
+        content = DraftContent(applicant_type=applicant_type)
         content.filled = [
             FilledField(field_id=fid, label=fid, value=value, source="regex")
             for fid, value in filled.items()
@@ -303,6 +303,70 @@ class TestOfficialBlank:
         text = self._document(payload).tables[0].rows[5].cells[31].text
         assert "ОГРН: 1027700132195" in text
         assert "ИНН: 7707083893" in text
+
+    @pytest.mark.parametrize(
+        ("applicant_type", "filled", "expected", "forbidden"),
+        [
+            (
+                "company",
+                {
+                    "application.applicant.ogrn": "1027700132195",
+                    "application.applicant.inn": "7707083893",
+                    "application.applicant.kpp": "770701001",
+                },
+                ("ОГРН: 1027700132195", "ИНН: 7707083893", "КПП: 770701001"),
+                ("ОГРНИП: 1027700132195",),
+            ),
+            (
+                "sole_proprietor",
+                {
+                    "application.applicant.ogrn": "315774600312340",
+                    "application.applicant.inn": "771234567859",
+                    "application.applicant.kpp": "770701001",
+                },
+                ("ОГРНИП: 315774600312340", "ИНН: 771234567859"),
+                ("ОГРН: 315774600312340", "КПП: 770701001"),
+            ),
+            (
+                "individual",
+                {
+                    "application.applicant.ogrn": "1027700132195",
+                    "application.applicant.inn": "771234567859",
+                    "application.applicant.kpp": "770701001",
+                },
+                ("ИНН: 771234567859",),
+                (
+                    "ОГРН: 1027700132195",
+                    "ОГРНИП: 1027700132195",
+                    "КПП: 770701001",
+                ),
+            ),
+        ],
+    )
+    def test_identifier_block_depends_on_applicant_type(
+        self, applicant_type, filled, expected, forbidden
+    ):
+        document = self._document(
+            self._render(filled, applicant_type=applicant_type)
+        )
+        text = document.tables[0].rows[5].cells[31].text
+        for value in expected:
+            assert value in text
+        for value in forbidden:
+            assert value not in text
+
+    @pytest.mark.parametrize(
+        ("mark_type", "row", "cell"),
+        [
+            ("word", 26, 15),
+            ("figurative", 26, 26),
+            ("combined", 34, 1),
+            ("sound", 30, 23),
+        ],
+    )
+    def test_mark_type_checkbox_matrix(self, mark_type, row, cell):
+        document = self._document(self._render({}, mark_type=mark_type))
+        assert "X" in document.tables[0].rows[row].cells[cell].text
 
     def test_mark_lands_in_field_540(self):
         payload = self._render({"application.mark.text": "ЗВЁЗДОЧКА"})

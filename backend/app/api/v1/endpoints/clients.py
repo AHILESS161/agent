@@ -23,6 +23,7 @@ from app.schemas.clients import (
     ClientCreate,
     ClientRepresentativeCreate,
     ClientRepresentativeResponse,
+    ClientRepresentativeUpdate,
     ClientResponse,
     ClientUpdate,
 )
@@ -111,7 +112,7 @@ async def create_client(
         action="client_create",
         entity_type="Client",
         entity_id=str(client.id),
-        new_value_json={"full_name_or_company_name": client.full_name_or_company_name},
+        new_value_json={"created": True},
     )
     session.add(audit)
 
@@ -151,7 +152,6 @@ async def update_client(
     client = await _get_client_or_404(client_id, session)
     _ensure_client_access(client, current_user)
 
-    old_val = {"full_name_or_company_name": client.full_name_or_company_name}
     for field, value in payload.model_dump(exclude_none=True).items():
         setattr(client, field, value)
 
@@ -160,8 +160,9 @@ async def update_client(
         action="client_update",
         entity_type="Client",
         entity_id=str(client_id),
-        old_value_json=old_val,
-        new_value_json={"full_name_or_company_name": client.full_name_or_company_name},
+        new_value_json={
+            "changed_fields": sorted(payload.model_dump(exclude_none=True).keys())
+        },
     )
     session.add(audit)
 
@@ -210,9 +211,7 @@ async def delete_client(
             action="client_delete",
             entity_type="Client",
             entity_id=str(client_id),
-            old_value_json={
-                "full_name_or_company_name": client.full_name_or_company_name
-            },
+            old_value_json={"deleted": True},
         )
     )
     await session.flush()
@@ -228,10 +227,11 @@ async def delete_client(
 async def list_representatives(
     client_id: int,
     session: AsyncSession = Depends(get_session),
-    _current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ) -> List[ClientRepresentativeResponse]:
     """List all representatives for a client."""
-    await _get_client_or_404(client_id, session)  # validates existence
+    client = await _get_client_or_404(client_id, session)
+    _ensure_client_access(client, current_user)
     result = await session.execute(
         select(ClientRepresentative).where(ClientRepresentative.client_id == client_id)
     )
@@ -251,22 +251,63 @@ async def add_representative(
     current_user: User = Depends(get_current_user),
 ) -> ClientRepresentativeResponse:
     """Add a representative to an existing client."""
-    client_result = await session.execute(select(Client).where(Client.id == client_id))
-    if not client_result.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    client = await _get_client_or_404(client_id, session)
+    _ensure_client_access(client, current_user)
 
     rep = ClientRepresentative(**payload.model_dump(), client_id=client_id)
     session.add(rep)
+    await session.flush()
 
     audit = AuditLog(
         user_id=current_user.id,
         action="representative_add",
         entity_type="ClientRepresentative",
-        entity_id=str(client_id),
-        new_value_json={"full_name": payload.full_name},
+        entity_id=str(rep.id),
+        new_value_json={"created": True},
     )
     session.add(audit)
 
     await session.flush()
     await session.refresh(rep)
     return ClientRepresentativeResponse.model_validate(rep)
+
+
+@router.put(
+    "/{client_id}/representatives/{representative_id}",
+    response_model=ClientRepresentativeResponse,
+)
+async def update_representative(
+    client_id: int,
+    representative_id: int,
+    payload: ClientRepresentativeUpdate,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ClientRepresentativeResponse:
+    """Update a representative that belongs to the selected applicant."""
+    client = await _get_client_or_404(client_id, session)
+    _ensure_client_access(client, current_user)
+    representative = (
+        await session.execute(
+            select(ClientRepresentative).where(
+                ClientRepresentative.id == representative_id,
+                ClientRepresentative.client_id == client_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if representative is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Representative not found")
+
+    for field, value in payload.model_dump().items():
+        setattr(representative, field, value)
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            action="representative_update",
+            entity_type="ClientRepresentative",
+            entity_id=str(representative.id),
+            new_value_json={"changed_fields": sorted(payload.model_fields_set)},
+        )
+    )
+    await session.flush()
+    await session.refresh(representative)
+    return ClientRepresentativeResponse.model_validate(representative)

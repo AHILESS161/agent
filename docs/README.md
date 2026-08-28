@@ -1,6 +1,6 @@
 # Документация «Регистра»
 
-**Актуализировано:** 26 августа 2026 года.
+**Актуализировано:** 28 августа 2026 года.
 
 Здесь собраны рабочие документы проекта. Чтобы одинаковые сведения не
 расходились по нескольким файлам, у каждого документа есть одна роль:
@@ -21,6 +21,8 @@
 | Увидеть этапы выхода в пилот и production | [`roadmap.md`](roadmap.md) |
 | Запустить проект локально или дать демо-доступ | [`demo-deployment.md`](demo-deployment.md) |
 | Проверить изменения | [`testing.md`](testing.md) |
+| Провести юридическую приёмку DOCX | [`legal-docx-review-checklist.md`](legal-docx-review-checklist.md) |
+| Оценить извлечение ЕГРЮЛ/ЕГРИП | [`registry-extraction-evaluation.md`](registry-extraction-evaluation.md) |
 
 ## Продукт и эксплуатация
 
@@ -31,6 +33,7 @@
 | Production-контур и обновления | [`production-architecture.md`](production-architecture.md) | подготовлено, не развёрнуто |
 | Интеграции и внешние зависимости | [`integrations.md`](integrations.md) | смешанный статус по провайдерам |
 | Безопасность текущего MVP | раздел в [`current-state.md`](current-state.md#безопасность-и-эксплуатация) | фактический срез |
+| Персональные данные и модель угроз | [`personal-data-threat-model.md`](personal-data-threat-model.md) | технический baseline и задачи до пилота |
 
 ## Живые технические справочники
 

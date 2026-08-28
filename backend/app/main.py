@@ -34,6 +34,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     schema_ok, schema_error = await check_schema()
     if schema_ok:
         logger.info("Схема БД проверена")
+        from app.services.full_analysis_jobs import resume_analysis_jobs
+
+        await resume_analysis_jobs()
     else:
         # Не валим процесс: приложение должно подняться и честно
         # сообщить о неготовности через /ready, а не падать в рестарт-цикл.
@@ -41,7 +44,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     logger.info("Shutting down")
     from app.api.dependencies import close_llm_provider
+    from app.services.full_analysis_jobs import stop_analysis_jobs
 
+    await stop_analysis_jobs()
     await close_llm_provider()
     await close_db()
 

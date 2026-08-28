@@ -16,6 +16,8 @@ from app.infrastructure.database.models import (
     AgentRunStatus,
     ApplicationStatus,
     AuditLog,
+    Client,
+    ClientRepresentative,
     ConflictDecision,
     ConflictSearchJob,
     ConflictSearchResult,
@@ -27,6 +29,7 @@ from app.infrastructure.database.models import (
     NiceClassSuggestion,
     RecommendationMemo,
     SearchJobStatus,
+    SourceDocument,
     Submission,
     SubmissionStatusEvent,
     TrademarkApplicationDraft,
@@ -41,6 +44,7 @@ from app.schemas.applications import (
     ApplicationStatusUpdate,
     ApplicationUpdate,
     ApplicationValidationResult,
+    MarkDetailsSuggestionRecord,
     ValidationIssue,
 )
 from app.schemas.classification import (
@@ -66,6 +70,8 @@ from app.schemas.legal import (
     LegalReviewResponse,
 )
 from app.services.completeness_engine import ApplicationStage, CompletenessEngine
+from app.services.data_confirmation import data_confirmation_state
+from app.services.document_lifecycle import release_unreferenced_blobs
 from app.services.state_machine import ApplicationStateMachine
 from app.services.application_draft import load_mark_image_content
 from app.services.mark_description import (
@@ -100,7 +106,10 @@ async def _get_app_or_404(
         TrademarkApplicationDraft.id == application_id
     )
     if load_client:
-        stmt = stmt.options(selectinload(TrademarkApplicationDraft.client))
+        stmt = stmt.options(
+            selectinload(TrademarkApplicationDraft.client),
+            selectinload(TrademarkApplicationDraft.representative),
+        )
     result = await session.execute(stmt)
     app = result.scalar_one_or_none()
     if not app:
@@ -243,6 +252,20 @@ async def create_application(
     current_user: User = Depends(get_current_user),
 ) -> ApplicationResponse:
     """Create a new application draft."""
+    if payload.representative_id is not None:
+        representative = (
+            await session.execute(
+                select(ClientRepresentative).where(
+                    ClientRepresentative.id == payload.representative_id,
+                    ClientRepresentative.client_id == payload.client_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if representative is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Representative must belong to the application applicant",
+            )
     app = TrademarkApplicationDraft(
         **payload.model_dump(), created_by_user_id=current_user.id
     )
@@ -305,16 +328,30 @@ async def delete_application(
             ),
         )
 
+    document_paths = list(
+        (
+            await session.execute(
+                select(SourceDocument.stored_path).where(
+                    SourceDocument.application_id == app.id
+                )
+            )
+        ).scalars()
+    )
+
     await _create_audit(
         session,
         user=current_user,
         action="application_delete",
         application=app,
-        old_val={"mark_name": app.mark_name, "status": app.status.value},
+        old_val={"status": app.status.value},
         ip_address=_get_client_ip(request),
     )
     await session.flush()
     await session.delete(app)
+    # Flush database cascades before releasing content-addressed blobs. The
+    # same physical file may still be referenced by another case.
+    await session.flush()
+    await release_unreferenced_blobs(session, document_paths)
 
 
 @router.get("/{application_id}", response_model=ApplicationResponse)
@@ -343,6 +380,23 @@ async def update_application(
 
     old_val = {"status": app.status.value}
     update_values = payload.model_dump(exclude_none=True)
+    if "representative_id" in payload.model_fields_set:
+        update_values["representative_id"] = payload.representative_id
+    representative_id = update_values.get("representative_id")
+    if representative_id is not None:
+        representative = (
+            await session.execute(
+                select(ClientRepresentative).where(
+                    ClientRepresentative.id == representative_id,
+                    ClientRepresentative.client_id == app.client_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if representative is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Representative must belong to the application applicant",
+            )
     for field, value in update_values.items():
         setattr(app, field, value)
 
@@ -352,15 +406,50 @@ async def update_application(
         action="application_update",
         application=app,
         old_val=old_val,
-        # JSON columns cannot serialize Python ``date`` objects.  Keep native
-        # values for the ORM above, but use Pydantic's JSON representation in
-        # the audit trail.
-        new_val=payload.model_dump(exclude_none=True, mode="json"),
+        # В журнале достаточно перечня изменённых полей. Значения адреса,
+        # контактов и подписанта уже хранятся в самой заявке и не должны
+        # дублироваться в долговечном аудите.
+        new_val={"changed_fields": sorted(update_values)},
         ip_address=_get_client_ip(request),
     )
     await session.flush()
     await session.refresh(app)
     return ApplicationResponse.model_validate(app)
+
+
+@router.get("/{application_id}/data-confirmation")
+async def get_data_confirmation(
+    application_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    return await data_confirmation_state(session, app)
+
+
+@router.post("/{application_id}/data-confirmation", status_code=status.HTTP_201_CREATED)
+async def confirm_application_data(
+    application_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=app.id,
+            action="application.data.confirmed",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(app.id),
+            new_value_json={"confirmed": True},
+            ip_address=_get_client_ip(request),
+        )
+    )
+    await session.flush()
+    return await data_confirmation_state(session, app)
 
 
 @router.post("/{application_id}/suggest-mark-language")
@@ -374,7 +463,7 @@ async def suggest_mark_language(
     _ensure_access(app, current_user)
     text = (app.mark_text or app.mark_name or "").strip()
     variants = await QueryVariantGenerator(_get_llm_provider()).build(text)
-    return {
+    result = {
         "transliteration": next(
             (item.text for item in variants if item.kind == "transliteration"), None
         ),
@@ -382,6 +471,18 @@ async def suggest_mark_language(
             (item.text for item in variants if item.kind == "translation"), None
         ),
     }
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=app.id,
+            action="application.mark_language.suggested",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(app.id),
+            new_value_json=result,
+        )
+    )
+    await session.flush()
+    return result
 
 
 @router.post("/{application_id}/generate-mark-description")
@@ -436,7 +537,7 @@ async def generate_mark_description(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Не удалось проанализировать изображение. Попробуйте ещё раз позже или заполните описание вручную.",
         ) from exc
-    return {
+    result = {
         "description": description,
         "colors": colors,
         "transliteration": transliteration,
@@ -444,6 +545,57 @@ async def generate_mark_description(
         "model": settings.VISION_MODEL or settings.LLM_MODEL,
         "requires_confirmation": True,
     }
+    # Значения сохраняются в аудите как предложения, а не как подтверждённые
+    # поля заявления. Источник показывается «система» только пока текущее поле
+    # в точности совпадает с этим результатом; ручная правка меняет источник.
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=app.id,
+            action="application.mark_description.suggested",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(app.id),
+            new_value_json={
+                "description": description,
+                "colors": colors,
+                "transliteration": transliteration,
+                "translation": translation,
+            },
+        )
+    )
+    await session.flush()
+    return result
+
+
+@router.post("/{application_id}/mark-details-suggestions", status_code=status.HTTP_204_NO_CONTENT)
+async def record_mark_details_suggestions(
+    application_id: int,
+    payload: MarkDetailsSuggestionRecord,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    """Зафиксировать происхождение итоговых подсказок клиентского интерфейса.
+
+    Endpoint не изменяет заявление. Он нужен, чтобы после сохранения отличить
+    нетронутое автоматическое предложение от значения, которое пользователь
+    отредактировал вручную.
+    """
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    values = payload.model_dump(exclude_none=True)
+    if not values:
+        return
+    session.add(
+        AuditLog(
+            user_id=current_user.id,
+            application_id=app.id,
+            action="application.mark_details.suggested",
+            entity_type="TrademarkApplicationDraft",
+            entity_id=str(app.id),
+            new_value_json=values,
+        )
+    )
+    await session.flush()
 
 
 # ---------------------------------------------------------------------------
@@ -461,19 +613,6 @@ async def validate_application(
     """Run completeness engine against the application for the given stage."""
     app = await _get_app_or_404(application_id, session, load_client=True)
     _ensure_access(app, current_user)
-
-    # Eagerly load client representatives for completeness checks
-    if app.client:
-        await session.execute(
-            select(TrademarkApplicationDraft)
-            .options(
-                selectinload(TrademarkApplicationDraft.client).selectinload(
-                    # type: ignore[arg-type]
-                    app.client.__class__.representatives  # type: ignore[attr-defined]
-                )
-            )
-            .where(TrademarkApplicationDraft.id == application_id)
-        )
 
     completeness = _completeness_engine.validate(app, stage)
 

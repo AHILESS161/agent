@@ -31,6 +31,15 @@ class Settings(BaseSettings):
     # Redis (optional for MVP)
     REDIS_URL: Optional[str] = None
 
+    # Фоновый правовой анализ. В разработке API может держать встроенный
+    # worker; в production API только ставит задания в БД, а отдельный процесс
+    # запускается командой ``python -m app.workers.full_analysis``.
+    ANALYSIS_WORKER_MODE: str = "embedded"  # embedded | external | disabled
+    ANALYSIS_WORKER_CONCURRENCY: int = 1
+    ANALYSIS_WORKER_POLL_SECONDS: float = 1.0
+    ANALYSIS_JOB_LEASE_SECONDS: int = 180
+    ANALYSIS_JOB_HEARTBEAT_SECONDS: int = 30
+
     # Vector Store (optional for MVP)
     VECTOR_STORE_URL: Optional[str] = None
 
@@ -147,6 +156,16 @@ class Settings(BaseSettings):
         if upper not in allowed:
             raise ValueError(f"LOG_LEVEL must be one of {allowed}")
         return upper
+
+    @field_validator("ANALYSIS_WORKER_MODE")
+    @classmethod
+    def validate_analysis_worker_mode(cls, v: str) -> str:
+        value = v.strip().lower()
+        if value not in {"embedded", "external", "disabled"}:
+            raise ValueError(
+                "ANALYSIS_WORKER_MODE must be embedded, external or disabled"
+            )
+        return value
 
 
 settings = Settings()

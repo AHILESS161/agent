@@ -331,7 +331,7 @@ async def add_attachment(
             action="inbound.attachment",
             entity_type="InboundEvent",
             entity_id=str(event.id),
-            new_value_json={"filename": filename, "sha256": stored.sha256},
+            new_value_json={"sha256": stored.sha256},
         )
     )
     await session.flush()

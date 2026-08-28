@@ -284,7 +284,17 @@ class ClientRepresentative(Base):
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[Optional[str]] = mapped_column(String(320), nullable=True)
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    address: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     role: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    is_patent_attorney: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
+    patent_attorney_registration_number: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )
+    authority_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="power_of_attorney", server_default="power_of_attorney"
+    )
     poa_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     personal_data_consent_reference: Mapped[Optional[str]] = mapped_column(
         String(255), nullable=True
@@ -306,6 +316,12 @@ class TrademarkApplicationDraft(Base):
     )
     assigned_manager_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    representative_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("client_representatives.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     status: Mapped[ApplicationStatus] = mapped_column(
         Enum(ApplicationStatus, name="applicationstatus"),
@@ -365,6 +381,9 @@ class TrademarkApplicationDraft(Base):
     )
     assigned_manager: Mapped[Optional["User"]] = relationship(
         "User", foreign_keys=[assigned_manager_id]
+    )
+    representative: Mapped[Optional["ClientRepresentative"]] = relationship(
+        "ClientRepresentative", foreign_keys=[representative_id]
     )
     goods_services_items: Mapped[list["GoodsServicesItem"]] = relationship(
         back_populates="application", cascade="all, delete-orphan"
@@ -986,6 +1005,26 @@ class BackgroundJob(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_retries: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    # Один и тот же логический анализ может существовать только в одном
+    # активном экземпляре. После terminal-статуса ключ освобождается (NULL).
+    deduplication_key: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, unique=True, index=True
+    )
+    # Аренда делает захват задания атомарным между несколькими процессами.
+    # attempt_token защищает результат от запоздавшего старого worker-а.
+    worker_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    attempt_token: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    available_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

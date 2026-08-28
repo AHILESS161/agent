@@ -94,6 +94,84 @@ class TestOrder:
         assert classes_step["status"] == "skipped"
         assert result["classes_considered"] == [25]
 
+    async def test_progress_reports_real_analysis_phases(
+        self, async_session, application
+    ):
+        events: list[tuple[str, int, str]] = []
+
+        async def report(step: str, percent: int, detail: str) -> None:
+            events.append((step, percent, detail))
+
+        await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+            progress_callback=report,
+        )
+
+        assert [event[0] for event in events] == [
+            "classes",
+            "absolute_grounds",
+            "relative_grounds",
+            "recommendation",
+            "completed",
+        ]
+        assert events[-1][1] == 100
+
+    async def test_retry_reuses_completed_analysis_sections(
+        self, async_session, application
+    ):
+        from sqlalchemy import func, select
+
+        await _run(async_session, application)
+        assessments = list(
+            (
+                await async_session.execute(
+                    select(RiskAssessment).where(
+                        RiskAssessment.application_id == application.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # The mock intentionally returns cautious/inconclusive answers.  Mark
+        # both persisted sections as completed to exercise the retry contract.
+        for assessment in assessments:
+            assessment.is_inconclusive = False
+            assessment.inconclusive_reason = None
+            assessment.overall_risk = assessment.overall_risk or RiskLevel.low
+        await async_session.flush()
+        before = (
+            await async_session.execute(
+                select(func.count(RiskAssessment.id)).where(
+                    RiskAssessment.application_id == application.id
+                )
+            )
+        ).scalar_one()
+
+        result = await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+            retry_incomplete_only=True,
+        )
+        after = (
+            await async_session.execute(
+                select(func.count(RiskAssessment.id)).where(
+                    RiskAssessment.application_id == application.id
+                )
+            )
+        ).scalar_one()
+
+        assert after == before
+        assert [step["status"] for step in result["steps"][1:]] == [
+            "reused",
+            "reused",
+        ]
+
 
 class TestVerdict:
     async def test_verdict_is_always_produced(self, async_session, application):

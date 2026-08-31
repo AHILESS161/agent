@@ -1968,8 +1968,15 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
     !registrySearchSkipped
     &&
     latestRelativeAttempt?.is_inconclusive
-    && ((latestRelativeAttempt.provenance?.verification?.search_errors?.length || 0) > 0
-      || (latestRelativeAttempt.provenance?.verification?.records_examined || 0) === 0)
+    && (latestRelativeAttempt.provenance?.verification?.search_errors?.length || 0) > 0
+  );
+  const registryCoverageLimited = Boolean(
+    !registrySearchSkipped
+    && latestRelativeAttempt?.is_inconclusive
+    && (latestRelativeAttempt.provenance?.verification?.search_errors?.length || 0) === 0
+    && /(визуальн\S* сходств\S* .*не провер|не найдено достаточных совпадений)/i.test(
+      latestRelativeAttempt.inconclusive_reason || ""
+    )
   );
   const llmConnectionFailed = Boolean(
     latestAbsoluteAttempt?.is_inconclusive
@@ -1984,7 +1991,6 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
   const registryResultIsPrevious = Boolean(
     !registrySearchSkipped && report?.refresh_warnings?.relative_grounds && lastCompletedRelativeSection
   );
-  const retryAvailable = incomplete || registryResultIsPrevious;
   const registryFindings = effectiveRelativeSection?.findings || [];
   const registrySearchComplete = Boolean(
     effectiveRelativeSection
@@ -1992,6 +1998,11 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
     && !registrySearchSkipped
   );
   const absoluteCheckIncomplete = Boolean(absoluteSection?.is_inconclusive);
+  const retryAvailable = Boolean(
+    absoluteCheckIncomplete
+    || registryConnectionFailed
+    || (!registrySearchComplete && !registryCoverageLimited && !registrySearchSkipped)
+  );
   const unfinishedCheckTitle = absoluteCheckIncomplete
     ? "Что ещё нужно проверить: само обозначение"
     : !registrySearchComplete
@@ -2182,7 +2193,13 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
           </h3>
           <div className={cn("mt-4 space-y-3 text-sm leading-relaxed", registrySearchSkipped || !registrySearchComplete ? "text-amber-950/80" : "text-emerald-950/80")}>
             <p>{registryAdvice}</p>
-            {registryResultIsPrevious && <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">Не удалось обновить поиск по реестру. Сейчас показан последний успешно полученный результат; его можно обновить ещё раз.</p>}
+            {registryResultIsPrevious && (
+              <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">
+                {registryCoverageLimited
+                  ? "Показан последний завершённый поиск по словесной части. Новый запуск не нашёл дополнительных словесных кандидатов, а визуальный поиск по всему реестру для комбинированного знака этим источником недоступен. Повторный запуск не расширит охват проверки."
+                  : "Не удалось обновить поиск по реестру. Сейчас показан последний успешно полученный результат; поиск можно запустить ещё раз."}
+              </p>
+            )}
           </div>
         </section>
 

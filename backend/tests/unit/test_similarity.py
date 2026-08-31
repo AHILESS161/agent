@@ -59,13 +59,24 @@ class TestSemantic:
         """Вхождение одного обозначения в другое — признак по п.42."""
         assert semantic_similarity("СБЕР", "СБЕРБАНК") >= 0.5
 
+    def test_short_word_inside_unrelated_word_is_not_semantic_similarity(self):
+        assert semantic_similarity("КОТ", "КОТЛЕТА") == 0.0
+
     def test_unrelated_words(self):
         assert semantic_similarity("ЗВЕЗДА", "МОЛОТОК") == 0.0
 
 
 class TestGoodsHomogeneity:
-    def test_same_class_is_homogeneous(self):
-        assert goods_similarity([25], [25]) >= 0.9
+    def test_same_class_alone_is_not_proof_of_homogeneity(self):
+        value = goods_similarity([25], [25])
+        assert 0.6 <= value < 0.8
+
+    def test_same_class_and_identical_goods_are_homogeneous(self):
+        assert goods_similarity([25], [25], "детская одежда", "детская одежда") == 1.0
+
+    def test_different_goods_in_same_broad_class_are_not_automatically_homogeneous(self):
+        value = goods_similarity([9], [9], "компьютеры", "огнетушители")
+        assert value <= 0.65
 
     def test_overlapping_classes(self):
         assert goods_similarity([25, 35], [25]) >= 0.6
@@ -98,9 +109,39 @@ class TestConfusionAssessment:
 
     def test_low_similarity_but_identical_goods_can_confuse(self):
         """Обратное правило п.162: идентичность товаров усиливает риск."""
-        result = assess("СБЕР", "СБЕРБАНК", [36], [36])
-        assert result.goods >= 0.6
+        result = assess(
+            "СБЕР",
+            "СБЕРБАНК",
+            [36],
+            [36],
+            "банковские услуги",
+            "банковские услуги",
+        )
+        assert result.goods == 1.0
         assert result.overall > 0.5
+
+    def test_same_class_does_not_turn_unrelated_compounds_into_conflict(self):
+        result = assess(
+            "ДРУЖЕЛЮБНЫЙ СОСЕД",
+            "ЗЕЛЕНЫЙ ПОСАД",
+            [37],
+            [37],
+            "ремонт компьютеров",
+            "строительство домов",
+        )
+        assert result.confusion_likely is False
+        assert result.level.value in ("none", "low")
+
+    def test_shared_dominant_word_and_same_goods_remain_high_risk(self):
+        result = assess(
+            "ЮНАЯ МОДНИЦА",
+            "ДОНСКАЯ МОДНИЦА",
+            [25],
+            [25],
+            "детская одежда",
+            "одежда",
+        )
+        assert result.confusion_likely is True
 
     def test_reasons_are_explained(self):
         result = assess("АЛЬФА", "АЛФА", [36], [36])

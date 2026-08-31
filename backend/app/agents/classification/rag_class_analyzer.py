@@ -49,7 +49,7 @@ TRADE_QUERY_RE = re.compile(
 )
 
 # Запас на рассуждения модели плюс сам JSON-ответ.
-MAX_RESPONSE_TOKENS = 12000
+MAX_RESPONSE_TOKENS = 16000
 
 
 class ClassSuggestion(BaseModel):

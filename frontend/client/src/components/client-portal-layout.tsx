@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Bell, ChevronDown, LogOut, Plus, UserRound } from "lucide-react";
+import { Bell, ChevronDown, LogOut, UserRound } from "lucide-react";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -29,7 +29,7 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
 
   const links = [
     { href: "/dashboard", label: "Мои заявки" },
-    { href: "/start", label: "Как это работает" },
+    { href: "/how-it-works", label: "Как это работает" },
   ];
 
   return (
@@ -65,16 +65,6 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
           </nav>
 
           <div className="ml-auto flex items-center gap-2 sm:gap-3">
-            <Button
-              className="h-11 rounded-full bg-[#0d9f9b] px-4 text-white hover:bg-[#078984] sm:px-6"
-              onClick={() => setLocation("/start")}
-              data-testid="client-start-application"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">Проверить знак</span>
-              <span className="sm:hidden">Начать</span>
-            </Button>
-
             <Button
               variant="ghost"
               size="icon"

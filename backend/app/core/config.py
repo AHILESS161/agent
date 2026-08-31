@@ -48,10 +48,24 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o"
     LLM_BASE_URL: Optional[str] = None
     LLM_API_KEY: Optional[str] = None
+    # Если основная OpenAI-совместимая модель недоступна, не вернула финальный
+    # ответ или отдала невалидную структуру, текстовые проверки повторяются
+    # через GigaChat. Резерв включается только при наличии Authorization Key.
+    LLM_FALLBACK_ENABLED: bool = True
+    # Юридический анализ требует больше времени, чем короткий чат: reasoning-модель
+    # должна успеть сформировать итоговый JSON, а резервная — полноценно повторить
+    # проверку, если основной ответ оказался непригодным.
+    # DeepSeek на RouterAI иногда тратит больше минуты на reasoning до JSON.
+    # Не переключаемся на резерв, пока не дали основной модели реальный шанс
+    # завершить развёрнутую правовую проверку.
+    LLM_PRIMARY_ATTEMPT_TIMEOUT: float = 180.0
+    LLM_FALLBACK_ATTEMPT_TIMEOUT: float = 75.0
+    LLM_HTTP_TIMEOUT: float = 210.0
     # Отдельную мультимодальную модель используем только для анализа загруженного
     # изображения обозначения. Основная текстовая модель может не принимать картинки.
     VISION_MODEL: Optional[str] = "google/gemini-2.5-flash"
     GIGACHAT_AUTHORIZATION_KEY: Optional[str] = None
+    GIGACHAT_MODEL: str = "GigaChat-3-Ultra"
     GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"
     GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     GIGACHAT_VERIFY_SSL: bool = True

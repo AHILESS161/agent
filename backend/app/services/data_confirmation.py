@@ -39,8 +39,17 @@ async def data_confirmation_state(
                         "class_reject",
                         "class_added_manually",
                         "class_deleted",
+                        "class_narrow_apply",
                     }
                 ),
+            )
+        )
+    ).scalar_one_or_none()
+    latest_field_change = (
+        await session.execute(
+            select(func.max(AuditLog.id)).where(
+                AuditLog.application_id == application.id,
+                AuditLog.action.like("field.%"),
             )
         )
     ).scalar_one_or_none()
@@ -67,6 +76,7 @@ async def data_confirmation_state(
     latest_change = max(
         latest_application_change or 0,
         latest_class_change or 0,
+        latest_field_change or 0,
         latest_client_change or 0,
         latest_representative_change or 0,
     )

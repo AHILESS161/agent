@@ -83,6 +83,85 @@ class TestManualEntry:
         assert address["status"] == "confirmed"
         assert address["registry_value"].startswith("101000")
 
+    def test_preview_edit_updates_application_source(self, client, lawyer, case):
+        response = _add(
+            client,
+            lawyer,
+            case,
+            field_path="application.mark.description",
+            label="Описание обозначения",
+            value="Словесное обозначение выполнено кириллицей",
+        )
+        assert response.status_code == 201
+        application = client.get(
+            f"/api/v1/applications/{case}", headers=lawyer
+        ).json()
+        assert application["description_of_mark"] == "Словесное обозначение выполнено кириллицей"
+
+        form = client.get(
+            f"/api/v1/applications/{case}/draft-form", headers=lawyer
+        ).json()
+        field = next(
+            item
+            for section in form["sections"]
+            for item in section["fields"]
+            if item.get("source") == "application.mark.description"
+        )
+        assert field["value"] == "Словесное обозначение выполнено кириллицей"
+
+    def test_preview_edit_updates_applicant_card(self, client, lawyer, case):
+        response = _add(
+            client,
+            lawyer,
+            case,
+            field_path="application.applicant.name",
+            label="Наименование заявителя",
+            value='ООО "Новое наименование"',
+        )
+        assert response.status_code == 201
+        application = client.get(
+            f"/api/v1/applications/{case}", headers=lawyer
+        ).json()
+        applicant = client.get(
+            f"/api/v1/clients/{application['client_id']}", headers=lawyer
+        ).json()
+        assert applicant["full_name_or_company_name"] == 'ООО "Новое наименование"'
+
+    def test_preview_rejects_invalid_signature_date(self, client, lawyer, case):
+        response = _add(
+            client,
+            lawyer,
+            case,
+            field_path="application.signatory.date",
+            label="Дата подписания",
+            value="завтра",
+        )
+        assert response.status_code == 422
+
+    def test_preview_edit_invalidates_previous_data_confirmation(
+        self, client, lawyer, case
+    ):
+        confirmed = client.post(
+            f"/api/v1/applications/{case}/data-confirmation",
+            headers=lawyer,
+        )
+        assert confirmed.status_code == 201
+        assert confirmed.json()["confirmed"] is True
+
+        _add(
+            client,
+            lawyer,
+            case,
+            field_path="application.mark.description",
+            label="Описание обозначения",
+            value="Обновлённое описание",
+        )
+        state = client.get(
+            f"/api/v1/applications/{case}/data-confirmation",
+            headers=lawyer,
+        ).json()
+        assert state["confirmed"] is False
+
 
 @pytest.mark.api
 class TestCustomField:

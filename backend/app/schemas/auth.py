@@ -50,6 +50,20 @@ class UserUpdate(BaseModel):
     password: Optional[str] = Field(default=None, min_length=8)
 
 
+class ApplicantProfile(BaseModel):
+    """Реквизиты заявителя, которые клиент может повторно использовать в новых делах."""
+
+    type: str = Field(default="individual", pattern="^(company|sole_proprietor|individual)$")
+    full_name_or_company_name: Optional[str] = Field(default=None, max_length=500)
+    inn: Optional[str] = Field(default=None, max_length=20)
+    ogrn_or_ogrnip: Optional[str] = Field(default=None, max_length=20)
+    kpp: Optional[str] = Field(default=None, max_length=20)
+    address: Optional[str] = Field(default=None, max_length=1000)
+    country: str = Field(default="RU", max_length=3)
+    email: Optional[str] = Field(default=None, max_length=320)
+    phone: Optional[str] = Field(default=None, max_length=50)
+
+
 class UserResponse(BaseModel):
     """Public user representation."""
 
@@ -59,6 +73,7 @@ class UserResponse(BaseModel):
     email: str
     full_name: Optional[str] = None
     preferred_name: Optional[str] = None
+    applicant_profile_json: Optional[ApplicantProfile] = None
     role: UserRole
     is_active: bool
     created_at: datetime
@@ -85,3 +100,4 @@ class ProfileUpdate(BaseModel):
         max_length=120,
         description="Как обращаться к пользователю",
     )
+    applicant_profile_json: Optional[ApplicantProfile] = None

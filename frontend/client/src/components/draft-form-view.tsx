@@ -121,7 +121,7 @@ export function DraftFormView({ appId }: { appId: number }) {
     setBusy(field.label);
     try {
       await api.post(`/applications/${appId}/fields`, {
-        field_path: field.field_path ?? field.source,
+        field_path: field.source ?? field.field_path,
         label: field.label,
         value,
         is_sensitive: field.is_sensitive,

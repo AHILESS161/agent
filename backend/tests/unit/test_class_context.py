@@ -13,6 +13,7 @@ import pytest
 
 from app.infrastructure.database.models import NiceClassSuggestion
 from app.services.class_analysis import ClassContext
+from app.services.nice_catalog import load_catalog
 
 
 def _suggestion(number: int, description: str, approved: bool | None) -> NiceClassSuggestion:
@@ -54,6 +55,17 @@ class TestClassContext:
         described = context.describe()
         assert "25" in described
         assert "одежда" in described
+
+    def test_full_official_list_is_compacted_for_llm_context(self):
+        class_25 = next(item for item in load_catalog() if item.number == 25)
+        context = ClassContext(
+            approved=[_suggestion(25, class_25.full_description, True)],
+            suggested=[],
+        )
+        described = context.describe()
+        assert "полный официальный перечень" in described
+        assert str(len(class_25.items)) in described
+        assert len(described) < 2_000
 
 
 class TestSpecialisationDependsOnClasses:

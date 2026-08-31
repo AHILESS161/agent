@@ -371,9 +371,10 @@ class TestOfficialBlank:
     def test_mark_lands_in_field_540(self):
         payload = self._render({"application.mark.text": "ЗВЁЗДОЧКА"})
         document = self._document(payload)
-        cell = document.tables[0].rows[17].cells[2]
-        assert len(cell.tables) == 1
-        mark_cell = cell.tables[0].rows[0].cells[0]
+        table = document.tables[0]
+        header = table.rows[17].cells[2]
+        mark_cell = table.rows[19].cells[1]
+        assert len(header.tables) == 0
         text = mark_cell.text
         assert "ЗВЁЗДОЧКА" in text
         mark_runs = [
@@ -385,7 +386,7 @@ class TestOfficialBlank:
         assert mark_runs
         assert any(run.bold and run.font.size and run.font.size.pt >= 30 for run in mark_runs)
 
-    def test_image_lands_in_dedicated_box_below_540_and_description_in_571(self):
+    def test_image_replaces_text_inside_540_square_and_description_lands_in_571(self):
         import io
 
         from PIL import Image
@@ -403,16 +404,22 @@ class TestOfficialBlank:
             mark_type="combined",
         )
         document = self._document(payload)
-        outer = document.tables[0].rows[17].cells[2]
-        left, right = outer.tables[0].rows[0].cells
-        image_box = document.tables[0].rows[19].cells[1]
-        assert not left._tc.xpath(".//w:drawing")
-        assert "ЗВЁЗДОЧКА" not in left.text
+        table = document.tables[0]
+        header = table.rows[17].cells[2]
+        image_box = table.rows[19].cells[1]
+        description_box = table.rows[19].cells[16]
+        assert len(header.tables) == 0
         assert image_box._tc.xpath(".//w:drawing")
-        assert "Комбинированное обозначение" in right.text
-        assert "Транслитерация" not in right.text
-        assert "Перевод" not in right.text
-        assert not right._tc.xpath(".//w:drawing")
+        assert "ЗВЁЗДОЧКА" not in image_box.text
+        assert "Комбинированное обозначение" in description_box.text
+        assert "Транслитерация" not in description_box.text
+        assert "Перевод" not in description_box.text
+        assert not description_box._tc.xpath(".//w:drawing")
+        assert not any(
+            row.cells[1]._tc.xpath(".//w:drawing")
+            for row in table.rows[20:23]
+            if len(row.cells) > 1
+        )
 
     def test_paper_certificate_checkbox_follows_user_choice(self):
         unchecked = self._document(self._render({})).tables[0]
@@ -489,6 +496,44 @@ class TestOfficialBlank:
         assert "X" not in table.rows[23].cells[1].text
         assert "КРАСНЫЙ" not in table.rows[23].cells[2].text
 
+    def test_stale_color_claim_is_replaced_by_actual_image_colors(self):
+        import io
+
+        from PIL import Image
+
+        image = io.BytesIO()
+        Image.new("RGB", (800, 400), (238, 170, 190)).save(image, format="PNG")
+        document = self._document(self._render(
+            {"application.mark.colors": "красный"},
+            mark_image=image.getvalue(),
+            mark_type="combined",
+        ))
+        color_row = document.tables[0].rows[23].cells[2].text.casefold()
+        assert "розовый" in color_row
+        assert "красный" not in color_row
+
+    def test_teal_and_navy_are_not_reported_as_brown_and_gray(self):
+        import io
+
+        from PIL import Image, ImageDraw
+
+        image = Image.new("RGB", (800, 400), "white")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((20, 20, 380, 380), fill="#109c98")
+        draw.rectangle((420, 20, 780, 380), fill="#101044")
+        payload = io.BytesIO()
+        image.save(payload, format="PNG")
+        document = self._document(self._render(
+            {"application.mark.colors": "красный"},
+            mark_image=payload.getvalue(),
+            mark_type="combined",
+        ))
+        color_row = document.tables[0].rows[23].cells[2].text.casefold()
+        assert "бирюзовый" in color_row
+        assert "синий" in color_row
+        assert "коричневый" not in color_row
+        assert "серый" not in color_row
+
     def test_publication_caption_and_headers_are_removed(self):
         document = self._document(self._render({"application.mark.text": "ЗВЁЗДОЧКА"}))
         body_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
@@ -502,6 +547,15 @@ class TestOfficialBlank:
         rows = self._document(payload).tables[0].rows
         assert "25" in rows[44].cells[0].text
         assert "Одежда" in rows[44].cells[3].text
+
+    def test_long_full_class_list_is_referenced_as_attachment_in_main_form(self):
+        full_list = "; ".join(f"позиция {index}" for index in range(180))
+        payload = self._render({}, classes=[("25", full_list)])
+        rows = self._document(payload).tables[0].rows
+        assert "Полный перечень" in rows[44].cells[3].text
+        assert "отдельных листах" in rows[44].cells[3].text
+        assert "позиция 179" not in rows[44].cells[3].text
+        assert "X" in rows[93].cells[1].text
 
     def test_no_service_notes_inside_the_document(self):
         """В бланке заявления не должно быть пометок про черновик и AI."""

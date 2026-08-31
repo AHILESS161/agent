@@ -21,6 +21,7 @@ from app.api.dependencies import _get_llm_provider, _get_prompt_registry
 from app.core.security import get_current_user
 from app.document_processing.classifier import classify_document
 from app.document_processing.extractors import extract_registry_fields
+from app.document_processing.passport import extract_passport_prefill
 from app.infrastructure.database.models import DocumentKind, User
 from app.services import file_storage
 from app.schemas.intake import (
@@ -227,6 +228,38 @@ async def prefill_registrant(
     full_text = "\n".join(text for _, text in normalized_pages)
     classification = classify_document(full_text)
     pattern_set = _PREFILL_PATTERNS.get(classification.kind)
+
+    if classification.kind is DocumentKind.passport:
+        passport_fields = extract_passport_prefill(full_text)
+        fields = [
+            {
+                "field_id": item.field_id,
+                "label": item.label,
+                "value": item.value,
+                "confidence": 0.75,
+                "is_sensitive": True,
+                "form_target": item.form_target,
+                "page_number": None,
+            }
+            for item in passport_fields
+        ]
+        prefill = {item.form_target: item.value for item in passport_fields}
+        return {
+            "document_kind": classification.kind.value,
+            "kind_confidence": classification.confidence,
+            "client_type": "individual",
+            "prefill": prefill,
+            "fields": fields,
+            "warning": None if fields else (
+                "Паспорт распознан, но ФИО и адрес не удалось надёжно прочитать. "
+                "Документ можно сохранить в деле, а поля заполнить вручную."
+            ),
+            "notice": (
+                "Из паспорта предложены только ФИО и адрес регистрации. "
+                "Серия, номер, дата рождения, сведения о выдаче и код подразделения "
+                "не переносятся в заявление. Проверьте предложенные значения по документу."
+            ),
+        }
 
     if pattern_set is None:
         # Тип не распознан или для него нет правил (доверенность,

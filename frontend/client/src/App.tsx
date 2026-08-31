@@ -22,6 +22,7 @@ import AdminPage from "@/pages/admin";
 import NotFound from "@/pages/not-found";
 import ClientDashboardPage from "@/pages/client-dashboard";
 import ClientApplicationPage from "@/pages/client-application";
+import ClientHowItWorksPage from "@/pages/client-how-it-works";
 
 function ClientRoutes() {
   return (
@@ -29,6 +30,7 @@ function ClientRoutes() {
       <Switch>
         <Route path="/dashboard" component={ClientDashboardPage} />
         <Route path="/start" component={IntakePage} />
+        <Route path="/how-it-works" component={ClientHowItWorksPage} />
         <Route path="/intake">
           <Redirect to="/start" />
         </Route>

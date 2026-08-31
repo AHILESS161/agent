@@ -39,7 +39,17 @@ _HEADING_RE = re.compile(r"^###\s*Класс\s+(\d+)\.\s*(.+?)\s*$", re.MULTILIN
 
 # Классы 1–34 — товары, 35–45 — услуги.
 GOODS_MAX_CLASS = 34
-_GENERIC_ACTIVITY_STEMS = frozenset({stem("производство"), stem("изготовление")})
+_GENERIC_ACTIVITY_STEMS = frozenset(
+    {stem("производство"), stem("изготовление"), stem("услуги")}
+)
+
+# У официального перечня и бытового запроса иногда оказываются разные основы:
+# Snowball приводит «косметологические» к «косметологическ», а
+# «косметологов» — к «косметолог». Добавляем только узкие предметные основы,
+# чтобы не превращать поиск по справочнику в неточное совпадение по подстроке.
+_DOMAIN_PREFIX_STEMS = {
+    "косметолог": "косметолог",
+}
 
 
 @dataclass(frozen=True)
@@ -48,6 +58,7 @@ class NiceClass:
     title: str
     description: str
     search_terms: str = ""
+    items: tuple[str, ...] = ()
 
     @property
     def kind(self) -> str:
@@ -59,7 +70,13 @@ class NiceClass:
             "title": self.title,
             "description": self.description,
             "kind": self.kind,
+            "item_count": len(self.items),
         }
+
+    @property
+    def full_description(self) -> str:
+        """Полный официальный перечень позиций класса для заявления."""
+        return "; ".join(self.items) if self.items else self.description
 
 
 @lru_cache(maxsize=1)
@@ -91,7 +108,8 @@ def load_catalog() -> tuple[NiceClass, ...]:
         if section:
             end = start + section.start()
 
-        body = " ".join(text[start:end].split())
+        raw_body = text[start:end]
+        body = " ".join(raw_body.split())
         # В актуальном снимке после заголовка идёт полный официальный перечень.
         # API отдаёт пользователю компактное описание, а поиск учитывает весь
         # перечень — иначе запросы вроде «смартфон» или «цепочка для кошелька»
@@ -102,12 +120,22 @@ def load_catalog() -> tuple[NiceClass, ...]:
         )
         description = official_heading.group(1).strip() if official_heading else body
         title = description if official_heading else match.group(2).strip()
+        items = tuple(
+            value.strip()
+            for value in re.findall(
+                r"^-\s*\d{6}\s*—\s*(.+?)\s*$",
+                raw_body,
+                flags=re.MULTILINE,
+            )
+            if value.strip()
+        )
         classes.append(
             NiceClass(
                 number=number,
                 title=title,
                 description=description,
                 search_terms=body,
+                items=items,
             )
         )
 
@@ -167,6 +195,9 @@ def search(query: str = "", limit: int = 45) -> list[NiceClass]:
     }
 
     scored: list[tuple[float, int, NiceClass]] = []
+    preferred_class = (
+        44 if "косметолог" in normalized and "услуг" in normalized else None
+    )
     for item in catalog:
         title_stems = _title_stems(item)
         full_stems = _full_stems(item)
@@ -186,6 +217,8 @@ def search(query: str = "", limit: int = 45) -> list[NiceClass]:
             score += 4
         if title_lower.startswith(normalized):
             score += 8
+        if item.number == preferred_class:
+            score += 50
         scored.append((score, -item.number, item))
 
     scored.sort(key=lambda row: (-row[0], -row[1]))
@@ -194,11 +227,15 @@ def search(query: str = "", limit: int = 45) -> list[NiceClass]:
 
 def _stems(text: str) -> frozenset[str]:
     """Основы значимых слов текста."""
-    return frozenset(
-        stem(word)
-        for word in re.split(r"\W+", text.lower())
-        if len(word) >= 3
-    )
+    result: set[str] = set()
+    for word in re.split(r"\W+", text.lower().replace("ё", "е")):
+        if len(word) < 3:
+            continue
+        result.add(stem(word))
+        for prefix, canonical in _DOMAIN_PREFIX_STEMS.items():
+            if word.startswith(prefix):
+                result.add(canonical)
+    return frozenset(result)
 
 
 @lru_cache(maxsize=64)

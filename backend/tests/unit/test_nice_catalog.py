@@ -22,6 +22,16 @@ class TestCatalog:
         for item in load_catalog():
             assert item.title, item.number
             assert item.description, item.number
+            assert item.items, item.number
+            assert item.full_description, item.number
+
+    def test_full_description_is_not_only_the_class_heading(self):
+        """Заголовок класса не заменяет перечень для официальной заявки."""
+        catalog = {item.number: item for item in load_catalog()}
+        clothing = catalog[25]
+        assert len(clothing.items) > 100
+        assert len(clothing.full_description) > len(clothing.description) * 3
+        assert "одежда" in clothing.full_description.casefold()
 
     def test_goods_and_services_are_distinguished(self):
         """Классы 1–34 — товары, 35–45 — услуги."""
@@ -64,6 +74,10 @@ class TestSearch:
     def test_household_appliance_repair_prefers_repair_services(self):
         """«Бытовой» не должен уводить ремонт техники в канцтовары."""
         assert search("ремонт бытовой техники", limit=1)[0].number == 37
+
+    def test_cosmetology_word_form_finds_medical_and_beauty_services(self):
+        """Бытовая формулировка должна находить услуги косметологов класса 44."""
+        assert search("косметологические услуги", limit=1)[0].number == 44
 
     @pytest.mark.parametrize(
         ("query", "expected"),

@@ -231,6 +231,30 @@ class TestMe:
         body = response.json()
         assert body["email"] == VALID_USER["email"]
 
+    async def test_client_can_save_reusable_applicant_profile(self, client: TestClient, admin_auth):
+        token = self._register_and_login(client, admin_auth)
+        headers = {"Authorization": f"Bearer {token}"}
+        saved = client.patch(
+            "/api/v1/auth/me",
+            headers=headers,
+            json={
+                "applicant_profile_json": {
+                    "type": "company",
+                    "full_name_or_company_name": "ООО Регистр",
+                    "inn": "7700000000",
+                    "ogrn_or_ogrnip": "1027700000000",
+                    "kpp": "770001001",
+                    "address": "Москва",
+                    "country": "RU",
+                    "email": "office@example.ru",
+                    "phone": "+7 900 000-00-00",
+                }
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["applicant_profile_json"]["inn"] == "7700000000"
+        assert client.get("/api/v1/auth/me", headers=headers).json()["applicant_profile_json"]["kpp"] == "770001001"
+
     def test_me_without_token_returns_401(self, client: TestClient):
         """Unauthenticated /me request must return 401."""
         response = client.get("/api/v1/auth/me")

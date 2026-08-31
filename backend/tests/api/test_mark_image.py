@@ -110,6 +110,19 @@ def test_upload_preview_and_detach_mark_image(client, mark_case):
 
 
 @pytest.mark.api
+def test_mark_image_can_be_inspected_before_application_creation(client, mark_case):
+    headers, _ = mark_case
+    inspected = client.post(
+        "/api/v1/mark-images/inspect",
+        files={"file": ("logo.png", _png(), "image/png")},
+        headers=headers,
+    )
+    assert inspected.status_code == 200, inspected.text
+    assert inspected.json()["recognized_text"] == "РЕГИСТР"
+    assert inspected.json()["dominant_colors"] == ["#0C9E9A"]
+
+
+@pytest.mark.api
 def test_mark_image_rejects_pdf_and_word_mark(client, mark_case):
     headers, application_id = mark_case
     pdf = client.post(

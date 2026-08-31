@@ -307,6 +307,55 @@ class TestFilingPackage:
         assert confirmed.json()["document_kind"] == "power_of_attorney"
         assert confirmed.json()["kind_requires_confirmation"] is False
 
+    async def test_passport_is_explicitly_excluded_from_filing_zip(self, client, api_user_factory):
+        await api_user_factory("filing-passport@test.ru", UserRole.client)
+        headers = login_headers(client, "filing-passport@test.ru")
+        applicant = client.post(
+            "/api/v1/clients",
+            json={"type": "individual", "full_name_or_company_name": "Иван Тестов"},
+            headers=headers,
+        ).json()
+        application = client.post(
+            "/api/v1/applications",
+            json={"client_id": applicant["id"], "mark_name": "ТЕСТ", "mark_type": "word"},
+            headers=headers,
+        ).json()
+        upload = client.post(
+            f"/api/v1/applications/{application['id']}/source-documents",
+            files={
+                "file": (
+                    "passport.txt",
+                    "ПАСПОРТ ГРАЖДАНИНА РОССИЙСКОЙ ФЕДЕРАЦИИ\nПаспорт выдан УМВД России",
+                    "text/plain",
+                )
+            },
+            headers=headers,
+        )
+        assert upload.status_code == 201, upload.text
+        confirmed = client.put(
+            f"/api/v1/source-documents/{upload.json()['id']}/kind",
+            json={"document_kind": "passport"},
+            headers=headers,
+        )
+        assert confirmed.status_code == 200, confirmed.text
+
+        status = client.get(
+            f"/api/v1/applications/{application['id']}/filing-package",
+            headers=headers,
+        ).json()
+
+        assert status["excluded_documents"] == [
+            {
+                "filename": "passport.txt",
+                "title": "Паспорт заявителя",
+                "reason": (
+                    "Хранится только в защищённом деле для сверки данных. "
+                    "Копия паспорта не включается в ZIP и не направляется в Роспатент."
+                ),
+            }
+        ]
+        assert "passport.txt" not in {item["filename"] for item in status["documents"]}
+
     async def test_incomplete_case_returns_actionable_blockers(self, client, api_user_factory):
         await api_user_factory("filing-blocked@test.ru", UserRole.client)
         headers = login_headers(client, "filing-blocked@test.ru")

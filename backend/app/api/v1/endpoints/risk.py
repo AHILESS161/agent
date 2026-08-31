@@ -28,9 +28,12 @@ from app.infrastructure.database.models import (
     UserRole,
 )
 from app.infrastructure.database.session import get_session
-from app.services.class_analysis import run_class_analysis
+from app.services.class_analysis import load_class_context, run_class_analysis
 from app.services.conflict_search import run_conflict_search
-from app.services.full_analysis import run_full_analysis
+from app.services.full_analysis import (
+    latest_completed_for_classes,
+    run_full_analysis,
+)
 from app.services.nice_catalog import search as nice_catalog_search
 from app.services.risk_analysis import (
     run_absolute_grounds_analysis,
@@ -504,8 +507,12 @@ async def risk_report(
     application = await _load_application(session, application_id)
     _require_client_access(current_user, application)
 
+    class_context = await load_class_context(session, application_id)
+    current_classes = class_context.as_numbers()
     sections: dict[str, Any] = {}
     last_completed_sections: dict[str, Any] = {}
+    latest_attempts: dict[str, Any] = {}
+    refresh_warnings: dict[str, str] = {}
     for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
         latest = (
             await session.execute(
@@ -520,24 +527,45 @@ async def risk_report(
                 )
             )
         ).scalar_one_or_none()
-        sections[kind.value] = serialize_assessment(latest) if latest else None
-        last_completed = (
-            await session.execute(
-                _loaded(
-                    select(RiskAssessment)
-                    .where(
-                        RiskAssessment.application_id == application_id,
-                        RiskAssessment.analysis_kind == kind,
-                        RiskAssessment.is_inconclusive.is_(False),
+        latest_attempts[kind.value] = serialize_assessment(latest) if latest else None
+        last_completed = await latest_completed_for_classes(
+            session,
+            application_id,
+            kind,
+            classes=current_classes,
+            classes_confirmed=class_context.is_confirmed,
+        )
+        if last_completed is not None:
+            last_completed = (
+                await session.execute(
+                    _loaded(
+                        select(RiskAssessment).where(
+                            RiskAssessment.id == last_completed.id
+                        )
                     )
-                    .order_by(RiskAssessment.id.desc())
-                    .limit(1)
                 )
-            )
-        ).scalar_one_or_none()
+            ).scalar_one()
         last_completed_sections[kind.value] = (
             serialize_assessment(last_completed) if last_completed else None
         )
+        effective = latest
+        latest_was_pipeline_skip = bool(
+            latest
+            and isinstance(latest.verification_json, dict)
+            and latest.verification_json.get("skipped") is True
+        )
+        if (
+            latest
+            and latest.is_inconclusive
+            and last_completed is not None
+            and not latest_was_pipeline_skip
+        ):
+            effective = last_completed
+            refresh_warnings[kind.value] = (
+                latest.inconclusive_reason
+                or "Повторную проверку временно не удалось завершить."
+            )
+        sections[kind.value] = serialize_assessment(effective) if effective else None
 
     order = ["low", "medium", "high", "critical"]
     levels = [
@@ -560,7 +588,9 @@ async def risk_report(
     inconclusive_sections = [
         section.get("inconclusive_reason") or f"Не завершена {section_labels.get(name, name)}"
         for name, section in sections.items()
-        if section and section.get("is_inconclusive")
+        if section
+        and section.get("is_inconclusive")
+        and not section.get("provenance", {}).get("verification", {}).get("skipped")
     ]
     class_contexts = [
         section
@@ -594,6 +624,8 @@ async def risk_report(
         # визуально уничтожать уже полученный результат. Клиент видит отдельно
         # состояние последней попытки и последний завершённый анализ.
         "last_completed_sections": last_completed_sections,
+        "latest_attempts": latest_attempts,
+        "refresh_warnings": refresh_warnings,
         "missing_sections": missing_sections,
         "incomplete_checks": incomplete_checks,
         "classes_confirmed": classes_confirmed,

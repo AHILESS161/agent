@@ -43,6 +43,17 @@ interface UserResponseDto {
   preferred_name: string | null;
   role: User["role"];
   is_active: boolean;
+  applicant_profile_json: {
+    type: "company" | "sole_proprietor" | "individual";
+    full_name_or_company_name?: string | null;
+    inn?: string | null;
+    ogrn_or_ogrnip?: string | null;
+    kpp?: string | null;
+    address?: string | null;
+    country?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
 }
 
 function toUser(dto: UserResponseDto): User {
@@ -55,6 +66,17 @@ function toUser(dto: UserResponseDto): User {
     preferredName: dto.preferred_name,
     role: dto.role,
     isActive: dto.is_active,
+    applicantProfile: dto.applicant_profile_json ? {
+      type: dto.applicant_profile_json.type,
+      fullNameOrCompanyName: dto.applicant_profile_json.full_name_or_company_name,
+      inn: dto.applicant_profile_json.inn,
+      ogrnOrOgrnip: dto.applicant_profile_json.ogrn_or_ogrnip,
+      kpp: dto.applicant_profile_json.kpp,
+      address: dto.applicant_profile_json.address,
+      country: dto.applicant_profile_json.country,
+      email: dto.applicant_profile_json.email,
+      phone: dto.applicant_profile_json.phone,
+    } : null,
   };
 }
 

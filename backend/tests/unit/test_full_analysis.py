@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from app.infrastructure.database.models import (
     AnalysisKind,
@@ -142,6 +143,9 @@ class TestOrder:
             assessment.is_inconclusive = False
             assessment.inconclusive_reason = None
             assessment.overall_risk = assessment.overall_risk or RiskLevel.low
+            # A pipeline skip is not a completed registry result.  This test
+            # converts both rows into completed sections deliberately.
+            assessment.verification_json = {}
         await async_session.flush()
         before = (
             await async_session.execute(
@@ -171,6 +175,253 @@ class TestOrder:
             "reused",
             "reused",
         ]
+
+    async def test_failed_refresh_keeps_completed_result_for_same_classes(
+        self, async_session, application, monkeypatch
+    ):
+        """Сбой обновления не уничтожает готовую проверку той же области охраны."""
+        import app.services.full_analysis as full_analysis_module
+
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id, class_number=25, approved=True
+            )
+        )
+        await async_session.flush()
+
+        for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
+            async_session.add(
+                RiskAssessment(
+                    application_id=application.id,
+                    analysis_kind=kind,
+                    overall_risk=RiskLevel.low,
+                    summary="Проверка завершена.",
+                    is_inconclusive=False,
+                    classes_considered_json=[25],
+                    classes_confirmed=True,
+                )
+            )
+        # Последняя попытка поиска не завершилась, поэтому retry должен её
+        # повторить, но при повторном сбое сохранить предыдущий готовый вывод.
+        async_session.add(
+            RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.relative_grounds,
+                is_inconclusive=True,
+                inconclusive_reason="Реестр временно не ответил.",
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+        )
+        await async_session.flush()
+
+        async def failed_registry_refresh(*args, **kwargs):
+            attempt = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.relative_grounds,
+                is_inconclusive=True,
+                inconclusive_reason="Не удалось обновить реестр.",
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(attempt)
+            await async_session.flush()
+            return attempt
+
+        monkeypatch.setattr(
+            full_analysis_module, "run_conflict_search", failed_registry_refresh
+        )
+
+        result = await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+            retry_incomplete_only=True,
+        )
+
+        relative_step = next(
+            step for step in result["steps"] if step["step"] == "relative_grounds"
+        )
+        assert relative_step["status"] == "reused_after_refresh_failure"
+        assert result["is_complete"] is True
+        assert result["overall_risk"] == "low"
+        assert result["refresh_warnings"] == [
+            {
+                "step": "relative_grounds",
+                "detail": "Не удалось обновить реестр.",
+            }
+        ]
+
+    async def test_completed_absolute_result_is_not_reused_after_facts_change(
+        self, async_session, application
+    ):
+        """Одинаковый класс не делает старый вывод пригодным для нового товара."""
+        from app.services.full_analysis import latest_completed_for_classes
+
+        assessment = RiskAssessment(
+            application_id=application.id,
+            analysis_kind=AnalysisKind.absolute_grounds,
+            overall_risk=RiskLevel.low,
+            summary="Проверка завершена.",
+            is_inconclusive=False,
+            classes_considered_json=[25],
+            classes_confirmed=True,
+            verification_json={"input_fingerprint": "old-facts"},
+        )
+        async_session.add(assessment)
+        await async_session.flush()
+
+        stale = await latest_completed_for_classes(
+            async_session,
+            application.id,
+            AnalysisKind.absolute_grounds,
+            classes=[25],
+            classes_confirmed=True,
+            input_fingerprint="new-facts",
+        )
+        current = await latest_completed_for_classes(
+            async_session,
+            application.id,
+            AnalysisKind.absolute_grounds,
+            classes=[25],
+            classes_confirmed=True,
+            input_fingerprint="old-facts",
+        )
+
+        assert stale is None
+        assert current is assessment
+
+    async def test_high_absolute_risk_stops_registry_search(
+        self, async_session, application, monkeypatch
+    ):
+        """An independent refusal ground must stop the expensive next phase."""
+        import app.services.full_analysis as full_analysis_module
+
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id, class_number=25, approved=True
+            )
+        )
+        await async_session.flush()
+
+        async def high_absolute(*args, **kwargs):
+            assessment = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.absolute_grounds,
+                overall_risk=RiskLevel.high,
+                summary="Обозначение содержит самостоятельное основание для отказа.",
+                is_inconclusive=False,
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(assessment)
+            await async_session.flush()
+            return assessment
+
+        registry_called = False
+
+        async def registry_search(*args, **kwargs):
+            nonlocal registry_called
+            registry_called = True
+            raise AssertionError("Registry search must not run after a high absolute risk")
+
+        monkeypatch.setattr(
+            full_analysis_module, "run_absolute_grounds_analysis", high_absolute
+        )
+        monkeypatch.setattr(full_analysis_module, "run_conflict_search", registry_search)
+
+        result = await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+        )
+
+        assert registry_called is False
+        assert result["overall_risk"] == "high"
+        assert result["is_complete"] is True
+        relative_step = next(
+            step for step in result["steps"] if step["step"] == "relative_grounds"
+        )
+        assert relative_step["status"] == "not_required"
+
+        relative = (
+            await async_session.execute(
+                select(RiskAssessment)
+                .where(
+                    RiskAssessment.application_id == application.id,
+                    RiskAssessment.analysis_kind == AnalysisKind.relative_grounds,
+                )
+                .order_by(RiskAssessment.id.desc())
+                .limit(1)
+            )
+        ).scalar_one()
+        assert relative.search_mode.value == "not_performed"
+        assert relative.verification_json["skipped"] is True
+        assert relative.verification_json["blocked_by"] == "absolute_grounds"
+
+    async def test_low_absolute_risk_allows_registry_search(
+        self, async_session, application, monkeypatch
+    ):
+        import app.services.full_analysis as full_analysis_module
+
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id, class_number=25, approved=True
+            )
+        )
+        await async_session.flush()
+
+        async def low_absolute(*args, **kwargs):
+            assessment = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.absolute_grounds,
+                overall_risk=RiskLevel.low,
+                summary="Самостоятельных препятствий не выявлено.",
+                is_inconclusive=False,
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(assessment)
+            await async_session.flush()
+            return assessment
+
+        registry_called = False
+
+        async def registry_search(*args, **kwargs):
+            nonlocal registry_called
+            registry_called = True
+            assessment = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.relative_grounds,
+                overall_risk=RiskLevel.low,
+                summary="Поиск по реестру завершён.",
+                is_inconclusive=False,
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(assessment)
+            await async_session.flush()
+            return assessment
+
+        monkeypatch.setattr(
+            full_analysis_module, "run_absolute_grounds_analysis", low_absolute
+        )
+        monkeypatch.setattr(full_analysis_module, "run_conflict_search", registry_search)
+
+        result = await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+        )
+
+        assert registry_called is True
+        relative_step = next(
+            step for step in result["steps"] if step["step"] == "relative_grounds"
+        )
+        assert relative_step["status"] == "ok"
 
 
 class TestVerdict:

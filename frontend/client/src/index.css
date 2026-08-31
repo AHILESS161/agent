@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+@media (min-width: 1024px) {
+  .login-shell { height: 100svh; overflow: hidden; }
+}
+
+@media (min-width: 1024px) and (max-height: 790px) {
+  .login-card { transform: scale(.88); transform-origin: center; }
+}
+
+@media (min-width: 1024px) and (max-height: 690px) {
+  .login-card { transform: scale(.78); }
+}
+
 /* LEGAL-TECH PALETTE — Deep navy surfaces, teal accent, amber warnings */
 
 :root {

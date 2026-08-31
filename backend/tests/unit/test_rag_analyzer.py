@@ -11,6 +11,7 @@ import json
 import pytest
 
 from app.agents.legal.rag_analyzer import RagAbsoluteGroundsAnalyzer, _parse_json
+from app.infrastructure.llm.base import LLMResponse
 from app.infrastructure.rag.store import StoredChunk
 
 CHUNK_TEXT = (
@@ -105,6 +106,40 @@ class TestVerifiedFindingsSurvive:
         assert outcome.verification["findings_confirmed"] == 1
 
 
+class TestGroundContextCoverage:
+    def test_morality_rule_is_not_displaced_by_descriptiveness(self):
+        contents = [
+            "различительная способность обозначения отсутствует",
+            "описательное обозначение характеризует вид качество назначение товара",
+            "вошло во всеобщее употребление общепринятый термин символ",
+            "приобретённая различительная способность неохраняемые элементы",
+            "ложное обозначение вводит потребителя в заблуждение изготовитель",
+            "противоречит общественным интересам принципам гуманности и морали",
+            "государственные символы гербы флаги официальные наименования",
+            "объекты культурного наследия культурные ценности",
+        ]
+        ground_chunks = [
+            StoredChunk(
+                chunk_id=index,
+                source_id=index,
+                source_name="Правила экспертизы",
+                source_version="v1",
+                content=content,
+                anchor=f"ст. 1483, блок {index}",
+                article="1483",
+                clause=str(index),
+            )
+            for index, content in enumerate(contents, start=1)
+        ]
+
+        retrieved = RagAbsoluteGroundsAnalyzer(
+            FakeLLM(None), ground_chunks
+        )._retrieve_grounds_context({"mark_text": "Пенис"})
+
+        assert any("гуманности и морали" in hit.chunk.content for hit in retrieved)
+        assert len(retrieved) == 8
+
+
 class TestHallucinationsAreRejected:
     """Главное свойство контура."""
 
@@ -196,6 +231,33 @@ class TestNoAdverseFindings:
             outcome.verification["findings_rejected"][0]["reason"]
         )
 
+    async def test_customer_image_is_not_promoted_to_high_descriptive_risk(self, chunks):
+        payload = json.loads(
+            _valid_response("состоящих только из элементов, характеризующих товары")
+        )
+        payload["findings"][0].update({
+            "level": "high",
+            "explanation": (
+                "Словосочетание «Юная модница» указывает на предполагаемого "
+                "покупателя детской одежды и обладает слабой различительной способностью."
+            ),
+            "case_facts_used": [
+                "Обозначение «Юная модница» для детской одежды"
+            ],
+        })
+        outcome = await RagAbsoluteGroundsAnalyzer(
+            FakeLLM(json.dumps(payload, ensure_ascii=False)), chunks
+        ).analyse({
+            **FACTS,
+            "mark_text": "Юная модница",
+            "goods_services": "детская одежда",
+            "classes": "25",
+        })
+
+        assert outcome.is_conclusive
+        assert outcome.result.overall_risk.value == "low"
+        assert outcome.result.findings == []
+
     async def test_empty_findings_are_conclusive_low_risk(self, chunks):
         payload = json.loads(_valid_response("состоящих только из элементов, характеризующих товары"))
         payload.update({
@@ -250,6 +312,159 @@ class TestInvalidModelOutput:
 
         assert not outcome.is_conclusive
         assert outcome.insufficient is not None
+
+    async def test_invalid_primary_json_is_retried_with_gigachat(self, chunks):
+        class PrimaryWithFallback:
+            model = "deepseek"
+
+            def __init__(self) -> None:
+                self.primary_calls = 0
+                self.fallback_calls = 0
+
+            async def generate(self, **kwargs):
+                self.primary_calls += 1
+                return LLMResponse(
+                    content="оборванный ответ без JSON",
+                    model="deepseek",
+                    tokens_input=10,
+                    tokens_output=10,
+                    latency_ms=1,
+                )
+
+            async def generate_fallback(self, **kwargs):
+                self.fallback_calls += 1
+                return LLMResponse(
+                    content=_valid_response(
+                        "состоящих только из элементов, характеризующих товары"
+                    ),
+                    model="GigaChat-3-Ultra",
+                    tokens_input=10,
+                    tokens_output=10,
+                    latency_ms=1,
+                )
+
+            def response_used_fallback(self, response):
+                return response.model == "GigaChat-3-Ultra"
+
+        llm = PrimaryWithFallback()
+        outcome = await RagAbsoluteGroundsAnalyzer(llm, chunks).analyse(FACTS)
+
+        assert outcome.is_conclusive
+        assert llm.primary_calls == 1
+        assert llm.fallback_calls == 1
+        assert outcome.verification["llm_fallback_used"] is True
+        assert outcome.verification["llm_model"] == "GigaChat-3-Ultra"
+
+    async def test_research_gap_is_retried_with_primary_before_fallback(self, chunks):
+        empty_result = json.dumps(
+            {
+                "overall_risk": "low",
+                "summary": "Надёжный правовой вывод по обозначению пока не сформирован",
+                "findings": [],
+                "limitations": ["Предварительная оценка"],
+                "missing_data": [
+                    "Отсутствуют примеры практики Роспатента по аналогичному обозначению"
+                ],
+                "requires_specialist_review": True,
+            },
+            ensure_ascii=False,
+        )
+
+        class PrimaryWithFallback:
+            model = "deepseek"
+
+            def __init__(self) -> None:
+                self.primary_calls = 0
+                self.fallback_calls = 0
+
+            async def generate(self, **kwargs):
+                self.primary_calls += 1
+                content = (
+                    empty_result
+                    if self.primary_calls == 1
+                    else _valid_response(
+                        "состоящих только из элементов, характеризующих товары"
+                    )
+                )
+                return LLMResponse(
+                    content=content,
+                    model="deepseek",
+                    tokens_input=10,
+                    tokens_output=10,
+                    latency_ms=1,
+                )
+
+            async def generate_fallback(self, **kwargs):
+                self.fallback_calls += 1
+                raise AssertionError("резерв не должен вызываться после успешного retry")
+
+            def response_used_fallback(self, response):
+                return response.model == "GigaChat-3-Ultra"
+
+        llm = PrimaryWithFallback()
+        outcome = await RagAbsoluteGroundsAnalyzer(llm, chunks).analyse(FACTS)
+
+        assert outcome.is_conclusive
+        assert llm.primary_calls == 2
+        assert llm.fallback_calls == 0
+        assert outcome.verification["primary_retry_attempted"] is True
+        assert outcome.verification["llm_fallback_used"] is False
+
+    async def test_research_gap_uses_gigachat_when_primary_retry_is_empty(self, chunks):
+        empty_result = json.dumps(
+            {
+                "overall_risk": "low",
+                "summary": "Надёжный правовой вывод по обозначению пока не сформирован",
+                "findings": [],
+                "limitations": ["Предварительная оценка"],
+                "missing_data": [
+                    "Нет судебной практики и словарной статьи для аналогичного слова"
+                ],
+                "requires_specialist_review": True,
+            },
+            ensure_ascii=False,
+        )
+
+        class EmptyPrimaryWithFallback:
+            model = "deepseek"
+
+            def __init__(self) -> None:
+                self.primary_calls = 0
+                self.fallback_calls = 0
+
+            async def generate(self, **kwargs):
+                self.primary_calls += 1
+                return LLMResponse(
+                    content=empty_result,
+                    model="deepseek",
+                    tokens_input=10,
+                    tokens_output=10,
+                    latency_ms=1,
+                )
+
+            async def generate_fallback(self, **kwargs):
+                self.fallback_calls += 1
+                return LLMResponse(
+                    content=_valid_response(
+                        "состоящих только из элементов, характеризующих товары"
+                    ),
+                    model="GigaChat-3-Ultra",
+                    tokens_input=10,
+                    tokens_output=10,
+                    latency_ms=1,
+                )
+
+            def response_used_fallback(self, response):
+                return response.model == "GigaChat-3-Ultra"
+
+        llm = EmptyPrimaryWithFallback()
+        outcome = await RagAbsoluteGroundsAnalyzer(llm, chunks).analyse(FACTS)
+
+        assert outcome.is_conclusive
+        assert llm.primary_calls == 2
+        assert llm.fallback_calls == 1
+        assert outcome.verification["primary_retry_attempted"] is True
+        assert outcome.verification["llm_fallback_used"] is True
 
     async def test_empty_knowledge_base_yields_insufficient_data(self):
         llm = FakeLLM(_valid_response("любая цитата"))

@@ -159,5 +159,6 @@ class ApplicationListItem(BaseModel):
     assigned_lawyer_id: Optional[int] = None
     assigned_manager_id: Optional[int] = None
     representative_id: Optional[int] = None
+    client_progress_step: int = Field(default=1, ge=1, le=4)
     created_at: datetime
     updated_at: datetime

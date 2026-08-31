@@ -12,6 +12,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -41,10 +43,10 @@ logger = get_logger(__name__)
 
 # RouterAI/DeepSeek обычно формирует правовой JSON дольше короткого чат-ответа:
 # модель сначала сопоставляет факты с несколькими основаниями статьи 1483.
-# Прежних 15 секунд не хватало даже исправному запросу, поэтому интерфейс часто
-# показывал незавершённую проверку как будто это риск. Минутный предел всё ещё
-# защищает клиентский путь от зависшего внешнего сервиса.
-ABSOLUTE_ANALYSIS_BUDGET_SECONDS = 60.0
+# Общий бюджет включает до 180 секунд на DeepSeek и до 75 секунд на резервный
+# GigaChat, а также небольшой запас на проверку JSON и юридических цитат.
+# Проверка идёт в фоне, поэтому клиент может уйти со страницы, не прерывая задачу.
+ABSOLUTE_ANALYSIS_BUDGET_SECONDS = 265.0
 
 # Идентификатор фрагмента в контексте модели: "kb-<id чанка>".
 _CITATION_ID_RE = re.compile(r"^kb-(\d+)$")
@@ -96,6 +98,20 @@ class AnalysisContext:
             "image_attached": self.image_attached,
         }
 
+    def fingerprint(self) -> str:
+        """Отпечаток всех фактов, от которых зависит правовой вывод."""
+        normalized = {
+            key: value.strip() if isinstance(value, str) else value
+            for key, value in self.as_dict().items()
+        }
+        payload = json.dumps(
+            normalized,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     @property
     def is_sufficient(self) -> bool:
         """Минимум для осмысленного анализа — само обозначение."""
@@ -132,6 +148,9 @@ async def run_absolute_grounds_analysis(
         search_mode=SearchMode.not_performed,
         requires_specialist_review=True,
         created_by_user_id=user_id,
+        classes_considered_json=class_context.as_numbers(),
+        classes_confirmed=class_context.is_confirmed,
+        verification_json={"input_fingerprint": context.fingerprint()},
     )
 
     # --- недостаточно данных дела ---
@@ -196,6 +215,7 @@ async def run_absolute_grounds_analysis(
         assessment.verification_json = {
             "timed_out": True,
             "budget_seconds": ABSOLUTE_ANALYSIS_BUDGET_SECONDS,
+            "input_fingerprint": context.fingerprint(),
         }
         session.add(assessment)
         await session.flush()
@@ -207,7 +227,13 @@ async def run_absolute_grounds_analysis(
         return assessment
 
     assessment.sources_used_json = outcome.sources_used
-    assessment.verification_json = outcome.verification
+    assessment.verification_json = {
+        **outcome.verification,
+        "input_fingerprint": context.fingerprint(),
+    }
+    assessment.model_name = (
+        outcome.verification.get("llm_model") or assessment.model_name
+    )
 
     if not outcome.is_conclusive:
         assessment.is_inconclusive = True
@@ -262,8 +288,6 @@ async def run_absolute_grounds_analysis(
 
     assessment.limitations_json = limitations
     assessment.missing_data_json = missing
-    assessment.classes_considered_json = class_context.as_numbers()
-    assessment.classes_confirmed = class_context.is_confirmed
     session.add(assessment)
     await session.flush()
 

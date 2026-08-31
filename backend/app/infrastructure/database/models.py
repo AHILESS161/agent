@@ -211,6 +211,7 @@ class User(Base):
     # Отчество», и приветствие по первому слову выходит по фамилии —
     # так к людям не обращаются.
     preferred_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    applicant_profile_json: Mapped[Optional[dict[str, Any]]] = mapped_column(JSON, nullable=True)
     role: Mapped[UserRole] = mapped_column(
         Enum(UserRole, name="userrole"), nullable=False, default=UserRole.client
     )

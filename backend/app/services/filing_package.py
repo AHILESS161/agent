@@ -445,7 +445,19 @@ async def filing_package_status(
     classes = await load_class_context(session, application.id)
     fees = await calculate_trademark_fees(session, application.id)
     assessments = await _latest_assessments(session, application.id)
-    attachments, _ = await _filing_attachments(session, application)
+    attachments, source_documents = await _filing_attachments(session, application)
+    excluded_documents = [
+        {
+            "filename": document.original_filename,
+            "title": "Паспорт заявителя",
+            "reason": (
+                "Хранится только в защищённом деле для сверки данных. "
+                "Копия паспорта не включается в ZIP и не направляется в Роспатент."
+            ),
+        }
+        for document in source_documents
+        if document.document_kind is DocumentKind.passport
+    ]
     representative = (
         (
             await session.execute(
@@ -518,7 +530,7 @@ async def filing_package_status(
                 or "Одна из предварительных проверок не дала надёжного вывода"
             )
     if not fees.get("can_calculate"):
-        blockers.append(_blocker("fees", "Расчёт пошлин", "Подтвердите классы МКТУ", "check"))
+        blockers.append(_blocker("fees", "Расчёт пошлин", "Подтвердите классы МКТУ", "fees"))
 
     # Одинаковая причина из формы и явных правил показывается один раз.
     unique: dict[tuple[str, str], dict[str, str]] = {}
@@ -606,6 +618,7 @@ async def filing_package_status(
         "field_sources": field_sources,
         "warnings": warnings,
         "documents": manifest,
+        "excluded_documents": excluded_documents,
         "filing_document_count": sum(1 for item in manifest if item["folder"] == "01_ДЛЯ_ПОДАЧИ"),
         "reference_document_count": sum(1 for item in manifest if item["folder"] == "02_ДЛЯ_ВАС"),
         "class_numbers": [item.class_number for item in classes.approved],

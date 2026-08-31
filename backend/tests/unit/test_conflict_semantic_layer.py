@@ -387,7 +387,12 @@ class TestExperiencedLawyerLayer:
     ):
         class LegalAttentionLLM(MockLLMProvider):
             async def generate_structured(self, messages, output_schema, temperature=0.1):
-                assert '"overall": 0.167' in messages[1].content
+                # Пограничная карточка должна попасть в юридический слой даже
+                # после калибровки числовой формулы. Тест не привязывается к
+                # конкретному коэффициенту, но фиксирует осторожную оценку
+                # однородности: один класс не равен доказанному совпадению.
+                assert '"record_id": "RU9999001"' in messages[1].content
+                assert '"goods": 0.6' in messages[1].content
                 return {
                     "summary": "Есть юридически значимая карточка.",
                     "overall_observation": "Нужно проверить смысловую связь.",

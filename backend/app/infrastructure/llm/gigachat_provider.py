@@ -251,7 +251,7 @@ class GigaChatProvider(BaseLLMProvider):
             "model": self.model,
             "messages": self._build_messages(messages),
             "temperature": temperature,
-            "max_tokens": 8192,
+            "max_tokens": 16000,
             "response_format": {
                 "type": "json_schema",
                 "schema": output_schema,

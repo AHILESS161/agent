@@ -119,9 +119,20 @@ class ClassContext:
         """Текст для промпта: классы с отнесёнными к ним товарами."""
         if not self.has_any:
             return "не определены"
+        catalog_by_number = {item.number: item for item in load_catalog()}
         parts = []
         for item in self.effective:
             description = (item.class_description or "").strip()
+            catalog_item = catalog_by_number.get(item.class_number)
+            if catalog_item and description == catalog_item.full_description:
+                description = (
+                    f"{catalog_item.description} Заявляется полный официальный "
+                    f"перечень класса ({len(catalog_item.items)} позиций)."
+                )
+            elif len(description) > 2_000:
+                # Ручной длинный перечень не должен занять весь контекст LLM.
+                # Полный текст остаётся в DOCX и расчёте пошлины.
+                description = description[:2_000].rstrip() + "…"
             parts.append(
                 f"класс {item.class_number}"
                 + (f" ({description})" if description else "")
@@ -223,6 +234,7 @@ async def run_class_analysis(
 
     created: list[dict[str, Any]] = []
     seen_numbers: set[int] = set()
+    catalog_by_number = {item.number: item for item in load_catalog()}
     for suggestion in outcome.result.suggestions:
         if suggestion.class_number in seen_numbers:
             continue
@@ -233,7 +245,14 @@ async def run_class_analysis(
         record = NiceClassSuggestion(
             application_id=application.id,
             class_number=suggestion.class_number,
-            class_description="; ".join(suggestion.goods_services) or None,
+            # По умолчанию заявление охватывает полный официальный перечень
+            # позиций класса. Заголовок класса — лишь краткое описание и не
+            # заменяет перечень товаров/услуг в заявлении.
+            class_description=(
+                catalog_by_number.get(suggestion.class_number).full_description
+                if catalog_by_number.get(suggestion.class_number)
+                else "; ".join(suggestion.goods_services)
+            ) or None,
             rationale=suggestion.rationale,
             confidence=suggestion.confidence,
             category=_CATEGORY_MAP.get(suggestion.category, NiceCategory.borderline),
@@ -374,10 +393,9 @@ async def _catalog_fallback(
         record = NiceClassSuggestion(
             application_id=application.id,
             class_number=number,
-            # В заявление переносится конкретный перечень пользователя, а не
-            # широкий заголовок всего класса МКТУ. Заголовок остаётся только
-            # справочным контекстом для подбора.
-            class_description=phrase,
+            # Пока клиент явно не сузил перечень, используем полный
+            # официальный перечень позиций выбранного класса.
+            class_description=item.full_description,
             rationale=f"Справочник МКТУ: найдено по описанию «{phrase}».",
             confidence=0.55,
             category=NiceCategory.primary,

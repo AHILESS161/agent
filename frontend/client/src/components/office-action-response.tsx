@@ -55,6 +55,9 @@ export function OfficeActionResponse({ appId, audience = "client" }: { appId: nu
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<"idle" | "dirty" | "saving" | "saved" | "error">("idle");
+  const autosaveReady = useRef(false);
+  const lastSavedSnapshot = useRef("");
 
   const applyItem = (value: OfficeActionDto) => {
     setItem(value); setDeadline(value.response_deadline || "");
@@ -65,9 +68,12 @@ export function OfficeActionResponse({ appId, audience = "client" }: { appId: nu
   const startNew = () => {
     setItem(null); setNotice(null); setDeadline(""); setAdditionalFacts("");
     setHomogeneity(HOMOGENEITY); setDistinctiveness(DISTINCTIVENESS);
+    autosaveReady.current = false; lastSavedSnapshot.current = ""; setAutosaveStatus("idle");
   };
 
   useEffect(() => {
+    autosaveReady.current = false;
+    lastSavedSnapshot.current = "";
     Promise.all([
       api.get<{ items: OfficeActionDto[] }>(`/applications/${appId}/office-actions`),
       api.get<{ items: SourceDocumentDto[] }>(`/applications/${appId}/source-documents`),
@@ -76,6 +82,46 @@ export function OfficeActionResponse({ appId, audience = "client" }: { appId: nu
       if (actions.items[0]) { applyItem(actions.items[0]); setNotice(files.items.find((file) => file.id === actions.items[0].notice_document_id) || null); }
     }).catch((error) => toast({ title: "Не удалось открыть переписку", description: errorMessage(error), variant: "destructive" })).finally(() => setLoading(false));
   }, [appId]);
+
+  const draftSnapshot = JSON.stringify({
+    noticeId: notice?.id || null,
+    deadline,
+    homogeneity,
+    distinctiveness,
+    additionalFacts,
+  });
+
+  useEffect(() => {
+    if (loading || !notice) return;
+    if (!autosaveReady.current) {
+      autosaveReady.current = true;
+      lastSavedSnapshot.current = draftSnapshot;
+      return;
+    }
+    if (draftSnapshot === lastSavedSnapshot.current) return;
+    setAutosaveStatus("dirty");
+    const timer = window.setTimeout(async () => {
+      setAutosaveStatus("saving");
+      const payload = {
+        notice_document_id: notice.id,
+        response_deadline: deadline || null,
+        homogeneity_facts: homogeneity,
+        distinctiveness_evidence: distinctiveness,
+        additional_facts: additionalFacts || null,
+      };
+      try {
+        const saved = item
+          ? await api.put<OfficeActionDto>(`/applications/${appId}/office-actions/${item.id}`, payload)
+          : await api.post<OfficeActionDto>(`/applications/${appId}/office-actions`, payload);
+        setItem(saved);
+        lastSavedSnapshot.current = draftSnapshot;
+        setAutosaveStatus("saved");
+      } catch {
+        setAutosaveStatus("error");
+      }
+    }, 900);
+    return () => window.clearTimeout(timer);
+  }, [appId, loading, notice?.id, item?.id, draftSnapshot]);
 
   const uploadNotice = async (file?: File) => {
     if (!file) return; setUploading(true);
@@ -110,7 +156,7 @@ export function OfficeActionResponse({ appId, audience = "client" }: { appId: nu
     const payload = { notice_document_id: notice.id, response_deadline: deadline || null, homogeneity_facts: homogeneity, distinctiveness_evidence: distinctiveness, additional_facts: additionalFacts || null };
     try {
       const saved = item ? await api.put<OfficeActionDto>(`/applications/${appId}/office-actions/${item.id}`, payload) : await api.post<OfficeActionDto>(`/applications/${appId}/office-actions`, payload);
-      applyItem(saved); toast({ title: "Факты сохранены" }); return saved;
+      applyItem(saved); lastSavedSnapshot.current = JSON.stringify({ noticeId: notice.id, deadline: saved.response_deadline || "", homogeneity: mergeFacts(HOMOGENEITY, saved.homogeneity_facts), distinctiveness: mergeFacts(DISTINCTIVENESS, saved.distinctiveness_evidence), additionalFacts: saved.additional_facts || "" }); setAutosaveStatus("saved"); toast({ title: "Факты сохранены" }); return saved;
     } catch (error) { toast({ title: "Не удалось сохранить", description: errorMessage(error), variant: "destructive" }); return null; }
     finally { setSaving(false); }
   };
@@ -137,7 +183,7 @@ export function OfficeActionResponse({ appId, audience = "client" }: { appId: nu
     <FactGroup title={professional ? "2. Факторы однородности товаров и услуг" : "2. Почему товары или услуги отличаются"} description="Отметьте только подходящие пункты. Сам номер класса МКТУ не доказывает, что товары однородны." items={homogeneity} group="homogeneity" documents={documents} onChange={updateFact} onUpload={uploadEvidence} />
     <FactGroup title={professional ? "3. Доказательства приобретённой различительной способности" : "3. Как знак стал узнаваемым"} description="Этот блок нужен, если обозначение использовалось до подачи заявки. Добавьте конкретные даты, показатели и материалы." items={distinctiveness} group="distinctiveness" documents={documents} onChange={updateFact} onUpload={uploadEvidence} />
     <section className="mt-6 rounded-2xl border border-[#11113f]/10 p-5"><Label htmlFor="additional-facts" className="text-base font-semibold">Другие важные обстоятельства</Label><p className="mt-1 text-sm text-[#6d6d7d]">Не добавляйте предположения. Напишите, откуда вам известен факт.</p><Textarea id="additional-facts" className="mt-3 min-h-24" value={additionalFacts} onChange={(event) => setAdditionalFacts(event.target.value)} placeholder="Например: знак используется с мая 2022 года; подтверждается договором и карточкой товара…" /></section>
-    <div className="mt-7 flex flex-wrap justify-end gap-3"><Button variant="outline" onClick={save} disabled={saving || generating}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Сохранить факты</Button><Button className="bg-[#0d9f9b] hover:bg-[#087c78]" onClick={generate} disabled={saving || generating || !notice}>{generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Подготовить черновик ответа</Button></div>
+    <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className={`text-xs font-medium ${autosaveStatus === "error" ? "text-red-700" : "text-[#087c78]"}`}>{autosaveStatus === "dirty" ? "Есть несохранённые изменения…" : autosaveStatus === "saving" ? "Сохраняем черновик…" : autosaveStatus === "saved" ? "✓ Черновик сохранён автоматически" : autosaveStatus === "error" ? "Автосохранение не сработало — нажмите «Сохранить факты»" : notice ? "Изменения будут сохраняться автоматически" : ""}</p><div className="flex flex-wrap justify-end gap-3"><Button variant="outline" onClick={save} disabled={saving || generating || autosaveStatus === "saving"}>{saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Сохранить факты</Button><Button className="bg-[#0d9f9b] hover:bg-[#087c78]" onClick={generate} disabled={saving || generating || autosaveStatus === "saving" || !notice}>{generating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}Подготовить черновик ответа</Button></div></div>
     {item?.draft_text && <section className="mt-8 rounded-2xl border border-emerald-200 bg-emerald-50/50 p-5 sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-emerald-700">Черновик готов</p><h3 className="mt-1 text-xl font-semibold text-[#11113f]">{item.response_summary}</h3></div><Button onClick={() => api.download(`/applications/${appId}/office-actions/${item.id}/download`, `otvet-rospatent-${appId}.docx`)}><Download className="mr-2 h-4 w-4" />Скачать DOCX</Button></div>{item.notice_summary && <div className="mt-5 rounded-xl bg-white p-4"><p className="font-semibold">Что требует Роспатент</p><p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-[#55556b]">{item.notice_summary}</p></div>}{item.missing_evidence.length > 0 && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4"><p className="flex items-center gap-2 font-semibold text-amber-900"><AlertCircle className="h-4 w-4" />Чего ещё не хватает</p><ul className="mt-2 space-y-1 pl-5 text-sm text-amber-900">{item.missing_evidence.map((value) => <li key={value} className="list-disc">{value}</li>)}</ul></div>}<details className="mt-4 rounded-xl bg-white p-4"><summary className="cursor-pointer font-semibold">Показать текст черновика</summary><div className="mt-4 whitespace-pre-line text-sm leading-relaxed text-[#3f3f55]">{item.draft_text}</div></details></section>}
   </div>;
 }

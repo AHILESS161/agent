@@ -193,8 +193,10 @@ async def create_case_from_event(
             email=new_client.get("email"),
             phone=new_client.get("phone"),
             address=new_client.get("address"),
+            country=new_client.get("country") or "RU",
             inn=new_client.get("inn"),
             ogrn_or_ogrnip=new_client.get("ogrn_or_ogrnip"),
+            kpp=new_client.get("kpp"),
             created_by_user_id=user_id,
         )
         session.add(client)

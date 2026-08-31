@@ -41,7 +41,17 @@ class TestLayoutMatchesTheBlank:
 
     def test_key_sections_are_present(self):
         titles = {s["id"] for s in load_layout()["sections"]}
-        assert {"applicant", "mark", "goods", "priority"} <= titles
+        assert {"applicant", "mark", "goods", "priority", "signature"} <= titles
+
+    def test_signature_fields_are_editable_in_preview(self):
+        signature = next(
+            section for section in load_layout()["sections"] if section["id"] == "signature"
+        )
+        assert {field["source"] for field in signature["fields"]} == {
+            "application.signatory.name",
+            "application.signatory.position",
+            "application.signatory.date",
+        }
 
     def test_sections_follow_the_blank_order(self):
         """Порядок разделов повторяет форму: заявитель → представитель

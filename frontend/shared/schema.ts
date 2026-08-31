@@ -51,6 +51,17 @@ export interface User {
   preferredName?: string | null;
   role: UserRole;
   isActive: boolean;
+  applicantProfile?: {
+    type: ClientType;
+    fullNameOrCompanyName?: string | null;
+    inn?: string | null;
+    ogrnOrOgrnip?: string | null;
+    kpp?: string | null;
+    address?: string | null;
+    country?: string | null;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
 }
 
 export interface Client {
@@ -73,6 +84,7 @@ export interface Application {
   id: number;
   clientId: number;
   status: ApplicationStatus;
+  clientProgressStep?: 1 | 2 | 3 | 4;
   /** Срочность в работе, не конвенционный приоритет заявки. */
   priority: CasePriority;
   markType: MarkType;

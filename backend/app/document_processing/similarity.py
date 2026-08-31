@@ -153,10 +153,13 @@ def semantic_similarity(left: str, right: str) -> float:
     if overlap:
         return len(overlap) / max(len(left_words), len(right_words))
 
-    # Вхождение одного обозначения в другое.
+    # Вхождение одного обозначения в другое учитываем только для достаточно
+    # длинной основы. Иначе короткие общеупотребительные слова дают ложные
+    # совпадения: например, «КОТ» ошибочно считался сходным с «КОТЛЕТА».
     left_joined = "".join(sorted(left_words))
     right_joined = "".join(sorted(right_words))
-    if left_joined in right_joined or right_joined in left_joined:
+    shorter, longer = sorted((left_joined, right_joined), key=len)
+    if len(shorter) >= 4 and len(shorter) / len(longer) >= 0.5 and shorter in longer:
         return 0.7
     return 0.0
 
@@ -178,9 +181,15 @@ def goods_similarity(
 
     if left_set and right_set:
         if left_set & right_set:
-            # Полное совпадение классов — максимальная однородность.
-            overlap = len(left_set & right_set) / len(left_set | right_set)
-            return min(1.0, 0.6 + 0.4 * overlap)
+            # Один номер МКТУ сам по себе не доказывает однородность. Внутри
+            # широкого класса могут находиться товары и услуги с разным
+            # назначением, потребителями и каналами реализации. Поэтому без
+            # перечней оставляем лишь осторожный базовый уровень, а высокий
+            # балл даём только при совпадении самих формулировок.
+            if left_text.strip() and right_text.strip():
+                text_overlap = semantic_similarity(left_text, right_text)
+                return min(1.0, 0.6 + 0.4 * text_overlap)
+            return 0.65
 
         left_goods = any(c <= 34 for c in left_set)
         right_goods = any(c <= 34 for c in right_set)
@@ -324,7 +333,10 @@ def _combine(
     if semantic >= 0.7:
         source = " по оценке языковой модели" if semantic_source == "llm" else ""
         reasons.append(f"смысловое сходство ({semantic:.2f}){source}")
-    if goods >= 0.6:
+    # Совпадение номера класса без совпадения конкретных формулировок даёт
+    # 0.60–0.65 и является лишь сигналом для проверки, а не установленной
+    # однородностью. В объяснение выносим только более сильный результат.
+    if goods >= 0.75:
         reasons.append(f"однородные товары и услуги ({goods:.2f})")
     if image_visual is not None and image_visual >= 0.7:
         reasons.append(f"сходство изображений ({image_visual:.2f})")

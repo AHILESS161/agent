@@ -30,6 +30,15 @@ export default function ProfilePage() {
 
   const [fullName, setFullName] = useState(user?.fullName ?? "");
   const [preferredName, setPreferredName] = useState(user?.preferredName ?? "");
+  const savedApplicant = user?.applicantProfile;
+  const [applicantType, setApplicantType] = useState(savedApplicant?.type ?? "individual");
+  const [applicantName, setApplicantName] = useState(savedApplicant?.fullNameOrCompanyName ?? "");
+  const [applicantInn, setApplicantInn] = useState(savedApplicant?.inn ?? "");
+  const [applicantRegistryNumber, setApplicantRegistryNumber] = useState(savedApplicant?.ogrnOrOgrnip ?? "");
+  const [applicantKpp, setApplicantKpp] = useState(savedApplicant?.kpp ?? "");
+  const [applicantAddress, setApplicantAddress] = useState(savedApplicant?.address ?? "");
+  const [applicantEmail, setApplicantEmail] = useState(savedApplicant?.email ?? user?.email ?? "");
+  const [applicantPhone, setApplicantPhone] = useState(savedApplicant?.phone ?? "");
   const [isSaving, setIsSaving] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -46,6 +55,17 @@ export default function ProfilePage() {
       await api.patch("/auth/me", {
         full_name: fullName.trim() || null,
         preferred_name: preferredName.trim() || null,
+        applicant_profile_json: user?.role === "client" ? {
+          type: applicantType,
+          full_name_or_company_name: applicantName.trim() || null,
+          inn: applicantInn.trim() || null,
+          ogrn_or_ogrnip: applicantRegistryNumber.trim() || null,
+          kpp: applicantKpp.trim() || null,
+          address: applicantAddress.trim() || null,
+          country: "RU",
+          email: applicantEmail.trim() || null,
+          phone: applicantPhone.trim() || null,
+        } : undefined,
       });
       await refreshProfile();
       toast({ title: "Профиль сохранён" });
@@ -173,6 +193,44 @@ export default function ProfilePage() {
           </Button>
         </CardContent>
       </Card>
+
+      {user.role === "client" && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Данные заявителя для новых заявок</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Заполните один раз — при создании следующей заявки эти реквизиты появятся в форме автоматически. Перед каждой подачей их можно изменить.
+            </p>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">Кто подаёт заявку</Label>
+              <select className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" value={applicantType} onChange={(event) => setApplicantType(event.target.value as typeof applicantType)}>
+                <option value="individual">Физическое лицо / самозанятый</option>
+                <option value="sole_proprietor">Индивидуальный предприниматель</option>
+                <option value="company">Юридическое лицо</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs font-medium">{applicantType === "company" ? "Полное наименование организации" : "Фамилия, имя и отчество"}</Label>
+              <Input value={applicantName} onChange={(event) => setApplicantName(event.target.value)} />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1"><Label className="text-xs font-medium">ИНН</Label><Input value={applicantInn} onChange={(event) => setApplicantInn(event.target.value)} /></div>
+              {applicantType !== "individual" && <div className="space-y-1"><Label className="text-xs font-medium">{applicantType === "company" ? "ОГРН" : "ОГРНИП"}</Label><Input value={applicantRegistryNumber} onChange={(event) => setApplicantRegistryNumber(event.target.value)} /></div>}
+              {applicantType === "company" && <div className="space-y-1"><Label className="text-xs font-medium">КПП</Label><Input value={applicantKpp} onChange={(event) => setApplicantKpp(event.target.value)} /></div>}
+            </div>
+            <div className="space-y-1"><Label className="text-xs font-medium">Адрес заявителя</Label><Input value={applicantAddress} onChange={(event) => setApplicantAddress(event.target.value)} /></div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1"><Label className="text-xs font-medium">E-mail для переписки</Label><Input type="email" value={applicantEmail} onChange={(event) => setApplicantEmail(event.target.value)} /></div>
+              <div className="space-y-1"><Label className="text-xs font-medium">Телефон</Label><Input value={applicantPhone} onChange={(event) => setApplicantPhone(event.target.value)} /></div>
+            </div>
+            <Button size="sm" disabled={isSaving} onClick={() => void saveProfile()}>
+              {isSaving && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />} Сохранить данные заявителя
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader className="pb-2">

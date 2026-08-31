@@ -55,6 +55,34 @@ class DocumentKindUpdate(BaseModel):
     document_kind: DocumentKind
 
 
+@router.post(
+    "/mark-images/inspect",
+    summary="Распознать изображение до создания заявки",
+)
+async def inspect_mark_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Проверить файл и вернуть OCR-подсказку без сохранения изображения."""
+    del current_user
+    content = await file.read()
+    filename = file_storage.normalize_upload_filename(file.filename or "mark.png")
+    try:
+        _, detected_mime = file_storage.validate_upload(content, filename)
+        if detected_mime not in {"image/png", "image/jpeg"}:
+            raise file_storage.FileValidationError("Используйте изображение PNG или JPEG")
+        image = process_mark_image(content, filename)
+    except (file_storage.FileValidationError, MarkImageError) as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return {
+        "recognized_text": image.recognized_text,
+        "ocr_confidence": image.ocr_confidence,
+        "dominant_colors": image.dominant_colors,
+        "width": image.width,
+        "height": image.height,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Вспомогательное
 # ---------------------------------------------------------------------------

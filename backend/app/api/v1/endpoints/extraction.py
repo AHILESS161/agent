@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,6 +30,7 @@ from app.document_processing.extractors.registry import (
 )
 from app.infrastructure.database.models import (
     AuditLog,
+    Client,
     ConfirmationAction,
     DocumentKind,
     DocumentPage,
@@ -37,6 +39,7 @@ from app.infrastructure.database.models import (
     FieldCandidate,
     FieldConfirmation,
     FieldStatus,
+    MarkType,
     SourceDocument,
     TrademarkApplicationDraft,
     User,
@@ -72,7 +75,7 @@ class ManualFieldRequest(BaseModel):
 
     field_path: str = Field(min_length=1, max_length=255)
     label: str = Field(min_length=1, max_length=255)
-    value: str = Field(min_length=1, max_length=2000)
+    value: str = Field(min_length=1, max_length=20_000)
     is_sensitive: bool = False
 
 
@@ -416,6 +419,59 @@ async def add_manual_field(
 
     value = payload.value.strip()
     previous = existing.normalized_value if existing else None
+
+    # Интерактивный бланк — не отдельное хранилище. Значение сразу
+    # синхронизируется с полем дела, из которого собираются готовность,
+    # DOCX и ZIP. Иначе пользователь видел бы «сохранено», а документ
+    # продолжал бы содержать прежние данные.
+    client = await session.get(Client, application.client_id)
+    client_fields = {
+        "application.applicant.name": "full_name_or_company_name",
+        "application.applicant.inn": "inn",
+        "application.applicant.ogrn": "ogrn_or_ogrnip",
+        "application.applicant.kpp": "kpp",
+        "application.applicant.address": "address",
+        "application.applicant.country_code": "country",
+        "application.correspondence_address": "address",
+        "application.contact.phone": "phone",
+        "application.contact.email": "email",
+    }
+    application_fields = {
+        "application.mark.description": "description_of_mark",
+        "application.mark.colors": "colors_claimed",
+        "application.mark.transliteration": "transliteration",
+        "application.mark.translation": "translation",
+        "application.signatory.name": "signatory_name",
+        "application.signatory.position": "signatory_position",
+        "application.territory": "territory",
+    }
+    if client is not None and payload.field_path in client_fields:
+        setattr(client, client_fields[payload.field_path], value)
+    elif payload.field_path == "application.mark.text":
+        application.mark_text = value
+        application.mark_name = value[:255]
+    elif payload.field_path == "application.mark.kind":
+        try:
+            application.mark_type = MarkType(value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Неизвестный вид товарного знака",
+            ) from exc
+    elif payload.field_path == "application.signatory.date":
+        try:
+            application.signature_date = date.fromisoformat(value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Дата должна быть указана в формате ГГГГ-ММ-ДД",
+            ) from exc
+    elif payload.field_path == "application.certificate.paper":
+        application.request_paper_certificate = value.lower() in {
+            "1", "true", "yes", "да", "выбрано"
+        }
+    elif payload.field_path in application_fields:
+        setattr(application, application_fields[payload.field_path], value)
 
     if existing is None:
         existing = ExtractedField(

@@ -16,6 +16,7 @@ from app.infrastructure.database.models import (
     AgentRunStatus,
     ApplicationStatus,
     AuditLog,
+    BackgroundJob,
     Client,
     ClientRepresentative,
     ConflictDecision,
@@ -28,6 +29,7 @@ from app.infrastructure.database.models import (
     LegalReview,
     NiceClassSuggestion,
     RecommendationMemo,
+    RiskAssessment,
     SearchJobStatus,
     SourceDocument,
     Submission,
@@ -49,6 +51,8 @@ from app.schemas.applications import (
 )
 from app.schemas.classification import (
     ClassApprovalRequest,
+    ClassNarrowingApplyRequest,
+    ClassNarrowingPreviewResponse,
     ManualClassRequest,
     ClassSuggestionResponse,
     NiceClassSuggestionResponse,
@@ -80,6 +84,12 @@ from app.services.mark_description import (
     normalize_mark_language,
     normalize_mark_description,
     prepare_vision_image,
+)
+from app.services.nice_catalog import load_catalog
+from app.services.class_narrowing import (
+    InvalidNarrowingResult,
+    narrow_class_items,
+    validate_official_items,
 )
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -240,7 +250,85 @@ async def list_applications(
         .order_by(TrademarkApplicationDraft.id.desc())
     )
     apps = result.scalars().all()
-    items = [ApplicationListItem.model_validate(a) for a in apps]
+    application_ids = [app.id for app in apps]
+
+    class_application_ids: set[int] = set()
+    assessment_application_ids: set[int] = set()
+    analysis_job_application_ids: set[int] = set()
+    if application_ids:
+        class_application_ids = set(
+            (
+                await session.execute(
+                    select(NiceClassSuggestion.application_id)
+                    .where(NiceClassSuggestion.application_id.in_(application_ids))
+                    .distinct()
+                )
+            ).scalars()
+        )
+        assessment_application_ids = set(
+            (
+                await session.execute(
+                    select(RiskAssessment.application_id)
+                    .where(RiskAssessment.application_id.in_(application_ids))
+                    .distinct()
+                )
+            ).scalars()
+        )
+        analysis_jobs = (
+            await session.execute(
+                select(BackgroundJob.payload_json).where(
+                    BackgroundJob.job_type == "full_analysis",
+                    BackgroundJob.payload_json["application_id"]
+                    .as_integer()
+                    .in_(application_ids),
+                )
+            )
+        ).scalars()
+        for payload in analysis_jobs:
+            raw_application_id = (payload or {}).get("application_id")
+            try:
+                job_application_id = int(raw_application_id)
+            except (TypeError, ValueError):
+                continue
+            if job_application_id in application_ids:
+                analysis_job_application_ids.add(job_application_id)
+
+    analysis_statuses = {
+        ApplicationStatus.legal_review_pending,
+        ApplicationStatus.legal_review_in_progress,
+        ApplicationStatus.conflict_search_pending,
+        ApplicationStatus.conflict_search_in_progress,
+    }
+    result_statuses = {
+        ApplicationStatus.legal_review_done,
+        ApplicationStatus.conflict_search_done,
+        ApplicationStatus.memo_generation,
+        ApplicationStatus.memo_approved,
+        ApplicationStatus.document_generation,
+        ApplicationStatus.document_approved,
+        ApplicationStatus.submitted,
+        ApplicationStatus.closed,
+    }
+
+    items = []
+    for app in apps:
+        if app.id in assessment_application_ids or app.status in result_statuses:
+            progress_step = 4
+        elif app.id in analysis_job_application_ids or app.status in analysis_statuses:
+            progress_step = 3
+        elif app.id in class_application_ids or app.status in {
+            ApplicationStatus.classification_pending,
+            ApplicationStatus.classification_review,
+            ApplicationStatus.classification_approved,
+        }:
+            progress_step = 2
+        else:
+            progress_step = 1
+        items.append(
+            ApplicationListItem.model_validate(app).model_copy(
+                update={"client_progress_step": progress_step}
+            )
+        )
     return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -947,10 +1035,17 @@ async def add_class(
             detail=f"Класс {payload.class_number} уже есть в деле",
         )
 
+    catalog_class = next(
+        (item for item in load_catalog() if item.number == payload.class_number),
+        None,
+    )
     suggestion = NiceClassSuggestion(
         application_id=application_id,
         class_number=payload.class_number,
-        class_description=payload.class_description,
+        class_description=(
+            payload.class_description
+            or (catalog_class.full_description if catalog_class else None)
+        ),
         rationale=payload.rationale or "Добавлен специалистом вручную",
         approved=True,
         approved_by=current_user.id,
@@ -1010,6 +1105,145 @@ async def delete_class(
     await session.flush()
 
 
+@router.post(
+    "/{application_id}/classes/{class_id}/narrow",
+    response_model=ClassNarrowingPreviewResponse,
+    summary="Предложить сокращённый перечень класса",
+)
+async def preview_narrow_class(
+    application_id: int,
+    class_id: int,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ClassNarrowingPreviewResponse:
+    """Ask the configured LLM to select exact official terms without saving them."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    result = await session.execute(
+        select(NiceClassSuggestion).where(
+            NiceClassSuggestion.id == class_id,
+            NiceClassSuggestion.application_id == application_id,
+        )
+    )
+    suggestion = result.scalar_one_or_none()
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="Класс не найден")
+
+    catalog_class = next(
+        (item for item in load_catalog() if item.number == suggestion.class_number),
+        None,
+    )
+    if catalog_class is None or not catalog_class.items:
+        raise HTTPException(
+            status_code=422,
+            detail="Для этого класса не найден официальный перечень позиций",
+        )
+
+    try:
+        proposal = await narrow_class_items(
+            _get_llm_provider(),
+            class_number=suggestion.class_number,
+            business_description=app.business_description or "",
+            goods_services=app.goods_services_raw or "",
+            candidates=catalog_class.items,
+        )
+    except InvalidNarrowingResult as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Не удалось подготовить сокращённый перечень класса",
+            application_id=application_id,
+            class_number=suggestion.class_number,
+            error_type=type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Модель временно не смогла подготовить надёжный перечень. "
+                "Полный перечень не изменён — попробуйте ещё раз."
+            ),
+        ) from exc
+
+    await _create_audit(
+        session,
+        user=current_user,
+        action="class_narrow_preview",
+        application=app,
+        new_val={
+            "class_id": class_id,
+            "class_number": suggestion.class_number,
+            "source_count": len(catalog_class.items),
+            "selected_count": len(proposal.selected_items),
+        },
+        ip_address=_get_client_ip(request),
+    )
+    return ClassNarrowingPreviewResponse(
+        suggestion_id=suggestion.id,
+        class_number=suggestion.class_number,
+        source_count=len(catalog_class.items),
+        selected_count=len(proposal.selected_items),
+        selected_items=list(proposal.selected_items),
+        proposed_description="; ".join(proposal.selected_items),
+        rationale=proposal.rationale,
+        assumptions=list(proposal.assumptions),
+    )
+
+
+@router.post(
+    "/{application_id}/classes/{class_id}/narrow/apply",
+    response_model=NiceClassSuggestionResponse,
+    summary="Применить подтверждённый сокращённый перечень",
+)
+async def apply_narrow_class(
+    application_id: int,
+    class_id: int,
+    payload: ClassNarrowingApplyRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> NiceClassSuggestionResponse:
+    """Persist only exact catalogue positions from a user-confirmed preview."""
+    app = await _get_app_or_404(application_id, session)
+    _ensure_access(app, current_user)
+    result = await session.execute(
+        select(NiceClassSuggestion).where(
+            NiceClassSuggestion.id == class_id,
+            NiceClassSuggestion.application_id == application_id,
+        )
+    )
+    suggestion = result.scalar_one_or_none()
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="Класс не найден")
+    catalog_class = next(
+        (item for item in load_catalog() if item.number == suggestion.class_number),
+        None,
+    )
+    if catalog_class is None or not catalog_class.items:
+        raise HTTPException(status_code=422, detail="Официальный перечень класса не найден")
+    try:
+        selected = validate_official_items(payload.selected_items, catalog_class.items)
+    except InvalidNarrowingResult as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    previous_count = len(
+        [part for part in (suggestion.class_description or "").split(";") if part.strip()]
+    )
+    suggestion.class_description = "; ".join(selected)
+    await _create_audit(
+        session,
+        user=current_user,
+        action="class_narrow_apply",
+        application=app,
+        old_val={"class_id": class_id, "item_count": previous_count},
+        new_val={"class_id": class_id, "item_count": len(selected)},
+        ip_address=_get_client_ip(request),
+    )
+    await session.flush()
+    await session.refresh(suggestion)
+    return NiceClassSuggestionResponse.model_validate(suggestion)
+
+
 @router.put(
     "/{application_id}/classes/{class_id}/approve",
     response_model=NiceClassSuggestionResponse,
@@ -1055,7 +1289,8 @@ async def approve_class(
         new_val={
             "class_id": class_id,
             "approved": payload.approved,
-            "class_description": sug.class_description,
+            "class_description_changed": payload.class_description is not None,
+            "class_description_length": len(sug.class_description or ""),
         },
         ip_address=_get_client_ip(request),
     )

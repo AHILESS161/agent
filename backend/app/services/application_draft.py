@@ -577,33 +577,59 @@ def _fill_goods_table(table, classes: list[tuple[str, str]]) -> bool:
     return written > 0
 
 
+def _goods_need_attachment(classes: list[tuple[str, str]]) -> bool:
+    """Поместится ли перечень в десять строк поля (511) основного бланка."""
+    used_lines = 0
+    for _, description in classes:
+        normalized = " ".join((description or "").split())
+        used_lines += max(1, (len(normalized) + 109) // 110)
+    return len(classes) > 10 or used_lines > 10
+
+
+def _goods_rows_for_form(
+    classes: list[tuple[str, str]], *, attached: bool
+) -> list[tuple[str, str]]:
+    """Не пытаться втиснуть многостраничный перечень в поле (511)."""
+    if not attached:
+        return classes
+    return [
+        (
+            number,
+            f"Полный перечень товаров и (или) услуг класса {number} МКТУ "
+            "приведён на отдельных листах в приложении к заявке.",
+        )
+        for number, _ in classes
+    ]
+
+
 def _fill_mark_block(
-    cell,
+    table,
     *,
     mark_text: str,
     description_lines: list[str],
 ) -> None:
-    """Заполнить объединённый блок (540)/(571) двумя реальными колонками.
+    """Заполнить штатные области (540) и (571) официального бланка.
 
-    В официальном шаблоне левая и правая области обозначены табуляцией внутри
-    одной объединённой ячейки. Добавление обычного абзаца помещает содержимое
-    ниже обеих подписей. Вложенная таблица без служебного текста сохраняет
-    требуемую геометрию: обозначение слева, описание справа.
+    Строка 17 содержит только заголовки полей. Сами области ввода находятся в
+    строке 19: квадрат обозначения слева и описание справа. Вложенная таблица
+    в строке заголовка нарушала геометрию Word и визуально сдвигала картинку
+    ниже предназначенного квадрата.
     """
-    block = cell.add_table(rows=1, cols=2)
-    block.autofit = False
-    left, right = block.rows[0].cells
-    left.width = Inches(3.45)
-    right.width = Inches(3.45)
+    if len(table.rows) <= 19 or len(table.rows[19].cells) <= 16:
+        return
+    left = table.rows[19].cells[1]
+    right = table.rows[19].cells[16]
 
     left_paragraph = left.paragraphs[0]
     left_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    left.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     if mark_text:
         run = left_paragraph.add_run(mark_text)
         run.font.size = Pt(30)
         run.bold = True
 
     right_paragraph = right.paragraphs[0]
+    right.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
     if description_lines:
         right_paragraph.add_run("\n".join(description_lines))
 
@@ -727,6 +753,7 @@ def _safe_claimed_colors(claimed: str | None, mark_image: bytes | None) -> str |
             saturation = ImageStat.Stat(
                 image.convert("HSV").getchannel("S")
             ).mean[0]
+            detected = _detected_color_names(image)
         if saturation < 12:
             normalized = claimed.casefold()
             neutral = ("черн", "бел", "сер", "black", "white", "gray", "grey")
@@ -736,9 +763,83 @@ def _safe_claimed_colors(claimed: str | None, mark_image: bytes | None) -> str |
                     claimed=claimed,
                 )
                 return None
+        # Цветное изображение является источником истины для поля (591).
+        # Если сохранённое значение явно называет один цвет, которого среди
+        # основных цветов изображения нет, не переносим устаревшее значение
+        # в официальный бланк, а формируем понятный перечень по самому файлу.
+        claimed_names = {
+            part.strip().casefold().replace("ё", "е")
+            for part in re.split(r"[,;]", claimed)
+            if part.strip()
+        }
+        normalized_detected = {value.casefold().replace("ё", "е") for value in detected}
+        if detected and claimed_names and not claimed_names.intersection(normalized_detected):
+            logger.warning(
+                "Цвет в заявке скорректирован по фактическому изображению",
+                claimed=claimed,
+                detected=detected,
+            )
+            return ", ".join(detected)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Не удалось проверить соответствие заявленного цвета", error=str(exc))
     return claimed
+
+
+def _detected_color_names(image: Any) -> list[str]:
+    """Вернуть несколько основных цветов изображения обычными русскими словами."""
+    import colorsys
+
+    from PIL import Image
+
+    rgb = image.convert("RGB")
+    pixels = [
+        pixel for pixel in rgb.getdata()
+        if min(pixel) < 238
+        and not (max(pixel) - min(pixel) < 32 and sum(pixel) / 3 > 210)
+    ]
+    if not pixels:
+        return []
+    sample = Image.new("RGB", (len(pixels), 1))
+    sample.putdata(pixels)
+    quantized = sample.quantize(colors=min(8, len(set(pixels))))
+    palette = quantized.getpalette() or []
+    result: list[str] = []
+    for _, index in sorted(quantized.getcolors() or [], reverse=True):
+        offset = index * 3
+        r, g, b = palette[offset:offset + 3]
+        hue, saturation, value = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
+        hue *= 360
+        if value < 0.19:
+            name = "чёрный"
+        elif saturation < 0.13:
+            name = "серый"
+        elif hue < 15 or hue >= 345:
+            name = "розовый" if value > 0.72 and saturation < 0.62 else "красный"
+        elif hue < 45:
+            name = "коричневый" if value < 0.66 else "оранжевый"
+        elif hue < 70:
+            name = "жёлтый"
+        elif hue < 165:
+            name = "зелёный"
+        elif hue < 195:
+            name = "бирюзовый"
+        elif hue < 215:
+            name = "голубой"
+        elif hue < 260:
+            name = "синий"
+        elif hue < 300:
+            name = "фиолетовый"
+        elif value > 0.72 and saturation < 0.62:
+            name = "розовый"
+        elif r > 175 and g > 85 and b < 115:
+            name = "оранжевый"
+        else:
+            name = "фиолетовый"
+        if name not in result:
+            result.append(name)
+        if len(result) == 6:
+            break
+    return result
 
 
 async def load_mark_image_content(
@@ -899,10 +1000,9 @@ def render_docx(
         f"Транслитерация: {values['application.mark.transliteration']}" if include_language and values.get("application.mark.transliteration") else "",
         f"Перевод: {values['application.mark.translation']}" if include_language and values.get("application.mark.translation") else "",
     ]
-    anchor = _find_cell(table, "(540)")
-    if anchor is not None:
+    if _find_cell(table, "(540)") is not None:
         _fill_mark_block(
-            anchor,
+            table,
             mark_text=mark_text_for_form,
             description_lines=[line for line in description_lines if line],
         )
@@ -948,7 +1048,13 @@ def render_docx(
 
     # --- (511) перечень товаров и услуг ---
     if content.classes:
-        _fill_goods_table(table, content.classes)
+        include_goods_attachment = include_goods_attachment or _goods_need_attachment(
+            content.classes
+        )
+        _fill_goods_table(
+            table,
+            _goods_rows_for_form(content.classes, attached=include_goods_attachment),
+        )
         if include_goods_attachment:
             _fill_attachment_row(table, 93)
 

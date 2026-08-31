@@ -39,7 +39,7 @@ MAX_CONTEXT_CHUNKS = 8
 
 # Запас на рассуждения модели плюс сам JSON-ответ: при лимите
 # по умолчанию ответ обрывался на середине структуры.
-MAX_RESPONSE_TOKENS = 12000
+MAX_RESPONSE_TOKENS = 16000
 
 SYSTEM_PROMPT = """Ты — помощник патентного поверенного. Твоя задача —
 предварительная оценка рисков регистрации товарного знака по абсолютным
@@ -91,6 +91,41 @@ SYSTEM_PROMPT = """Ты — помощник патентного поверен
 16. В summary объясняй вывод как профессиональный юрист обычному заявителю:
     сначала практический итог, затем причина и действие. Не упоминай модель,
     промпт, RAG, коэффициенты, таймауты, JSON и внутренние этапы системы.
+17. Проверяй подп. 2 п. 3 ст. 1483 (общественные интересы, гуманность и мораль)
+    ОТДЕЛЬНО от описательности и различительной способности. У одного обозначения
+    может быть несколько самостоятельных оснований отказа. Для анатомической или
+    сексуальной лексики различай нейтральный медицинский термин, разговорное слово,
+    бранное выражение и непристойный контекст. Не объявляй любое анатомическое слово
+    аморальным автоматически, но обязательно оцени его значение, форму подачи и связь
+    с конкретными товарами и услугами.
+18. Норма в источнике подтверждает юридический критерий; источник не обязан дословно
+    называть исследуемое слово. Требование о прямой связи с конкретным объектом из
+    правила 8 относится к официальным символам и объектам культурного наследия, а не
+    запрещает смысловую оценку самого заявленного слова по общепринятому значению.
+19. В summary обязательно назови обозначение, конкретные товары или услуги, главное
+    основание риска и практическое последствие. Не заменяй конкретный вывод словами
+    «есть элементы, связанные с товарами».
+20. В missing_data указывай только факты о заявке, которые действительно может
+    предоставить заявитель: изображение, точный перечень товаров, значение
+    иностранного слова, сведения об использовании и т. п. Отсутствие в ИСТОЧНИКАХ
+    решения Роспатента или суда с тем же самым словом, словарной статьи именно об
+    этом слове либо идентичного примера НЕ является недостающим фактом дела и не
+    освобождает от предварительной оценки по приведённому юридическому критерию.
+21. Если риск зависит от спорного восприятия слова, не уклоняйся от вывода. Дай
+    осторожную предварительную оценку medium, прямо назови неопределённость и
+    рекомендуй ручную проверку. Для вывода high или critical должны быть конкретные
+    признаки из фактов дела, а не только возможность неприятной ассоциации.
+22. Нейтральный анатомический или медицинский термин сам по себе не является
+    нецензурным словом. Однако оцени отдельно, может ли его использование в качестве
+    заметного обозначения для несвязанных товаров восприниматься как непристойное.
+    Если такое восприятие спорно, это предварительный средний риск по подп. 2 п. 3
+    ст. 1483, а не описательность и не автоматически установленный отказ.
+23. Если после проверки всех критериев неблагоприятных обстоятельств нет, верни
+    overall_risk="low", пустой findings, содержательный summary и пустой
+    missing_data. Не подменяй итог запросом дополнительной судебной практики.
+24. Для основания о морали укажи, какое именно содержание может быть признано
+    непристойным или какой конкретный принцип затронут. Общая ссылка на мораль без
+    связи с обозначением недостаточна.
 
 ПРИНЦИП СПЕЦИАЛИЗАЦИИ (обязательно учитывать):
 
@@ -131,6 +166,35 @@ USER_TEMPLATE = """ФАКТЫ ДЕЛА:
 """
 
 
+SUBSTANTIVE_RETRY_INSTRUCTION = """
+
+ПОВТОРНАЯ ЮРИДИЧЕСКАЯ ПРОВЕРКА:
+Предыдущая попытка не дала практического вывода и запросила дополнительные
+правовые источники или идентичные прецеденты. Это не сведения, которые должен
+предоставлять заявитель. Повтори анализ по уже приведённым нормам и фактам.
+
+- Не требуй дело Роспатента, суда, словарь или перечень, где дословно названо
+  исследуемое обозначение.
+- Самостоятельно сопоставь обычное значение слов с юридическими критериями.
+- Если восприятие спорно, верни обоснованный medium risk и прямо объясни границу
+  неопределённости; не возвращай незавершённый анализ.
+- Если подтверждённых рисков нет, верни low risk, findings=[] и missing_data=[].
+- Сохрани строгий JSON и дословные цитаты из выданных ИСТОЧНИКОВ.
+"""
+
+
+_NON_ACTIONABLE_RESEARCH_GAP_MARKERS = (
+    "практик",
+    "пример",
+    "решен",
+    "словар",
+    "источник",
+    "перечень нецензур",
+    "перечень бран",
+    "аналогичн",
+)
+
+
 @dataclass
 class AnalysisOutcome:
     """Результат анализа вместе с диагностикой проверки."""
@@ -156,6 +220,8 @@ class RagAbsoluteGroundsAnalyzer:
 
     def __init__(self, llm_provider: Any, chunks: list[StoredChunk]) -> None:
         self._llm = llm_provider
+        self._last_model: str | None = None
+        self._last_used_fallback = False
         legal_chunks = [c for c in chunks if c.source_type in self.SOURCE_TYPES]
         # Если типы не проставлены (старая индексация), работаем со всем
         # корпусом: лучше шум, чем пустой контекст.
@@ -190,22 +256,31 @@ class RagAbsoluteGroundsAnalyzer:
             "объекты культурного наследия культурные ценности",
         ]
 
-        selected: dict[str, Any] = {}
+        # Резервируем хотя бы один фрагмент на каждое проверяемое основание.
+        # Раньше все результаты смешивались и затем обрезались по общему score:
+        # несколько похожих фрагментов об описательности могли полностью вытеснить
+        # норму о морали или введении в заблуждение.
+        hit_groups: list[list[Any]] = []
         for query in ground_queries:
-            for hit in self._retriever.retrieve(f"{query} {case_hint[:120]}", top_k=2):
-                # Один и тот же фрагмент может подойти нескольким основаниям.
-                if hit.citation_id not in selected:
-                    selected[hit.citation_id] = hit
+            hits = self._retriever.retrieve(f"{query} {case_hint[:120]}", top_k=2)
+            hit_groups.append(
+                sorted(
+                    hits,
+                    key=lambda item: (bool(item.chunk.article), item.score),
+                    reverse=True,
+                )
+            )
 
-        # Фрагменты с правовым якорем (статья/пункт) идут первыми:
-        # для оценки оснований отказа норма важнее справочного материала,
-        # даже если справочник совпал по словам лучше.
-        ranked = sorted(
-            selected.values(),
-            key=lambda item: (bool(item.chunk.article), item.score),
-            reverse=True,
-        )
-        return ranked[:MAX_CONTEXT_CHUNKS]
+        selected: dict[str, Any] = {}
+        for position in range(2):
+            for hits in hit_groups:
+                if position >= len(hits):
+                    continue
+                hit = hits[position]
+                selected.setdefault(hit.citation_id, hit)
+                if len(selected) >= MAX_CONTEXT_CHUNKS:
+                    return list(selected.values())
+        return list(selected.values())
 
     async def analyse(self, facts: dict[str, Any]) -> AnalysisOutcome:
         retrieved = self._retrieve_grounds_context(facts)
@@ -238,6 +313,90 @@ class RagAbsoluteGroundsAnalyzer:
         )
 
         raw = await self._call_llm(prompt)
+        outcome = self._interpret_response(raw, available_sources, facts)
+
+        # Иногда primary возвращает формально корректный JSON, но вместо оценки
+        # просит у заявителя судебную практику, словарь или идентичный пример.
+        # Это не отсутствующие факты заявки. Даём DeepSeek второй, явно
+        # сфокусированный проход до переключения на резервного провайдера.
+        primary_retry_attempted = False
+        first_reason = outcome.insufficient.reason if outcome.insufficient else None
+        if (
+            self._needs_substantive_retry(outcome)
+            and not self._last_used_fallback
+            and callable(getattr(self._llm, "generate", None))
+        ):
+            primary_retry_attempted = True
+            retry_raw = await self._call_llm(prompt + SUBSTANTIVE_RETRY_INSTRUCTION)
+            retry_outcome = self._interpret_response(
+                retry_raw, available_sources, facts
+            )
+            retry_outcome.verification["primary_retry_attempted"] = True
+            retry_outcome.verification["primary_first_reason"] = first_reason
+            outcome = retry_outcome
+
+        # Сетевая ошибка перехватывается самим FallbackLLMProvider. Здесь
+        # обрабатывается другой важный случай: primary ответил HTTP 200, но
+        # вернул оборванный JSON, неверную схему либо юридически непроверяемые
+        # ссылки. Такой ответ тоже нельзя считать успешным — повторяем запрос
+        # непосредственно через GigaChat.
+        retryable_reasons = {
+            "Модель не вернула ответ",
+            "Ответ модели не является валидным JSON",
+            "Ответ модели не соответствует требуемой схеме",
+            "Ни один вывод не подтверждён источниками из базы знаний",
+            "Модель не установила рисков по имеющимся источникам",
+        }
+        reason = outcome.insufficient.reason if outcome.insufficient else None
+        can_use_explicit_fallback = (
+            not outcome.is_conclusive
+            and reason in retryable_reasons
+            and not self._last_used_fallback
+            and callable(getattr(self._llm, "generate_fallback", None))
+        )
+        if can_use_explicit_fallback:
+            fallback_raw = await self._call_llm(prompt, use_fallback=True)
+            fallback_outcome = self._interpret_response(
+                fallback_raw, available_sources, facts
+            )
+            fallback_outcome.verification["fallback_attempted"] = True
+            fallback_outcome.verification["fallback_provider"] = "gigachat"
+            if primary_retry_attempted:
+                fallback_outcome.verification["primary_retry_attempted"] = True
+                fallback_outcome.verification["primary_first_reason"] = first_reason
+            outcome = fallback_outcome
+
+        outcome.verification["llm_model"] = self._last_model
+        outcome.verification["llm_fallback_used"] = self._last_used_fallback
+        return outcome
+
+    @staticmethod
+    def _needs_substantive_retry(outcome: AnalysisOutcome) -> bool:
+        """Отличить пробел модели от реально отсутствующих фактов заявки."""
+        if outcome.is_conclusive or outcome.insufficient is None:
+            return False
+        if (
+            outcome.insufficient.reason
+            != "Модель не установила рисков по имеющимся источникам"
+        ):
+            return False
+        missing = [
+            str(item).strip().lower()
+            for item in outcome.insufficient.missing_data
+            if str(item).strip()
+        ]
+        return bool(missing) and all(
+            any(marker in item for marker in _NON_ACTIONABLE_RESEARCH_GAP_MARKERS)
+            for item in missing
+        )
+
+    def _interpret_response(
+        self,
+        raw: str | None,
+        available_sources: dict[str, str],
+        facts: dict[str, Any],
+    ) -> AnalysisOutcome:
+        """Разобрать, проверить и юридически отфильтровать один ответ LLM."""
         if raw is None:
             return AnalysisOutcome(
                 result=None,
@@ -337,6 +496,7 @@ class RagAbsoluteGroundsAnalyzer:
                         "намёк",
                         "по-соседски",
                         "состоит из общеупотребительных слов",
+                        "указывает на предполагаемого покупателя",
                     ))
                 )
                 source_names_mark = bool(mark_text and mark_text in verified_text)
@@ -438,7 +598,7 @@ class RagAbsoluteGroundsAnalyzer:
             sources_used=list(available_sources),
         )
 
-    async def _call_llm(self, prompt: str) -> str | None:
+    async def _call_llm(self, prompt: str, *, use_fallback: bool = False) -> str | None:
         """Вызвать модель через интерфейс BaseLLMProvider.
 
         Поддерживается и упрощённый интерфейс ``complete(prompt)`` —
@@ -448,7 +608,12 @@ class RagAbsoluteGroundsAnalyzer:
             if hasattr(self._llm, "generate"):
                 from app.infrastructure.llm.base import LLMMessage
 
-                response = await self._llm.generate(
+                method = (
+                    self._llm.generate_fallback
+                    if use_fallback and hasattr(self._llm, "generate_fallback")
+                    else self._llm.generate
+                )
+                response = await method(
                     messages=[
                         LLMMessage(role="system", content=SYSTEM_PROMPT),
                         LLMMessage(role="user", content=prompt),
@@ -465,7 +630,17 @@ class RagAbsoluteGroundsAnalyzer:
             return None
 
         if isinstance(response, str):
+            self._last_model = getattr(self._llm, "model", None)
+            self._last_used_fallback = use_fallback
             return response
+        self._last_model = getattr(response, "model", None) or getattr(
+            self._llm, "model", None
+        )
+        used_fallback = getattr(self._llm, "response_used_fallback", None)
+        self._last_used_fallback = bool(
+            use_fallback
+            or (callable(used_fallback) and used_fallback(response))
+        )
         return getattr(response, "content", None) or getattr(response, "text", None)
 
 

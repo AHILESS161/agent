@@ -79,7 +79,7 @@ class ManualClassRequest(BaseModel):
     """
 
     class_number: int = Field(ge=1, le=45)
-    class_description: Optional[str] = Field(default=None, max_length=2000)
+    class_description: Optional[str] = Field(default=None, max_length=200_000)
     rationale: Optional[str] = Field(default=None, max_length=2000)
 
 
@@ -90,9 +90,28 @@ class ClassApprovalRequest(BaseModel):
     approved: bool
     class_description: Optional[str] = Field(
         default=None,
-        max_length=4000,
+        max_length=200_000,
         description="Точный перечень товаров и услуг, который заявитель подтверждает",
     )
     override_class: Optional[int] = Field(
         default=None, ge=1, le=45, description="Override the AI-suggested class number"
     )
+
+
+class ClassNarrowingPreviewResponse(BaseModel):
+    """Grounded model proposal that has not changed the application yet."""
+
+    suggestion_id: int
+    class_number: int
+    source_count: int
+    selected_count: int
+    selected_items: List[str]
+    proposed_description: str
+    rationale: str = ""
+    assumptions: List[str] = []
+
+
+class ClassNarrowingApplyRequest(BaseModel):
+    """Exact official positions confirmed by the user after preview."""
+
+    selected_items: List[str] = Field(min_length=1, max_length=500)

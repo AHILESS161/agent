@@ -185,7 +185,16 @@ interface ReportDto {
       limitations: string[];
       classes_considered: number[];
       classes_confirmed: boolean;
-      provenance: { model_name: string | null; llm_used: boolean };
+      provenance: {
+        model_name: string | null;
+        llm_used: boolean;
+        verification?: {
+          skipped?: boolean;
+          blocked_by?: string;
+          skip_reason?: string;
+          blocking_risk?: string | null;
+        };
+      };
     } | null
   >;
 }
@@ -246,6 +255,10 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
 
   const absolute = report.data?.sections?.absolute_grounds ?? null;
   const relative = report.data?.sections?.relative_grounds ?? null;
+  const relativeSkipped = Boolean(
+    relative?.provenance?.verification?.skipped
+    && relative.provenance.verification.blocked_by === "absolute_grounds"
+  );
   const overallRisk = verdict?.overall_risk ?? report.data?.overall_risk ?? null;
 
   // Вердикт после прогона показываем сразу; иначе выводим по сохранённому
@@ -352,7 +365,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
           relative?.findings?.length ? String(relative.findings.length) : undefined
         }
       >
-        {relative?.is_inconclusive && (
+        {relative?.is_inconclusive && !relativeSkipped && (
           <InconclusiveNote reason={relative.inconclusive_reason} />
         )}
         {relative?.summary && (
@@ -370,13 +383,20 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
             ))}
           </div>
         ) : (
-          !relative?.is_inconclusive && (
+          !relative?.is_inconclusive && !relativeSkipped && (
             <p className="text-xs text-muted-foreground">
               {relative
                 ? "Конфликтующих обозначений не обнаружено."
                 : "Поиск не проводился."}
             </p>
           )
+        )}
+        {relativeSkipped && (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] px-4 py-3 text-sm leading-relaxed text-amber-900 dark:text-amber-200">
+            Поиск по реестру осознанно не запускался. Сначала необходимо устранить
+            самостоятельное основание для отказа, найденное при проверке самого
+            обозначения, а затем повторить анализ изменённого знака.
+          </div>
         )}
       </Section>
 

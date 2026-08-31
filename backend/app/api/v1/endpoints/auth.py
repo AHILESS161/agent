@@ -158,7 +158,10 @@ async def update_me(
     """
     data = payload.model_dump(exclude_unset=True)
     for field, value in data.items():
-        setattr(current_user, field, (value or "").strip() or None)
+        if field == "applicant_profile_json":
+            setattr(current_user, field, value)
+        else:
+            setattr(current_user, field, (value or "").strip() or None)
 
     await session.flush()
     await session.refresh(current_user)

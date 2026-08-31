@@ -37,6 +37,7 @@ def _get_llm_provider() -> Any:
         "base_url": getattr(settings, "LLM_BASE_URL", None),
         "api_key": getattr(settings, "LLM_API_KEY", None),
         "model": getattr(settings, "LLM_MODEL", None),
+        "timeout": getattr(settings, "LLM_HTTP_TIMEOUT", 210.0),
         "authorization_key": getattr(settings, "GIGACHAT_AUTHORIZATION_KEY", None),
         "scope": getattr(settings, "GIGACHAT_SCOPE", None),
         "auth_url": getattr(settings, "GIGACHAT_AUTH_URL", None),
@@ -48,9 +49,42 @@ def _get_llm_provider() -> Any:
         "max_retries": getattr(settings, "GIGACHAT_MAX_RETRIES", 5),
     }
     # Убираем None, чтобы PROVIDER_DEFAULTS фабрики могли их подставить.
-    _llm_provider_instance = LLMProviderFactory.create(
+    primary = LLMProviderFactory.create(
         {k: v for k, v in config.items() if v is not None}
     )
+    fallback_key = getattr(settings, "GIGACHAT_AUTHORIZATION_KEY", None)
+    fallback_enabled = (
+        getattr(settings, "LLM_FALLBACK_ENABLED", True)
+        and settings.LLM_PROVIDER not in {"mock", "gigachat"}
+        and bool(fallback_key)
+    )
+    if fallback_enabled:
+        from app.infrastructure.llm.fallback_provider import FallbackLLMProvider
+
+        fallback_config: dict[str, Any] = {
+            "provider": "gigachat",
+            "authorization_key": fallback_key,
+            "model": getattr(settings, "GIGACHAT_MODEL", "GigaChat-3-Ultra"),
+            "scope": getattr(settings, "GIGACHAT_SCOPE", None),
+            "auth_url": getattr(settings, "GIGACHAT_AUTH_URL", None),
+            "verify_ssl": getattr(settings, "GIGACHAT_VERIFY_SSL", True),
+            "ca_bundle_file": getattr(settings, "GIGACHAT_CA_BUNDLE_FILE", None),
+            "min_request_interval": getattr(
+                settings, "GIGACHAT_MIN_REQUEST_INTERVAL", 1.25
+            ),
+            "max_retries": getattr(settings, "GIGACHAT_MAX_RETRIES", 5),
+        }
+        fallback = LLMProviderFactory.create(
+            {k: v for k, v in fallback_config.items() if v is not None}
+        )
+        _llm_provider_instance = FallbackLLMProvider(
+            primary,
+            fallback,
+            primary_timeout=getattr(settings, "LLM_PRIMARY_ATTEMPT_TIMEOUT", 180.0),
+            fallback_timeout=getattr(settings, "LLM_FALLBACK_ATTEMPT_TIMEOUT", 75.0),
+        )
+    else:
+        _llm_provider_instance = primary
     return _llm_provider_instance
 
 

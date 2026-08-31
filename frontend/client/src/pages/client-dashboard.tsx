@@ -27,20 +27,29 @@ const RESULT_STATUSES = new Set<ApplicationStatus>([
   "closed",
 ]);
 
-function stageFor(status: ApplicationStatus) {
+function stageFor(status: ApplicationStatus, persistedStep?: 1 | 2 | 3 | 4) {
+  if (persistedStep === 4) {
+    return { step: 4, label: status === "submitted" ? "Заявка подана" : "Результат готов", action: "Посмотреть результат", section: "analysis" };
+  }
+  if (persistedStep === 3) {
+    return { step: 3, label: "Идёт проверка", action: "Посмотреть ход проверки", section: "analysis" };
+  }
+  if (persistedStep === 2) {
+    return { step: 2, label: "Классы МКТУ", action: "Проверить классы", section: "review" };
+  }
   if (["draft", "info_requested", "info_received"].includes(status)) {
-    return { step: 1, label: status === "info_requested" ? "Нужны данные" : "Заполнение данных", action: "Продолжить заполнение" };
+    return { step: 1, label: status === "info_requested" ? "Нужны данные" : "Заполнение данных", action: "Продолжить заполнение", section: "review" };
   }
   if (["classification_pending", "classification_review", "classification_approved"].includes(status)) {
-    return { step: 2, label: status === "classification_review" ? "Подтвердите классы" : "Подбор классов МКТУ", action: "Проверить классы" };
+    return { step: 2, label: status === "classification_review" ? "Подтвердите классы" : "Подбор классов МКТУ", action: "Проверить классы", section: "review" };
   }
   if (["legal_review_pending", "legal_review_in_progress", "conflict_search_pending", "conflict_search_in_progress"].includes(status)) {
-    return { step: 3, label: "Идёт проверка", action: "Посмотреть ход проверки" };
+    return { step: 3, label: "Идёт проверка", action: "Посмотреть ход проверки", section: "analysis" };
   }
   if (RESULT_STATUSES.has(status) || ["legal_review_done", "conflict_search_done", "memo_generation"].includes(status)) {
-    return { step: 4, label: status === "submitted" ? "Заявка подана" : "Результат готов", action: "Посмотреть результат" };
+    return { step: 4, label: status === "submitted" ? "Заявка подана" : "Результат готов", action: "Посмотреть результат", section: "analysis" };
   }
-  return { step: 1, label: "Черновик", action: "Открыть заявку" };
+  return { step: 1, label: "Черновик", action: "Открыть заявку", section: "review" };
 }
 
 function ApplicationCard({
@@ -52,7 +61,7 @@ function ApplicationCard({
 }) {
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
-  const stage = stageFor(application.status);
+  const stage = stageFor(application.status, application.clientProgressStep);
   const updated = new Date(application.updatedAt).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
@@ -85,7 +94,7 @@ function ApplicationCard({
   };
 
   return (
-    <Link href={`/applications/${application.id}`}>
+    <Link href={`/applications/${application.id}?step=${stage.section}`}>
       <article className="group cursor-pointer rounded-[1.6rem] border border-[#11113f]/10 bg-white p-6 shadow-[0_12px_40px_rgba(21,21,55,0.05)] transition-all hover:-translate-y-0.5 hover:border-[#0d9f9b]/45 hover:shadow-[0_18px_50px_rgba(21,21,55,0.09)]">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
@@ -163,7 +172,7 @@ export default function ClientDashboardPage() {
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
             Опишите товарный знак и загрузите документы. Мы подскажем классы МКТУ,
-            проверим риски и соберём всё необходимое для подачи.
+            проверим риски отказа в регистрации и соберём всё необходимое для подачи.
           </p>
           <Button
             className="mt-8 h-13 rounded-full bg-[#12aaa5] px-7 text-base text-white hover:bg-[#0d918d]"
@@ -194,11 +203,6 @@ export default function ClientDashboardPage() {
             <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Ваши проекты</p>
             <h2 className="mt-2 text-3xl font-semibold text-[#11113f]">Мои заявки</h2>
           </div>
-          {applications.length > 0 && (
-            <Button variant="outline" className="hidden rounded-full sm:flex" onClick={() => setLocation("/start")}>
-              <Plus className="h-4 w-4" /> Новая заявка
-            </Button>
-          )}
         </div>
 
         {cases.isLoading ? (
@@ -220,9 +224,7 @@ export default function ClientDashboardPage() {
             <p className="mx-auto mt-2 max-w-lg text-[#6d6d7d]">
               Начните с названия бренда и короткого описания бизнеса. Черновик можно дополнить позже.
             </p>
-            <Button className="mt-6 rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={() => setLocation("/start")}>
-              Проверить первый знак <ArrowRight className="h-4 w-4" />
-            </Button>
+            <p className="mt-5 text-sm font-semibold text-[#0d9f9b]">Начните проверку кнопкой в верхнем блоке.</p>
           </div>
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">

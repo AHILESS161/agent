@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -99,7 +100,7 @@ interface Attached {
 
 export default function IntakePage() {
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, refreshProfile } = useAuth();
   const [, setLocation] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const cases = useCases();
@@ -115,7 +116,11 @@ export default function IntakePage() {
   const [name, setName] = useState("");
   const [inn, setInn] = useState("");
   const [ogrn, setOgrn] = useState("");
+  const [kpp, setKpp] = useState("");
   const [address, setAddress] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
+  const [rememberApplicantData, setRememberApplicantData] = useState(false);
 
   // Обозначение и деятельность.
   const [markName, setMarkName] = useState("");
@@ -124,6 +129,7 @@ export default function IntakePage() {
   const [goodsServices, setGoodsServices] = useState("");
   const [markImageFile, setMarkImageFile] = useState<File | null>(null);
   const [markImagePreview, setMarkImagePreview] = useState<string | null>(null);
+  const [isInspectingImage, setIsInspectingImage] = useState(false);
 
   // Обращение (необязательное).
   const [sender, setSender] = useState("");
@@ -138,7 +144,7 @@ export default function IntakePage() {
   const draftKey = `registr:intake-draft:${user?.id ?? "guest"}`;
   const saveDraft = (showNotice = false) => {
     localStorage.setItem(draftKey, JSON.stringify({
-      useExistingClient, clientId, clientType, name, inn, ogrn, address,
+      useExistingClient, clientId, clientType, name, inn, ogrn, kpp, address, contactEmail, contactPhone,
       markName, markType, businessDescription, goodsServices, sender, bodyText,
     }));
     if (showNotice) toast({ title: "Черновик сохранён", description: "Текстовые поля сохранятся в этом браузере. Файлы после перезагрузки нужно выбрать заново." });
@@ -146,7 +152,20 @@ export default function IntakePage() {
 
   useEffect(() => {
     const raw = localStorage.getItem(draftKey);
-    if (!raw) return;
+    if (!raw) {
+      const profile = user?.applicantProfile;
+      if (profile) {
+        setClientType(profile.type);
+        setName(profile.fullNameOrCompanyName || "");
+        setInn(profile.inn || "");
+        setOgrn(profile.ogrnOrOgrnip || "");
+        setKpp(profile.kpp || "");
+        setAddress(profile.address || "");
+        setContactEmail(profile.email || user?.email || "");
+        setContactPhone(profile.phone || "");
+      }
+      return;
+    }
     try {
       const draft = JSON.parse(raw);
       setUseExistingClient(Boolean(draft.useExistingClient));
@@ -155,7 +174,10 @@ export default function IntakePage() {
       setName(draft.name || "");
       setInn(draft.inn || "");
       setOgrn(draft.ogrn || "");
+      setKpp(draft.kpp || "");
       setAddress(draft.address || "");
+      setContactEmail(draft.contactEmail || "");
+      setContactPhone(draft.contactPhone || "");
       setMarkName(draft.markName || "");
       setMarkType(draft.markType || "word");
       setBusinessDescription(draft.businessDescription || "");
@@ -163,12 +185,12 @@ export default function IntakePage() {
       setSender(draft.sender || "");
       setBodyText(draft.bodyText || "");
     } catch { localStorage.removeItem(draftKey); }
-  }, [draftKey]);
+  }, [draftKey, user]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => saveDraft(false), 500);
     return () => window.clearTimeout(timer);
-  }, [useExistingClient, clientId, clientType, name, inn, ogrn, address, markName, markType, businessDescription, goodsServices, sender, bodyText]);
+  }, [useExistingClient, clientId, clientType, name, inn, ogrn, kpp, address, contactEmail, contactPhone, markName, markType, businessDescription, goodsServices, sender, bodyText]);
 
   const clients = Object.values(cases.data?.clientsById ?? {});
   const clientPortal = user?.role === "client";
@@ -184,6 +206,29 @@ export default function IntakePage() {
     setMarkImagePreview(url);
     return () => URL.revokeObjectURL(url);
   }, [markImageFile]);
+
+  const chooseMarkImage = async (file: File | null, inferMarkType = false) => {
+    setMarkImageFile(file);
+    if (!file) return;
+    setIsInspectingImage(true);
+    try {
+      const inspected = await api.upload<{ recognized_text?: string | null }>("/mark-images/inspect", file);
+      const recognized = (inspected.recognized_text || "").replace(/\s+/g, " ").trim();
+      if (inferMarkType && markType === "word") {
+        setMarkType(recognized ? "combined" : "figurative");
+      }
+      if (recognized && !markName.trim()) {
+        setMarkName(recognized.slice(0, 300));
+        toast({ title: "Текст на изображении распознан", description: "Мы подставили его в поле обозначения. Обязательно сверьте написание с картинкой." });
+      } else if (!recognized) {
+        toast({ title: "Изображение загружено", description: "Текст не распознан — обозначение можно указать вручную." });
+      }
+    } catch (error) {
+      toast({ title: "Не удалось прочитать изображение", description: error instanceof ApiError ? error.message : "Проверьте формат файла", variant: "destructive" });
+    } finally {
+      setIsInspectingImage(false);
+    }
+  };
 
   // Заполнить поле, только если оно ещё пустое: правки юриста важнее
   // предзаполнения и не должны затираться следующим документом.
@@ -203,7 +248,7 @@ export default function IntakePage() {
       return;
     }
     if ((extension === "png" || extension === "jpg" || extension === "jpeg") && (markType === "figurative" || markType === "combined")) {
-      setMarkImageFile(file);
+      await chooseMarkImage(file);
       if (fileInput.current) fileInput.current.value = "";
       return;
     }
@@ -213,6 +258,12 @@ export default function IntakePage() {
         "/intake/prefill-registrant",
         file,
       );
+
+      if (result.document_kind === "mark_image") {
+        await chooseMarkImage(file, true);
+        toast({ title: "Изображение знака добавлено", description: "Мы определили вид знака и попробовали распознать заявляемое обозначение." });
+        return;
+      }
 
       const filled = Object.keys(result.prefill).length > 0;
       if (result.client_type) setClientType(result.client_type);
@@ -275,7 +326,7 @@ export default function IntakePage() {
   const setAttachmentKind = (index: number, documentKind: string) => {
     if (documentKind === "mark_image") {
       const file = attached[index]?.file;
-      if (file) setMarkImageFile(file);
+      if (file) void chooseMarkImage(file);
       removeAttachment(index);
       return;
     }
@@ -322,7 +373,11 @@ export default function IntakePage() {
               full_name_or_company_name: name.trim(),
               inn: inn.trim() || null,
               ogrn_or_ogrnip: ogrn.trim() || null,
+              kpp: kpp.trim() || null,
               address: address.trim() || null,
+              country: "RU",
+              email: contactEmail.trim() || null,
+              phone: contactPhone.trim() || null,
             },
         mark_name: markName.trim() || null,
         mark_text: markName.trim() || null,
@@ -343,8 +398,31 @@ export default function IntakePage() {
       let markImageUploadFailed = false;
       if (imageMark && markImageFile) {
         try {
-          await api.upload(`/applications/${newCaseId}/mark-image`, markImageFile);
+          const uploadedImage = await api.upload<{ recognized_text?: string | null }>(`/applications/${newCaseId}/mark-image`, markImageFile);
           uploaded += 1;
+          const recognized = (uploadedImage.recognized_text || "").replace(/\s+/g, " ").trim();
+          const effectiveMarkName = markName.trim() || recognized;
+          if (effectiveMarkName && effectiveMarkName !== markName.trim()) {
+            await api.put(`/applications/${newCaseId}`, { mark_name: effectiveMarkName, mark_text: effectiveMarkName });
+          }
+          try {
+            const details = await api.post<{ description: string; colors: string[]; transliteration?: string; translation?: string }>(`/applications/${newCaseId}/generate-mark-description`);
+            await api.put(`/applications/${newCaseId}`, {
+              description_of_mark: details.description,
+              colors_claimed: details.colors.join(", "),
+              transliteration: details.transliteration || null,
+              translation: details.translation || null,
+            });
+            await api.post(`/applications/${newCaseId}/mark-details-suggestions`, {
+              description_of_mark: details.description,
+              colors_claimed: details.colors.join(", "),
+              transliteration: details.transliteration || null,
+              translation: details.translation || null,
+            });
+          } catch {
+            // Заявка и изображение уже сохранены. На экране проверки остаётся
+            // отдельная понятная кнопка повторной подготовки описания.
+          }
         } catch {
           markImageUploadFailed = true;
         }
@@ -377,16 +455,41 @@ export default function IntakePage() {
         }
       }
 
+      let profileSaveFailed = false;
+      if (clientPortal && !useExistingClient && rememberApplicantData) {
+        try {
+          await api.patch("/auth/me", {
+            applicant_profile_json: {
+              type: clientType,
+              full_name_or_company_name: name.trim() || null,
+              inn: inn.trim() || null,
+              ogrn_or_ogrnip: ogrn.trim() || null,
+              kpp: kpp.trim() || null,
+              address: address.trim() || null,
+              country: "RU",
+              email: contactEmail.trim() || null,
+              phone: contactPhone.trim() || null,
+            },
+          });
+          await refreshProfile();
+        } catch {
+          // Заявка уже создана: ошибка профиля не должна отменять результат.
+          profileSaveFailed = true;
+        }
+      }
+
       setCaseId(newCaseId);
       localStorage.removeItem(draftKey);
       toast({
         title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
-        description: markImageUploadFailed
+        description: profileSaveFailed
+          ? "Заявка создана, но сохранить реквизиты в профиль не удалось. Это можно повторить на экране проверки данных."
+          : markImageUploadFailed
           ? "Заявка сохранена, но изображение не загрузилось. Добавьте его ещё раз на экране «Данные»."
           : uploaded
           ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
-        variant: markImageUploadFailed ? "destructive" : undefined,
+        variant: markImageUploadFailed || profileSaveFailed ? "destructive" : undefined,
       });
     } catch (e) {
       toast({
@@ -634,6 +737,11 @@ export default function IntakePage() {
                     />
                   </Field>
                 )}
+                {clientType === "company" && (
+                  <Field label="КПП">
+                    <Input value={kpp} onChange={(e) => setKpp(e.target.value)} placeholder="770001001" data-testid="input-kpp" />
+                  </Field>
+                )}
               </div>
 
               <Field
@@ -651,6 +759,35 @@ export default function IntakePage() {
                   data-testid="input-address"
                 />
               </Field>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="E-mail для переписки">
+                  <Input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="name@example.ru" />
+                </Field>
+                <Field label="Телефон для переписки">
+                  <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+7 900 000-00-00" />
+                </Field>
+              </div>
+
+              {clientPortal && (
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/20 bg-primary/[0.045] p-4">
+                  <Checkbox
+                    checked={rememberApplicantData}
+                    onCheckedChange={(checked) => setRememberApplicantData(checked === true)}
+                    data-testid="remember-applicant-data"
+                  />
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
+                      {user?.applicantProfile
+                        ? "Обновить сохранённые данные заявителя"
+                        : "Запомнить данные для следующих заявок"}
+                    </span>
+                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
+                      После создания заявки эти реквизиты сохранятся в профиле и автоматически появятся в новой форме. Их всегда можно изменить в разделе «Профиль».
+                    </span>
+                  </span>
+                </label>
+              )}
 
               {clientType === "individual" && (
                 <p className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
@@ -720,7 +857,7 @@ export default function IntakePage() {
                     <div className="mt-3 flex flex-wrap gap-2">
                       <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-semibold hover:bg-muted">
                         <Upload className="h-4 w-4" /> Заменить
-                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => setMarkImageFile(event.target.files?.[0] ?? null)} />
+                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void chooseMarkImage(event.target.files?.[0] ?? null)} />
                       </label>
                       <button type="button" className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50" onClick={() => setMarkImageFile(null)}>
                         <Trash2 className="h-4 w-4" /> Удалить
@@ -733,9 +870,10 @@ export default function IntakePage() {
                   <ImageIcon className="h-7 w-7 text-primary" />
                   <span className="mt-2 text-sm font-semibold">Выбрать изображение</span>
                   <span className="mt-1 text-xs text-muted-foreground">PNG или JPEG</span>
-                  <input type="file" accept="image/png,image/jpeg" className="sr-only" data-testid="input-mark-image" onChange={(event) => setMarkImageFile(event.target.files?.[0] ?? null)} />
+                  <input type="file" accept="image/png,image/jpeg" className="sr-only" data-testid="input-mark-image" onChange={(event) => void chooseMarkImage(event.target.files?.[0] ?? null)} />
                 </label>
               )}
+              {isInspectingImage && <p className="mt-3 flex items-center gap-2 text-sm font-medium text-[#087c78]"><Loader2 className="h-4 w-4 animate-spin" /> Читаем текст на изображении…</p>}
             </div>
           )}
 
@@ -851,12 +989,12 @@ function ProjectStep({
   children: React.ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-2xl border border-card-border bg-card">
-      <header className="flex items-start gap-4 border-b border-border bg-primary/[0.045] px-6 py-5 sm:px-8">
+    <section className="overflow-hidden rounded-2xl border border-[#11113f]/10 bg-white text-[#11113f] shadow-sm">
+      <header className="flex items-start gap-4 border-b border-[#11113f]/10 bg-[#edf8f7] px-6 py-5 sm:px-8">
         <StepBadge n={n} />
         <div>
           <h2 className="text-xl font-semibold">{title}</h2>
-          <p className="mt-1 text-sm leading-relaxed text-muted-foreground">{description}</p>
+          <p className="mt-1 text-sm leading-relaxed text-[#626276]">{description}</p>
         </div>
       </header>
       <div className="space-y-5 px-6 py-6 sm:px-8 sm:py-7">{children}</div>

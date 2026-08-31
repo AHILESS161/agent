@@ -92,15 +92,15 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="grid min-h-screen bg-[#f7f5f1] lg:grid-cols-[1.04fr_.96fr]">
-      <section className="relative hidden overflow-hidden border-r border-black/5 px-[8vw] py-16 lg:flex lg:flex-col lg:justify-center">
-        <div className="absolute left-[8vw] top-12 text-[1.7rem] text-[#17104f]">
+    <main className="login-shell grid min-h-[100svh] bg-[#f7f5f1] lg:grid-cols-[1.04fr_.96fr]">
+      <section className="relative hidden overflow-hidden border-r border-black/5 px-[7vw] py-10 lg:flex lg:flex-col lg:justify-center">
+        <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#17104f]">
           <BrandWordmark accentEnd />
         </div>
 
         <div className="max-w-[650px]">
           <div className="flex items-end gap-4">
-            <h1 className="text-[clamp(74px,8vw,132px)] leading-[.82] text-[#17104f]">
+            <h1 className="text-[clamp(66px,7.2vw,116px)] leading-[.82] text-[#17104f]">
               <BrandWordmark />
             </h1>
             <span className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white">
@@ -108,27 +108,27 @@ export default function LoginPage() {
             </span>
           </div>
 
-          <div className="relative mt-7 border-t-[3px] border-primary pt-8">
-            <div className="absolute -right-7 -top-[3px] h-[168px] w-8 rounded-r-[28px] border-y-[3px] border-r-[3px] border-primary" />
-            <h2 className="text-[34px] font-semibold leading-[1.08] text-[#17104f]">
+          <div className="relative mt-6 border-t-[3px] border-primary pt-6">
+            <div className="absolute -right-7 -top-[3px] h-[150px] w-8 rounded-r-[28px] border-y-[3px] border-r-[3px] border-primary" />
+            <h2 className="text-[30px] font-semibold leading-[1.08] text-[#17104f]">
               Защищаем идеи.<br />Управляем правами
             </h2>
-            <p className="mt-4 max-w-md text-[20px] leading-snug text-[#5e5e68]">
+            <p className="mt-3 max-w-md text-[18px] leading-snug text-[#5e5e68]">
               Регистрация товарных знаков —<br />от заявки до свидетельства.
             </p>
           </div>
         </div>
 
-        <div className="absolute bottom-16 left-[8vw] flex items-center gap-7 text-sm text-[#4f5058]">
+        <div className="absolute bottom-9 left-[7vw] flex items-center gap-7 text-sm text-[#4f5058]">
           <span>Заявители</span><span className="text-primary">/</span>
           <span>Товарные знаки</span><span className="text-primary">/</span>
           <span>Документы</span>
         </div>
       </section>
 
-      <section className="flex items-center justify-center bg-[#08090b] p-5 sm:p-8 xl:p-10">
-        <div className="w-full max-w-[620px] rounded-[18px] bg-[#fbfaf8] p-6 shadow-2xl sm:p-8 xl:p-9">
-          <div className="mb-6 flex border-b border-border text-center text-sm">
+      <section className="login-panel flex items-center justify-center bg-[#08090b] p-4 sm:p-5 xl:p-6">
+        <div className="login-card w-full max-w-[580px] rounded-[18px] bg-[#fbfaf8] p-5 shadow-2xl sm:p-6 xl:p-7">
+          <div className="mb-4 flex border-b border-border text-center text-sm">
             <div className="relative flex-1 pb-4 font-medium text-[#17104f] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
@@ -141,7 +141,7 @@ export default function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
 
           <form
-            className="mt-5 space-y-4"
+            className="mt-4 space-y-3"
             onSubmit={(event) => {
               event.preventDefault();
               void submit(email, password);
@@ -210,11 +210,11 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-5 border-t border-border pt-5">
+          <div className="mt-4 border-t border-border pt-4">
             <p className="text-center text-sm font-medium text-[#17104f]">Или выберите тип аккаунта</p>
             <p className="mt-1 text-center text-xs text-muted-foreground">Для быстрого входа в демо-стенд</p>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {DEMO_ROLES.map((role) => {
                 const Icon = role.icon;
                 const selected = demoRole === role.id;
@@ -225,7 +225,7 @@ export default function LoginPage() {
                     disabled={isSubmitting}
                     onClick={() => chooseDemoRole(role.id, role.email)}
                     style={{ order: role.order }}
-                    className={`rounded-xl border px-3 py-3 text-left transition ${
+                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
                       selected
                         ? "border-primary bg-primary/10 shadow-sm"
                         : "border-border bg-white hover:border-primary/50 hover:bg-primary/[0.04]"
@@ -282,7 +282,7 @@ export default function LoginPage() {
             </Button>
           </div>
 
-          <p className="mt-7 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <p className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
             <ShieldCheck className="h-4 w-4 text-primary" /> Защищённое соединение · демо-режим
           </p>
         </div>

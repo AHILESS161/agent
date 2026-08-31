@@ -42,6 +42,18 @@ EGRUL_WITH_DIRECTOR_TEXT = (
     "Сведения об учредителях\n"
 )
 
+PASSPORT_TEXT = (
+    "ПАСПОРТ ГРАЖДАНИНА РОССИЙСКОЙ ФЕДЕРАЦИИ\n"
+    "Фамилия ИВАНОВ\n"
+    "Имя ИВАН\n"
+    "Отчество ИВАНОВИЧ\n"
+    "Дата рождения 01.01.1990\n"
+    "Место жительства: 650000, Кемеровская область, город Кемерово, улица Весенняя, дом 1\n"
+    "Код подразделения 420-001\n"
+    "Паспорт выдан УМВД России 12.02.2010\n"
+    "Серия 3201 номер 123456\n"
+)
+
 
 @pytest.fixture
 async def auth(client, api_user_factory) -> dict[str, str]:
@@ -127,6 +139,24 @@ class TestPrefillNonRegistry:
         body = response.json()
         assert body["prefill"] == {}
         assert body["warning"]
+
+
+@pytest.mark.api
+class TestPrefillPassport:
+    def test_passport_prefills_only_required_applicant_data(self, client, auth):
+        body = _prefill(client, auth, "passport.txt", PASSPORT_TEXT).json()
+
+        assert body["document_kind"] == "passport"
+        assert body["client_type"] == "individual"
+        assert body["prefill"] == {
+            "name": "Иванов Иван Иванович",
+            "address": "650000, Кемеровская область, город Кемерово, улица Весенняя, дом 1",
+        }
+        assert all(item["is_sensitive"] for item in body["fields"])
+        exposed = " ".join(str(value) for value in body.values())
+        assert "123456" not in exposed
+        assert "3201" not in exposed
+        assert "420-001" not in exposed
 
 
 @pytest.mark.api

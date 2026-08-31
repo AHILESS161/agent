@@ -118,6 +118,7 @@ SYSTEM_AUDIT_ACTIONS = {
     "application.mark_description.suggested",
     "application.mark_details.suggested",
 }
+PROFILE_AUDIT_ACTION = "application.prefilled_from_profile"
 
 SYSTEM_KEY_TO_CODE = {
     "description": "mark_description",
@@ -126,6 +127,16 @@ SYSTEM_KEY_TO_CODE = {
     "colors_claimed": "colors_claimed",
     "transliteration": "transliteration",
     "translation": "translation",
+}
+PROFILE_KEY_TO_CODE = {
+    "full_name_or_company_name": "applicant_name",
+    "inn": "applicant_inn",
+    "ogrn_or_ogrnip": "applicant_registry_number",
+    "kpp": "applicant_kpp",
+    "address": "applicant_address",
+    "country": "territory",
+    "email": "applicant_email",
+    "phone": "applicant_phone",
 }
 
 
@@ -170,6 +181,7 @@ def _source_item(
         "system": "Предложено системой — проверьте",
         "user": "Введено вами" if filled else "Заполнить вручную",
         "rospatent": "Заполнит Роспатент",
+        "profile": "Из вашего профиля — проверьте",
     }
     details = {
         "system": "Система предложила это значение автоматически. Проверьте его перед подачей.",
@@ -179,6 +191,7 @@ def _source_item(
             else "Этого значения нет в документах — укажите его самостоятельно."
         ),
         "rospatent": "Это служебное поле появится после приёма или регистрации заявки.",
+        "profile": "Значение подставлено из сохранённых данных заявителя. Проверьте его перед подачей.",
     }
     return {
         "code": code,
@@ -186,7 +199,7 @@ def _source_item(
         "label": labels[source],
         "detail": detail or details.get(source) or "",
         "filled": filled,
-        "verification_required": source in {"document", "system"},
+        "verification_required": source in {"document", "system", "profile"},
     }
 
 
@@ -247,7 +260,7 @@ async def field_sources_manifest(
                 select(AuditLog)
                 .where(
                     AuditLog.application_id == application.id,
-                    AuditLog.action.in_(SYSTEM_AUDIT_ACTIONS),
+                    AuditLog.action.in_((*SYSTEM_AUDIT_ACTIONS, PROFILE_AUDIT_ACTION)),
                 )
                 .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
             )
@@ -256,11 +269,12 @@ async def field_sources_manifest(
         .all()
     )
     system_values: dict[str, list[Any]] = defaultdict(list)
+    profile_values: dict[str, list[Any]] = defaultdict(list)
     for audit in audits:
         for key, value in (audit.new_value_json or {}).items():
-            code = SYSTEM_KEY_TO_CODE.get(key)
+            code = (PROFILE_KEY_TO_CODE if audit.action == PROFILE_AUDIT_ACTION else SYSTEM_KEY_TO_CODE).get(key)
             if code and _is_filled(value):
-                system_values[code].append(value)
+                (profile_values if audit.action == PROFILE_AUDIT_ACTION else system_values)[code].append(value)
 
     documents = list(
         (
@@ -337,6 +351,9 @@ async def field_sources_manifest(
             continue
         if any(_normalized(candidate) == _normalized(value) for candidate in system_values[spec.code]):
             items.append(_source_item(spec.code, source="system", filled=filled))
+            continue
+        if any(_normalized(candidate) == _normalized(value) for candidate in profile_values[spec.code]):
+            items.append(_source_item(spec.code, source="profile", filled=filled))
             continue
         if filled and spec.default_system_value is not None and _normalized(value) == _normalized(spec.default_system_value):
             items.append(

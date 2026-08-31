@@ -14,6 +14,15 @@ from app.infrastructure.database.models import UserRole
 from tests.conftest import login_headers
 
 
+class _NarrowingProvider:
+    async def generate_structured(self, **_kwargs):
+        return {
+            "selected_indices": [1, 2],
+            "rationale": "Эти позиции прямо соответствуют описанию деятельности.",
+            "assumptions": [],
+        }
+
+
 @pytest.fixture
 async def lawyer(client, api_user_factory) -> dict[str, str]:
     await api_user_factory("classes@test.ru", UserRole.lawyer)
@@ -53,6 +62,18 @@ class TestManualClass:
             headers=lawyer,
         )
         assert response.json()["approved"] is True
+
+    def test_manual_class_without_custom_text_uses_full_official_list(
+        self, client, lawyer, case
+    ):
+        response = client.post(
+            f"/api/v1/applications/{case}/classes",
+            json={"class_number": 25},
+            headers=lawyer,
+        )
+        description = response.json()["class_description"]
+        assert len(description) > 2_000
+        assert ";" in description
 
     def test_duplicate_class_is_rejected(self, client, lawyer, case):
         client.post(
@@ -122,6 +143,68 @@ class TestApproval:
         )
         assert approved.json()["approved"] is True
         assert approved.json()["class_description"] == "ремонт и обслуживание компьютеров"
+
+
+@pytest.mark.api
+class TestModelNarrowing:
+    def test_preview_does_not_change_list_and_apply_uses_official_items(
+        self, client, lawyer, case, monkeypatch
+    ):
+        from app.api.v1.endpoints import applications
+
+        client.put(
+            f"/api/v1/applications/{case}",
+            json={
+                "business_description": "Устанавливаем и ремонтируем компьютеры",
+                "goods_services_raw": "установка и ремонт компьютеров",
+            },
+            headers=lawyer,
+        )
+        created = client.post(
+            f"/api/v1/applications/{case}/classes",
+            json={"class_number": 37},
+            headers=lawyer,
+        ).json()
+        original = created["class_description"]
+        monkeypatch.setattr(applications, "_get_llm_provider", lambda: _NarrowingProvider())
+
+        preview_response = client.post(
+            f"/api/v1/applications/{case}/classes/{created['id']}/narrow",
+            json={},
+            headers=lawyer,
+        )
+        assert preview_response.status_code == 200
+        preview = preview_response.json()
+        assert preview["selected_count"] == 2
+        assert preview["source_count"] > preview["selected_count"]
+
+        still_original = client.get(
+            f"/api/v1/applications/{case}/classes", headers=lawyer
+        ).json()["suggestions"][0]["class_description"]
+        assert still_original == original
+
+        applied = client.post(
+            f"/api/v1/applications/{case}/classes/{created['id']}/narrow/apply",
+            json={"selected_items": preview["selected_items"]},
+            headers=lawyer,
+        )
+        assert applied.status_code == 200
+        assert applied.json()["class_description"] == preview["proposed_description"]
+
+    def test_apply_rejects_text_not_found_in_official_catalogue(
+        self, client, lawyer, case
+    ):
+        created = client.post(
+            f"/api/v1/applications/{case}/classes",
+            json={"class_number": 37},
+            headers=lawyer,
+        ).json()
+        response = client.post(
+            f"/api/v1/applications/{case}/classes/{created['id']}/narrow/apply",
+            json={"selected_items": ["любые хорошие услуги"]},
+            headers=lawyer,
+        )
+        assert response.status_code == 422
 
 
 @pytest.mark.api

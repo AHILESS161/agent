@@ -57,6 +57,8 @@ class NewClientData(BaseModel):
     address: Optional[str] = None
     inn: Optional[str] = None
     ogrn_or_ogrnip: Optional[str] = None
+    kpp: Optional[str] = None
+    country: Optional[str] = "RU"
 
 
 class IntakeRequest(BaseModel):
@@ -193,6 +195,25 @@ async def create_intake(
                 user_id=current_user.id,
             )
             created_case_id = application.id
+            profile = current_user.applicant_profile_json or {}
+            if current_user.role is UserRole.client and profile and payload.new_client:
+                submitted = payload.new_client.model_dump()
+                matched = {
+                    key: value
+                    for key, value in submitted.items()
+                    if key in profile and value not in (None, "") and str(value).strip() == str(profile.get(key) or "").strip()
+                }
+                if matched:
+                    session.add(
+                        AuditLog(
+                            user_id=current_user.id,
+                            application_id=application.id,
+                            action="application.prefilled_from_profile",
+                            entity_type="TrademarkApplicationDraft",
+                            entity_id=str(application.id),
+                            new_value_json=matched,
+                        )
+                    )
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)

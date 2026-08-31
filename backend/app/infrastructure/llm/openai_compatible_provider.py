@@ -153,7 +153,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "temperature": temperature,
             # Flash-модель может потратить несколько тысяч токенов на скрытое
             # рассуждение до JSON. Малый лимит давал пустой content.
-            "max_tokens": 12000,
+            "max_tokens": 16000,
             "response_format": {"type": "json_object"},
         }
         t0 = time.time()

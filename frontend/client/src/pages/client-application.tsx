@@ -1984,6 +1984,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
   const registryResultIsPrevious = Boolean(
     !registrySearchSkipped && report?.refresh_warnings?.relative_grounds && lastCompletedRelativeSection
   );
+  const retryAvailable = incomplete || registryResultIsPrevious;
   const registryFindings = effectiveRelativeSection?.findings || [];
   const registrySearchComplete = Boolean(
     effectiveRelativeSection
@@ -2181,7 +2182,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
           </h3>
           <div className={cn("mt-4 space-y-3 text-sm leading-relaxed", registrySearchSkipped || !registrySearchComplete ? "text-amber-950/80" : "text-emerald-950/80")}>
             <p>{registryAdvice}</p>
-            {registryResultIsPrevious && <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">Повторная проверка реестра временно недоступна. Сейчас показан последний полученный результат.</p>}
+            {registryResultIsPrevious && <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">Не удалось обновить поиск по реестру. Сейчас показан последний успешно полученный результат; его можно обновить ещё раз.</p>}
           </div>
         </section>
 
@@ -2240,10 +2241,11 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
         <div className="flex shrink-0 flex-wrap gap-2">
           <Button variant="outline" className="rounded-full bg-white" onClick={onReview}>Изменить классы</Button>
           <Button variant="outline" className="rounded-full bg-white" onClick={onEditData}>Изменить данные</Button>
-          {incomplete ? (
-            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Повторяем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
-          ) : (
-            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={onApplication}>Перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button>
+          {retryAvailable && (
+            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Обновляем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : registryResultIsPrevious ? "Обновить поиск знаков" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
+          )}
+          {!incomplete && (
+            <Button className={cn("rounded-full px-6", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button>
           )}
         </div>
       </div>

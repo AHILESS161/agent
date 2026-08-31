@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import html
 import io
 import re
 import zipfile
@@ -210,6 +211,17 @@ _RISK_LABELS = {
 }
 
 
+def _plain_client_text(value: str | None) -> str:
+    """Decode HTML entities that may leak from a model or an imported source."""
+    result = value or ""
+    for _ in range(2):
+        decoded = html.unescape(result)
+        if decoded == result:
+            break
+        result = decoded
+    return result.replace("\u00a0", " ").strip()
+
+
 def _client_analysis_summary(kind: str, assessment: RiskAssessment) -> str:
     """Свести юридический результат без внутренних ошибок интеграций."""
     if assessment.is_inconclusive:
@@ -223,7 +235,7 @@ def _client_analysis_summary(kind: str, assessment: RiskAssessment) -> str:
             "Поиск сходных обозначений пока не завершён. Повторите поиск перед "
             "подачей или передайте его специалисту."
         )
-    return assessment.summary or (
+    return _plain_client_text(assessment.summary) or (
         "По доступным данным обстоятельств, требующих отдельного предупреждения, не выявлено."
     )
 
@@ -231,7 +243,7 @@ def _client_analysis_summary(kind: str, assessment: RiskAssessment) -> str:
 def _analysis_document(application: TrademarkApplicationDraft, assessments: dict[str, RiskAssessment]) -> bytes:
     document = _new_document(
         "РЕЗУЛЬТАТ ПРЕДВАРИТЕЛЬНОЙ ПРОВЕРКИ",
-        f"Обозначение «{application.mark_text or application.mark_name or ''}»",
+        f"Обозначение «{_plain_client_text(application.mark_text or application.mark_name)}»",
     )
     document.add_paragraph(
         "Этот документ предназначен для заявителя и не подаётся в Роспатент. "
@@ -243,13 +255,16 @@ def _analysis_document(application: TrademarkApplicationDraft, assessments: dict
     }
     for key, assessment in assessments.items():
         document.add_heading(labels.get(key, key), level=1)
-        _add_label(
-            document,
-            "Уровень риска",
-            _RISK_LABELS.get(assessment.overall_risk.value, assessment.overall_risk.value)
-            if assessment.overall_risk
-            else "не определён",
-        )
+        if assessment.is_inconclusive:
+            _add_label(document, "Статус проверки", "не завершена")
+        else:
+            _add_label(
+                document,
+                "Уровень риска",
+                _RISK_LABELS.get(assessment.overall_risk.value, assessment.overall_risk.value)
+                if assessment.overall_risk
+                else "не определён",
+            )
         document.add_paragraph(_client_analysis_summary(key, assessment))
     return _docx_bytes(document)
 

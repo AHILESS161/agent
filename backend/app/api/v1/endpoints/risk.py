@@ -32,6 +32,8 @@ from app.services.class_analysis import load_class_context, run_class_analysis
 from app.services.conflict_search import run_conflict_search
 from app.services.full_analysis import (
     latest_completed_for_classes,
+    relative_attempt_is_transient,
+    relative_refresh_warning,
     run_full_analysis,
 )
 from app.services.nice_catalog import search as nice_catalog_search
@@ -559,10 +561,16 @@ async def risk_report(
             and latest.is_inconclusive
             and last_completed is not None
             and not latest_was_pipeline_skip
+            and (
+                kind is AnalysisKind.absolute_grounds
+                or relative_attempt_is_transient(latest, last_completed)
+            )
         ):
             effective = last_completed
             refresh_warnings[kind.value] = (
-                latest.inconclusive_reason
+                relative_refresh_warning(latest, last_completed)
+                if kind is AnalysisKind.relative_grounds
+                else latest.inconclusive_reason
                 or "Повторную проверку временно не удалось завершить."
             )
         sections[kind.value] = serialize_assessment(effective) if effective else None

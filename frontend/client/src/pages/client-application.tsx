@@ -1964,6 +1964,10 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
     relativeSection?.provenance?.verification?.skipped
     && relativeSection.provenance.verification.blocked_by === "absolute_grounds"
   );
+  const registryRefreshWarning = report?.refresh_warnings?.relative_grounds || "";
+  const registryResponseInconsistent = /пуст\S* .*предыдущ\S* .*выдач/i.test(
+    registryRefreshWarning
+  );
   const registryConnectionFailed = Boolean(
     !registrySearchSkipped
     &&
@@ -1974,6 +1978,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
     !registrySearchSkipped
     && latestRelativeAttempt?.is_inconclusive
     && (latestRelativeAttempt.provenance?.verification?.search_errors?.length || 0) === 0
+    && !registryResponseInconsistent
     && /(визуальн\S* сходств\S* .*не провер|не найдено достаточных совпадений)/i.test(
       latestRelativeAttempt.inconclusive_reason || ""
     )
@@ -2001,6 +2006,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
   const retryAvailable = Boolean(
     absoluteCheckIncomplete
     || registryConnectionFailed
+    || registryResponseInconsistent
     || (!registrySearchComplete && !registryCoverageLimited && !registrySearchSkipped)
   );
   const unfinishedCheckTitle = absoluteCheckIncomplete
@@ -2195,7 +2201,9 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
             <p>{registryAdvice}</p>
             {registryResultIsPrevious && (
               <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">
-                {registryCoverageLimited
+                {registryResponseInconsistent
+                  ? registryRefreshWarning
+                  : registryCoverageLimited
                   ? "Показан последний завершённый поиск по словесной части. Новый запуск не нашёл дополнительных словесных кандидатов, а визуальный поиск по всему реестру для комбинированного знака этим источником недоступен. Повторный запуск не расширит охват проверки."
                   : "Не удалось обновить поиск по реестру. Сейчас показан последний успешно полученный результат; поиск можно запустить ещё раз."}
               </p>

@@ -24,7 +24,46 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.llm.mock_provider import MockLLMProvider
 from app.infrastructure.providers.base import RegistryRecord
-from app.services.full_analysis import _max_risk, run_full_analysis
+from app.services.full_analysis import (
+    _max_risk,
+    relative_attempt_is_transient,
+    relative_refresh_warning,
+    run_full_analysis,
+)
+
+
+def test_empty_refresh_after_nonempty_result_is_provider_instability():
+    previous = RiskAssessment(
+        application_id=1,
+        analysis_kind=AnalysisKind.relative_grounds,
+        is_inconclusive=False,
+        verification_json={"records_examined": 91, "visual_records_compared": 16},
+    )
+    attempt = RiskAssessment(
+        application_id=1,
+        analysis_kind=AnalysisKind.relative_grounds,
+        is_inconclusive=True,
+        inconclusive_reason="Визуальное сходство не проверено.",
+        verification_json={"records_examined": 0, "search_errors": []},
+    )
+
+    assert relative_attempt_is_transient(attempt, previous) is True
+    warning = relative_refresh_warning(attempt, previous)
+    assert "91 карточек" in warning
+    assert "Пустой ответ не использован" in warning
+    assert "16 карточек" in warning
+
+
+def test_visual_coverage_limit_without_previous_result_is_not_transient_outage():
+    attempt = RiskAssessment(
+        application_id=1,
+        analysis_kind=AnalysisKind.relative_grounds,
+        is_inconclusive=True,
+        inconclusive_reason="Визуальное сходство комбинированного знака не проверено.",
+        verification_json={"records_examined": 0, "search_errors": []},
+    )
+
+    assert relative_attempt_is_transient(attempt, None) is False
 
 
 class StubRegistry:

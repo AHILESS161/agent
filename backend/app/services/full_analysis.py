@@ -106,6 +106,83 @@ def _is_pipeline_skip(assessment: RiskAssessment | None) -> bool:
     )
 
 
+def relative_attempt_is_transient(
+    attempt: RiskAssessment,
+    previous_completed: RiskAssessment | None = None,
+) -> bool:
+    """Отличить сбой источника от честного ограничения охвата поиска."""
+    if not attempt.is_inconclusive:
+        return False
+    verification = (
+        attempt.verification_json
+        if isinstance(attempt.verification_json, dict)
+        else {}
+    )
+    if verification.get("search_errors"):
+        return True
+    reason = (attempt.inconclusive_reason or "").casefold()
+    if any(
+        marker in reason
+        for marker in (
+            "временно не ответ",
+            "не удалось обновить",
+            "тайм-аут",
+            "timeout",
+            "недоступен",
+            "ошибка подключения",
+        )
+    ):
+        return True
+    previous_verification = (
+        previous_completed.verification_json
+        if previous_completed is not None
+        and isinstance(previous_completed.verification_json, dict)
+        else {}
+    )
+    current_records = int(verification.get("records_examined") or 0)
+    previous_records = int(previous_verification.get("records_examined") or 0)
+    # Одинаковый запрос не должен мгновенно превращаться из содержательной
+    # выдачи в пустую «успешную» выдачу. Для недокументированного публичного
+    # протокола это признак нестабильного ответа, а не новый юридический факт.
+    return current_records == 0 and previous_records > 0
+
+
+def relative_refresh_warning(
+    attempt: RiskAssessment,
+    previous_completed: RiskAssessment | None,
+) -> str:
+    verification = (
+        attempt.verification_json
+        if isinstance(attempt.verification_json, dict)
+        else {}
+    )
+    previous_verification = (
+        previous_completed.verification_json
+        if previous_completed is not None
+        and isinstance(previous_completed.verification_json, dict)
+        else {}
+    )
+    current_records = int(verification.get("records_examined") or 0)
+    previous_records = int(previous_verification.get("records_examined") or 0)
+    if current_records == 0 and previous_records > 0:
+        previous_visual = int(
+            previous_verification.get("visual_records_compared") or 0
+        )
+        visual_detail = (
+            f" Изображения {previous_visual} карточек ранее были сопоставлены "
+            "с заявляемым знаком."
+            if previous_visual > 0
+            else ""
+        )
+        return (
+            "Новый ответ реестра оказался пустым и противоречит предыдущей "
+            f"завершённой выдаче ({previous_records} карточек). Пустой ответ "
+            "не использован; показан последний устойчивый результат."
+            + visual_detail
+        )
+    return attempt.inconclusive_reason or "Повторный поиск временно не удалось завершить."
+
+
 async def _skip_relative_grounds(
     session: AsyncSession,
     *,
@@ -462,12 +539,16 @@ async def run_full_analysis(
                 user_id=user_id,
                 llm_provider=llm_provider,
             )
-            if relative_attempt.is_inconclusive and previous_relative is not None:
+            if (
+                previous_relative is not None
+                and relative_attempt_is_transient(relative_attempt, previous_relative)
+            ):
                 refresh_warnings.append(
                     {
                         "step": "relative_grounds",
-                        "detail": relative_attempt.inconclusive_reason
-                        or "Повторный поиск по реестру временно не удалось завершить.",
+                        "detail": relative_refresh_warning(
+                            relative_attempt, previous_relative
+                        ),
                     }
                 )
                 relative = previous_relative

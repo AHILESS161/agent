@@ -74,7 +74,13 @@ class Settings(BaseSettings):
     GIGACHAT_SCOPE: str = "GIGACHAT_API_PERS"
     GIGACHAT_AUTH_URL: str = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
     GIGACHAT_VERIFY_SSL: bool = True
-    GIGACHAT_CA_BUNDLE_FILE: Optional[str] = None
+    # GigaChat uses the certificate chain of the National Certification
+    # Authority of the Russian Ministry of Digital Development.  Keep TLS
+    # verification enabled and trust the bundled official root instead of
+    # falling back to verify_ssl=False in production.
+    GIGACHAT_CA_BUNDLE_FILE: Optional[str] = (
+        "./certs/russian_trusted_root_ca_pem.crt"
+    )
     GIGACHAT_MIN_REQUEST_INTERVAL: float = 1.25
     GIGACHAT_MAX_RETRIES: int = 5
 

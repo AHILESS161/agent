@@ -92,7 +92,7 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="login-shell grid min-h-[100svh] bg-[#f7f5f1] lg:grid-cols-[1.04fr_.96fr]">
+    <main className="client-light-scope login-shell grid min-h-[100svh] bg-[#f7f5f1] lg:grid-cols-[1.04fr_.96fr]">
       <section className="relative hidden overflow-hidden border-r border-black/5 px-[7vw] py-10 lg:flex lg:flex-col lg:justify-center">
         <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#17104f]">
           <BrandWordmark accentEnd />

@@ -52,6 +52,11 @@ _GOODS_ACTIVITY_RE = re.compile(
     r"магазин\w*|товар\w*)\b",
     re.IGNORECASE,
 )
+_TRADE_ACTIVITY_RE = re.compile(
+    r"\b(продаж\w*|прода\w*|торгов\w*|магазин\w*|маркетплейс\w*)\b",
+    re.IGNORECASE,
+)
+_TOY_GOODS_RE = re.compile(r"\bигруш\w*\b", re.IGNORECASE)
 
 
 def _service_intent(text: str) -> tuple[set[int], bool]:
@@ -91,6 +96,62 @@ def _apply_service_intent(
             confidence=0.95,
             citations=[],
         )
+    return list(by_number.values())
+
+
+def _apply_trade_product_intent(
+    suggestions: list[ClassSuggestion], source_text: str
+) -> list[ClassSuggestion]:
+    """Разделить услугу магазина и продаваемый товар.
+
+    Формулировка «продажа игрушек» уверенно указывает на класс 35, но сама по
+    себе не отвечает, будет ли знак названием магазина или маркой на игрушках.
+    Второй сценарий нельзя молча потерять: после подачи добавить класс 28 в эту
+    заявку уже не получится. Поэтому он показывается как спорный вариант для
+    осознанного решения пользователя.
+    """
+    if not _TRADE_ACTIVITY_RE.search(source_text):
+        return suggestions
+
+    by_number = {item.class_number: item for item in suggestions}
+    by_number.setdefault(
+        35,
+        ClassSuggestion(
+            class_number=35,
+            rationale=(
+                "Класс 35 охватывает услуги розничной или оптовой торговли "
+                "товарами и защищает обозначение магазина или торгового сервиса."
+            ),
+            category="primary",
+            goods_services=["услуги розничной или оптовой торговли товарами"],
+            confidence=0.95,
+            citations=[],
+        ),
+    )
+
+    if _TOY_GOODS_RE.search(source_text):
+        trade = by_number[35]
+        trade.rationale = (
+            "Класс 35 охватывает услуги розничной или оптовой торговли "
+            "детскими игрушками: название магазина или торгового сервиса, "
+            "но не сами игрушки как товары."
+        )
+        by_number.setdefault(
+            28,
+            ClassSuggestion(
+                class_number=28,
+                rationale=(
+                    "Класс 28 нужен отдельно, если обозначение будет наноситься "
+                    "на сами игрушки или их упаковку. Если это только название "
+                    "магазина, этот вариант можно отклонить."
+                ),
+                category="borderline",
+                goods_services=["детские игрушки как товары"],
+                confidence=0.8,
+                citations=[],
+            ),
+        )
+
     return list(by_number.values())
 
 
@@ -209,6 +270,10 @@ async def run_class_analysis(
         ) if part.strip()
     )
     outcome.result.suggestions = _apply_service_intent(
+        outcome.result.suggestions,
+        source_text,
+    )
+    outcome.result.suggestions = _apply_trade_product_intent(
         outcome.result.suggestions,
         source_text,
     )
@@ -396,7 +461,11 @@ async def _catalog_fallback(
             # Пока клиент явно не сузил перечень, используем полный
             # официальный перечень позиций выбранного класса.
             class_description=item.full_description,
-            rationale=f"Справочник МКТУ: найдено по описанию «{phrase}».",
+            rationale=(
+                f"Класс {number} может охватывать указанное вами направление «{phrase}». "
+                "Проверьте, будет ли обозначение использоваться именно для этих товаров "
+                "или услуг; если нет, класс можно не включать."
+            ),
             confidence=0.55,
             category=NiceCategory.primary,
             approved=None,

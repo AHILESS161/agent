@@ -33,7 +33,7 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
   ];
 
   return (
-    <div className="min-h-screen bg-[#f6f5f1] text-[#11113f]">
+    <div className="client-light-scope min-h-screen bg-[#f6f5f1] text-[#11113f]">
       <header className="sticky top-0 z-30 border-b border-[#11113f]/10 bg-[#fbfaf7]/95 backdrop-blur">
         <div className="mx-auto flex h-20 max-w-[92rem] items-center gap-6 px-5 sm:px-8 lg:px-12">
           <Link href="/dashboard">

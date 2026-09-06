@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import ssl
 import time
+from pathlib import Path
 
 import httpx
 import pytest
@@ -12,6 +14,17 @@ from app.infrastructure.llm.gigachat_provider import (
     GigaChatProvider,
     GigaChatStructuredOutputError,
 )
+
+
+def test_bundled_russian_root_ca_is_a_valid_trust_bundle() -> None:
+    certificate = (
+        Path(__file__).resolve().parents[2]
+        / "certs"
+        / "russian_trusted_root_ca_pem.crt"
+    )
+
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=certificate)
 
 
 def _response(request: httpx.Request, status: int, data: dict) -> httpx.Response:

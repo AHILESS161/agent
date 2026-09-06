@@ -22,15 +22,16 @@ branch_labels = None
 depends_on = None
 
 TABLE = "trademark_application_drafts"
+PRIORITY_ENUM = sa.Enum("low", "medium", "high", name="casepriority")
 
 
 def upgrade() -> None:
-    sa.Enum("low", "medium", "high", name="casepriority").create(op.get_bind(), checkfirst=True)
+    PRIORITY_ENUM.create(op.get_bind(), checkfirst=True)
     op.add_column(
         TABLE,
         sa.Column(
             "priority",
-            sa.Enum("low", "medium", "high", name="casepriority"),
+            PRIORITY_ENUM,
             nullable=False,
             server_default="medium",
         ),
@@ -61,3 +62,4 @@ def downgrade() -> None:
     op.drop_index(f"ix_{TABLE}_created_by_user_id", table_name=TABLE)
     op.drop_column(TABLE, "created_by_user_id")
     op.drop_column(TABLE, "priority")
+    PRIORITY_ENUM.drop(op.get_bind(), checkfirst=True)

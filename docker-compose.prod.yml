@@ -66,6 +66,7 @@ services:
       ANALYSIS_WORKER_MODE: external
       ENVIRONMENT: production
       WORKER_HEARTBEAT_PATH: /data/health/worker.json
+      GIGACHAT_CA_BUNDLE_FILE: /app/certs/russian_trusted_root_ca_pem.crt
     volumes:
       - documents_data:/data/documents
       - worker_health:/data/health:ro
@@ -95,6 +96,7 @@ services:
       ANALYSIS_WORKER_MODE: external
       ENVIRONMENT: production
       WORKER_HEARTBEAT_PATH: /data/health/worker.json
+      GIGACHAT_CA_BUNDLE_FILE: /app/certs/russian_trusted_root_ca_pem.crt
     command: ["python", "-m", "app.workers.full_analysis"]
     volumes:
       - documents_data:/data/documents

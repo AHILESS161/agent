@@ -52,6 +52,10 @@ async def calculate_trademark_fees(
     selected = context.effective
     class_numbers = sorted({item.class_number for item in selected})
 
+    # The confirmed class description is the filing source of truth.  A draft
+    # can still contain older GoodsServicesItem rows created during extraction;
+    # using them first made the fee remain at the full-catalogue amount even
+    # after the user narrowed the list.
     items = (
         (
             await session.execute(
@@ -63,17 +67,20 @@ async def calculate_trademark_fees(
         .scalars()
         .all()
     )
-    item_counts: dict[int, int] = {}
+    fallback_item_counts: dict[int, int] = {}
     for item in items:
         number = item.approved_class or item.proposed_class
-        item_counts[number] = item_counts.get(number, 0) + 1
+        fallback_item_counts[number] = fallback_item_counts.get(number, 0) + 1
 
     class_details: list[dict[str, int]] = []
     term_surcharge = 0
     for suggestion in selected:
-        term_count = item_counts.get(suggestion.class_number)
-        if term_count is None:
-            term_count = len(_terms(suggestion.class_description))
+        described_terms = _terms(suggestion.class_description)
+        term_count = (
+            len(described_terms)
+            if described_terms
+            else fallback_item_counts.get(suggestion.class_number, 0)
+        )
         extra_terms = max(0, term_count - 10)
         term_surcharge += extra_terms * 500
         class_details.append(

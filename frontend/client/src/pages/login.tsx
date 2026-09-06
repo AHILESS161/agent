@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -132,9 +133,9 @@ export default function LoginPage() {
             <div className="relative flex-1 pb-4 font-medium text-[#17104f] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
-            <div className="flex-1 pb-4 text-muted-foreground" title="Регистрация доступна администратору">
-              Доступ по приглашению
-            </div>
+            <Link href="/signup" className="flex-1 pb-4 text-primary hover:underline">
+              Регистрация клиента
+            </Link>
           </div>
 
           <h2 className="text-2xl font-semibold text-[#17104f]">Войти в систему</h2>

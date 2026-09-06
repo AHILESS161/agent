@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -42,7 +42,7 @@ async def login(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Authenticate with email + password (OAuth2 form) and return a JWT."""
-    result = await session.execute(select(User).where(User.email == form_data.username))
+    result = await session.execute(select(User).where(func.lower(User.email) == form_data.username.strip().lower()))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(form_data.password, user.hashed_password):
@@ -81,7 +81,7 @@ async def login_json(
     session: AsyncSession = Depends(get_session),
 ) -> TokenResponse:
     """Authenticate with a JSON body {email, password} and return a JWT."""
-    result = await session.execute(select(User).where(User.email == str(payload.email)))
+    result = await session.execute(select(User).where(func.lower(User.email) == str(payload.email).lower()))
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(payload.password, user.hashed_password):

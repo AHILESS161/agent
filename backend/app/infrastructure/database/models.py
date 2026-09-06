@@ -200,6 +200,13 @@ class AgentRunStatus(str, enum.Enum):
 # Models
 # ---------------------------------------------------------------------------
 
+class PendingSignup(Base):
+    __tablename__ = "pending_signups"
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+
+
 class ResourceBudget(Base):
     __tablename__ = "resource_budgets"
     key: Mapped[str] = mapped_column(String(80), primary_key=True)

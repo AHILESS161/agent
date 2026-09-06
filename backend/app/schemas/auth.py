@@ -29,7 +29,7 @@ class UserCreate(BaseModel):
     """Payload for creating a new user."""
 
     email: EmailStr
-    password: str = Field(min_length=8, description="Min 8 characters")
+    password: str = Field(min_length=8, max_length=1024, description="Min 8 characters")
     full_name: Optional[str] = Field(default=None, max_length=255)
     role: UserRole = UserRole.client
 
@@ -47,7 +47,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = Field(default=None, max_length=255)
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
-    password: Optional[str] = Field(default=None, min_length=8)
+    password: Optional[str] = Field(default=None, min_length=8, max_length=1024)
 
 
 class ApplicantProfile(BaseModel):
@@ -84,7 +84,7 @@ class PasswordChange(BaseModel):
     """Payload for changing the current user's password."""
 
     current_password: str
-    new_password: str = Field(min_length=8)
+    new_password: str = Field(min_length=8, max_length=1024)
 
 
 class ProfileUpdate(BaseModel):

@@ -1,7 +1,17 @@
 name: registr
 
+x-logging: &bounded-logs
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
+    mem_limit: 512m
+    cpus: 0.75
+    pids_limit: 128
+    logging: *bounded-logs
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -20,6 +30,10 @@ services:
       - no-new-privileges:true
 
   migrate:
+    mem_limit: 384m
+    cpus: 0.50
+    pids_limit: 64
+    logging: *bounded-logs
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -27,6 +41,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       FILE_STORAGE_PATH: /data/documents
+      ENVIRONMENT: production
     command: ["alembic", "upgrade", "head"]
     depends_on:
       postgres:
@@ -37,6 +52,10 @@ services:
       - no-new-privileges:true
 
   api:
+    mem_limit: 1152m
+    cpus: 1.25
+    pids_limit: 128
+    logging: *bounded-logs
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -45,8 +64,11 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       FILE_STORAGE_PATH: /data/documents
       ANALYSIS_WORKER_MODE: external
+      ENVIRONMENT: production
+      WORKER_HEARTBEAT_PATH: /data/health/worker.json
     volumes:
       - documents_data:/data/documents
+      - worker_health:/data/health:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +81,10 @@ services:
       - no-new-privileges:true
 
   worker:
+    mem_limit: 640m
+    cpus: 1.00
+    pids_limit: 128
+    logging: *bounded-logs
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
@@ -67,20 +93,33 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       FILE_STORAGE_PATH: /data/documents
       ANALYSIS_WORKER_MODE: external
+      ENVIRONMENT: production
+      WORKER_HEARTBEAT_PATH: /data/health/worker.json
     command: ["python", "-m", "app.workers.full_analysis"]
     volumes:
       - documents_data:/data/documents
+      - worker_health:/data/health
     depends_on:
       postgres:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.workers.health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     networks: [private]
     security_opt:
       - no-new-privileges:true
 
   web:
+    mem_limit: 96m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *bounded-logs
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
@@ -94,6 +133,10 @@ services:
       - no-new-privileges:true
 
   caddy:
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    logging: *bounded-logs
     image: caddy:2.8-alpine
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN is required}
@@ -118,6 +161,8 @@ networks:
     driver: bridge
 
 volumes:
+  worker_health:
+    name: registr_worker_health
   postgres_data:
     name: registr_postgres_data
   documents_data:

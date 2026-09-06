@@ -118,7 +118,7 @@ class TestDeleteCase:
         case = _case(client, lawyer)
         moved = client.post(
             f"/api/v1/applications/{case['id']}/transition",
-            json={"new_status": "closed", "reason": "заведено по ошибке"},
+            json={"new_status": "closed", "expected_status": "draft", "reason": "заведено по ошибке"},
             headers=lawyer,
         )
         assert moved.status_code == 200, moved.text
@@ -211,7 +211,7 @@ class TestOnlyAdminDeletesOthersCases:
             f"/api/v1/applications/{case['id']}", headers=lawyer
         )
         assert response.status_code == 403
-        assert "администратор" in response.json()["detail"]
+        assert "Нет доступа" in response.json()["detail"]
 
     def test_owner_deletes_own_case(self, client, lawyer):
         case = _case(client, lawyer, "МОЁ ДЕЛО")

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from app.core.case_access import authorize_case_route
 
 from app.api.v1.endpoints.admin import router as admin_router
 from app.api.v1.endpoints.applications import router as applications_router
@@ -32,14 +33,14 @@ api_router.include_router(inbound_router)
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(clients_router)
-api_router.include_router(applications_router)
+api_router.include_router(applications_router, dependencies=[Depends(authorize_case_route)])
 api_router.include_router(assistant_router)
 api_router.include_router(documents_router)
 api_router.include_router(extraction_router)
 api_router.include_router(fees_router)
-api_router.include_router(risk_router)
-api_router.include_router(drafts_router)
-api_router.include_router(mvp_router)
+api_router.include_router(risk_router, dependencies=[Depends(authorize_case_route)])
+api_router.include_router(drafts_router, dependencies=[Depends(authorize_case_route)])
+api_router.include_router(mvp_router, dependencies=[Depends(authorize_case_route)])
 api_router.include_router(notifications_router)
 api_router.include_router(office_actions_router)
 api_router.include_router(registry_router)

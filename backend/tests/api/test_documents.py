@@ -232,7 +232,7 @@ class TestDocumentLifecycle:
         assert client.get(
             f"/api/v1/source-documents/{document_id}", headers=lawyer_token
         ).status_code == 404
-        assert not stored_files[0].exists()
+        assert stored_files[0].exists()  # retained until offline GC after commit
 
     def test_shared_blob_is_kept_until_last_document_is_deleted(
         self, client, lawyer_token, application_id
@@ -250,7 +250,7 @@ class TestDocumentLifecycle:
         assert client.delete(
             f"/api/v1/source-documents/{second['id']}", headers=lawyer_token
         ).status_code == 204
-        assert not stored_files[0].exists()
+        assert stored_files[0].exists()  # retained until offline GC after commit
 
     def test_delete_application_removes_its_unreferenced_blobs(
         self, client, lawyer_token, application_id
@@ -264,7 +264,7 @@ class TestDocumentLifecycle:
         )
 
         assert response.status_code == 204
-        assert not stored_files[0].exists()
+        assert stored_files[0].exists()  # retained until offline GC after commit
 
     def test_unassigned_lawyer_cannot_read_extracted_fields(
         self, client, lawyer_token, other_lawyer_token, application_id

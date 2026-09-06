@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'fix/KAN-*']
 
 permissions:
   contents: read
@@ -19,6 +19,8 @@ jobs:
       DEBUG: "false"
       LLM_PROVIDER: mock
       FIPS_PROVIDER: mock
+      ANALYSIS_WORKER_MODE: disabled
+      DATABASE_URL: 'sqlite+aiosqlite:///:memory:'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -26,9 +28,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
-      - run: pip install -r requirements-dev.txt
+            backend/requirements.lock
+            backend/requirements-dev.lock
+      - run: pip install --require-hashes -r requirements-dev.lock
       - run: pytest
 
   frontend:
@@ -54,3 +56,58 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -f backend/Dockerfile.prod -t registr-api:ci backend
       - run: docker build -f frontend/Dockerfile.prod -t registr-web:ci frontend
+
+  production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ENV_FILE: deploy/ci.env
+      BACKUP_LOCAL_ONLY: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate maintenance scripts
+        run: bash -n deploy/backup.sh deploy/deploy.sh deploy/maintenance.sh deploy/restore-check.sh
+      - name: Build production services
+        run: docker compose --env-file deploy/ci.env -f docker-compose.prod.yml build
+      - name: Upgrade from previous schema
+        run: |
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml up -d --wait postgres
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml run --rm migrate alembic upgrade f2a6c4e18b70
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml run --rm migrate
+      - name: Start and check full stack
+        run: |
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml -f deploy/ci-compose.yml up -d --wait --wait-timeout 180 api worker web
+          curl -fsS http://127.0.0.1:18080/ready
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml exec -T api python -m scripts.production_smoke
+      - name: Check restart and stale worker detection
+        run: |
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml stop worker
+          sleep 65
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ready)" = 503
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml up -d --wait --wait-timeout 120 worker
+          curl -fsS http://127.0.0.1:18080/ready
+      - name: Consistent backup and isolated restore
+        run: |
+          bash deploy/backup.sh
+          bash deploy/restore-check.sh "$(find backups -maxdepth 1 -type d -name 'backup-*' | head -n 1)"
+      - name: Logs on failure
+        if: failure()
+        run: docker compose --env-file deploy/ci.env -f docker-compose.prod.yml logs --tail 100
+      - name: Clean up isolated runner
+        if: always()
+        run: docker compose --env-file deploy/ci.env -f docker-compose.prod.yml down -v
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install pip-audit
+      - run: pip-audit -r backend/requirements.lock --require-hashes -f json -o dependency-audit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-audit
+          path: dependency-audit.json

@@ -132,6 +132,13 @@ def create_app() -> FastAPI:
         storage_ok, storage_error = check_storage()
         checks["file_storage"] = {"ok": storage_ok, "error": storage_error}
 
+        if settings.ANALYSIS_WORKER_MODE == "external":
+            from app.workers.health import check_worker, check_queue
+            worker_ok, worker_error = check_worker()
+            checks["worker"] = {"ok": worker_ok, "error": worker_error}
+            queue_ok, queue_error = await check_queue()
+            checks["queue"] = {"ok": queue_ok, "error": queue_error}
+
         all_ok = all(bool(c["ok"]) for c in checks.values())
         return JSONResponse(
             status_code=200 if all_ok else 503,

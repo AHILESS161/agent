@@ -26,7 +26,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 export default function ProfilePage() {
   const { toast } = useToast();
-  const { user, refreshProfile } = useAuth();
+  const { user, refreshProfile, logout } = useAuth();
 
   const [fullName, setFullName] = useState(user?.fullName ?? "");
   const [preferredName, setPreferredName] = useState(user?.preferredName ?? "");
@@ -107,7 +107,8 @@ export default function ProfilePage() {
       setCurrentPassword("");
       setNewPassword("");
       setRepeatPassword("");
-      toast({ title: "Пароль изменён" });
+      toast({ title: "Пароль изменён", description: "Все сессии отозваны. Войдите с новым паролем." });
+      logout();
     } catch (e) {
       toast({
         title: "Не удалось изменить пароль",
@@ -276,6 +277,14 @@ export default function ProfilePage() {
             {isChanging && <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />}
             Изменить пароль
           </Button>
+          <Button size="sm" variant="outline" className="ml-2" onClick={async () => {
+            try {
+              await api.post("/auth/logout-all", {});
+              logout();
+            } catch (e) {
+              toast({ title: "Не удалось завершить сессии", description: describe(e), variant: "destructive" });
+            }
+          }}>Выйти со всех устройств</Button>
         </CardContent>
       </Card>
     </div>

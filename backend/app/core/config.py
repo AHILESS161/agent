@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, List, Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -14,12 +14,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
+        hide_input_in_errors=True,
     )
 
     # Application
     APP_NAME: str = "Trademark Registration System"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    ENVIRONMENT: str = "development"
     API_DOCS_ENABLED: bool = True
     ALLOWED_HOSTS: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: ["*"]
@@ -39,6 +41,9 @@ class Settings(BaseSettings):
     ANALYSIS_WORKER_POLL_SECONDS: float = 1.0
     ANALYSIS_JOB_LEASE_SECONDS: int = 180
     ANALYSIS_JOB_HEARTBEAT_SECONDS: int = 30
+    WORKER_HEARTBEAT_PATH: str = "/tmp/registr-worker.json"
+    WORKER_HEARTBEAT_MAX_AGE: int = Field(default=60, ge=10)
+    QUEUE_MAX_WAIT_SECONDS: int = Field(default=1800, ge=60)
 
     # Vector Store (optional for MVP)
     VECTOR_STORE_URL: Optional[str] = None
@@ -121,6 +126,19 @@ class Settings(BaseSettings):
     # Файловое хранилище оригиналов документов
     FILE_STORAGE_PATH: str = "./storage/documents"
     MAX_UPLOAD_MB: int = 25
+    STORAGE_MIN_FREE_MB: int = Field(default=512, ge=0)
+    USER_STORAGE_MB: int = Field(default=250, ge=1)
+    USER_MAX_DOCUMENTS: int = Field(default=200, ge=1)
+    USER_MAX_APPLICATIONS: int = Field(default=100, ge=1)
+    USER_MAX_ACTIVE_JOBS: int = Field(default=2, ge=1)
+    GLOBAL_MAX_ACTIVE_JOBS: int = Field(default=20, ge=1)
+    LLM_DAILY_USER_BUDGET: int = Field(default=2_000_000, ge=1)
+    LLM_DAILY_GLOBAL_BUDGET: int = Field(default=10_000_000, ge=1)
+    LLM_MAX_CONCURRENCY: int = Field(default=1, ge=1, le=4)
+    DOCUMENT_MAX_PAGES: int = Field(default=50, ge=1)
+    DOCUMENT_MAX_EXPANDED_MB: int = Field(default=64, ge=1)
+    DOCUMENT_PARSE_TIMEOUT: int = Field(default=120, ge=1)
+    DOCUMENT_PARSE_MEMORY_MB: int = Field(default=768, ge=128)
 
     # OCR для сканов и изображений. Обычный PDF с текстовым слоем проходит
     # без OCR; Tesseract запускается только для страниц, где текста нет.
@@ -138,7 +156,21 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173"]
+    CORS_ORIGINS: Annotated[List[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000", "http://localhost:5173"]
+    )
+
+    @model_validator(mode="after")
+    def validate_server_security(self):
+        if self.ENVIRONMENT.lower() == "production" or self.ANALYSIS_WORKER_MODE == "external":
+            key = self.SECRET_KEY
+            if (len(key.encode("utf-8")) < 32 or len(set(key)) < 12
+                    or any(marker in key.lower() for marker in
+                           ("change-me", "replace", "example", "placeholder", "secret-key"))):
+                raise ValueError("Server profile requires a separate random SECRET_KEY (at least 32 bytes)")
+            if self.DEBUG:
+                raise ValueError("DEBUG must be disabled in the server profile")
+        return self
 
     @field_validator("CORS_ORIGINS", mode="before")
     @classmethod

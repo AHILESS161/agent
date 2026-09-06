@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.api.dependencies import _get_llm_provider, _get_registry_provider
 from app.core.logging import get_logger
 from app.core.security import get_current_user
+from app.core.config import settings
 from app.infrastructure.database.models import (
     AnalysisKind,
     AuditLog,
@@ -232,6 +233,9 @@ async def enqueue_full_analysis(
         _require_write_access(current_user)
         _require_application_access(current_user, application)
 
+    from app.services.resource_limits import lock_user, lock_queue
+    await lock_queue(session)
+    await lock_user(session, current_user.id)
     active_jobs = list(
         (
             await session.execute(
@@ -252,6 +256,10 @@ async def enqueue_full_analysis(
             return serialize_analysis_job(existing)
 
     request = body or FullAnalysisJobRequest()
+    owned = sum(1 for existing in active_jobs if
+                job_payload(existing).get("requested_by_user_id") == current_user.id)
+    if owned >= settings.USER_MAX_ACTIVE_JOBS or len(active_jobs) >= settings.GLOBAL_MAX_ACTIVE_JOBS:
+        raise HTTPException(429, "Очередь анализа заполнена. Дождитесь завершения текущих проверок")
     deduplication_key = job_deduplication_key(application_id)
     job = BackgroundJob(
         job_type=FULL_ANALYSIS_JOB_TYPE,
@@ -796,6 +804,8 @@ async def review_finding(
         AuditLog(
             user_id=current_user.id,
             action=f"risk_finding.{payload.decision.value}",
+            application_id=await session.scalar(select(RiskAssessment.application_id).where(
+                RiskAssessment.id == finding.assessment_id)),
             entity_type="RiskFinding",
             entity_id=str(finding.id),
             new_value_json={

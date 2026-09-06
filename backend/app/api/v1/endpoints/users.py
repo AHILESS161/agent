@@ -95,6 +95,8 @@ async def update_user(
 
     old_val = {"role": user.role.value, "is_active": user.is_active}
     update_data = payload.model_dump(exclude_none=True)
+    if any(field in update_data for field in ("password", "role", "is_active")):
+        user.session_version = User.session_version + 1
 
     # Handle password separately — must be hashed
     if "password" in update_data:
@@ -128,5 +130,6 @@ async def delete_user(
 
     old_val = {"is_active": user.is_active}
     user.is_active = False
+    user.session_version = User.session_version + 1
     await _write_audit(session, current_user, "user_deactivate", user_id, old_val, {"is_active": False})
     await session.flush()

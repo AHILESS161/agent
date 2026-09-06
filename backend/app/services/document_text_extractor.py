@@ -99,6 +99,8 @@ def extract_docx_text(content: bytes) -> str:
             "python-docx is not installed. Run: pip install python-docx"
         )
 
+    from app.services.file_storage import validate_docx
+    validate_docx(content)
     doc = _docx.Document(io.BytesIO(content))
     chunks: list[str] = []
 
@@ -131,6 +133,8 @@ class ExtractedPage:
 
 def _prepare_image(image):
     """Нормализовать изображение, не увеличивая бесконтрольно память."""
+    if image.width * image.height > settings.OCR_MAX_IMAGE_PIXELS:
+        raise NoTextLayerError("Изображение превышает лимит пикселей")
     image = ImageOps.exif_transpose(image).convert("L")
     image = ImageOps.autocontrast(image)
     pixels = image.width * image.height
@@ -232,10 +236,15 @@ def extract_pages_from_bytes(content: bytes, filename: str) -> list[ExtractedPag
             raise RuntimeError("pdfplumber не установлен. Выполните: pip install pdfplumber")
         pages: list[ExtractedPage] = []
         with pdfplumber.open(io.BytesIO(content)) as pdf:
+            if len(pdf.pages) > settings.DOCUMENT_MAX_PAGES:
+                raise NoTextLayerError("PDF превышает лимит страниц")
             for index, page in enumerate(pdf.pages, start=1):
                 text = page.extract_text() or ""
                 if len(text.strip()) < settings.OCR_MIN_TEXT_CHARS:
                     try:
+                        pixels = page.width * page.height * (settings.OCR_DPI / 72) ** 2
+                        if pixels > settings.OCR_MAX_IMAGE_PIXELS:
+                            raise NoTextLayerError("Страница превышает лимит пикселей OCR")
                         image = page.to_image(
                             resolution=settings.OCR_DPI, antialias=True
                         ).original

@@ -1,5 +1,5 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT_DIR"
@@ -16,9 +16,19 @@ COMPOSE="docker compose --env-file .env.production -f docker-compose.prod.yml"
 git pull --ff-only
 
 $COMPOSE build
+if $COMPOSE ps --status running --services | grep -qx postgres; then
+  bash deploy/backup.sh
+fi
+mkdir -p "${BACKUP_DIR:-backups}"
+exec 9>"${BACKUP_DIR:-backups}/.maintenance.lock"
+flock -n 9 || exit 1
+$COMPOSE stop -t 150 api worker
 $COMPOSE up -d postgres
 $COMPOSE run --rm migrate
-$COMPOSE up -d --remove-orphans
+$COMPOSE up -d --remove-orphans --wait --wait-timeout 180
 $COMPOSE ps
 
-echo "Развёртывание завершено. Проверьте https://$(sed -n 's/^DOMAIN=//p' .env.production)/healthz"
+$COMPOSE exec -T api curl --fail --silent http://localhost:8000/ready
+domain=$(sed -n 's/^DOMAIN=//p' .env.production | tr -d '\r')
+curl --fail --silent --show-error --max-time 15 "https://$domain/ready"
+echo "Deployment ready: schema, storage and worker checked"

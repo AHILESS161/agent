@@ -338,6 +338,8 @@ async def execute_claimed_analysis_job(
             payload = job_payload(job)
             application_id = int(payload["application_id"])
             requested_by_user_id = payload.get("requested_by_user_id")
+            from app.services.resource_limits import actor_id
+            actor_id.set(int(requested_by_user_id) if requested_by_user_id else None)
             application = await session.get(TrademarkApplicationDraft, application_id)
             if application is None:
                 raise LookupError("Заявка больше не существует")
@@ -478,6 +480,9 @@ class FullAnalysisWorker:
                     self._running.add(task)
 
                 self._wake.clear()
+                if settings.ANALYSIS_WORKER_MODE == "external":
+                    from app.workers.health import publish_heartbeat
+                    publish_heartbeat(self.worker_id)
                 if self._running:
                     done, _ = await asyncio.wait(
                         self._running,

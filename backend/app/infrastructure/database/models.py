@@ -200,12 +200,19 @@ class AgentRunStatus(str, enum.Enum):
 # Models
 # ---------------------------------------------------------------------------
 
+class ResourceBudget(Base):
+    __tablename__ = "resource_budgets"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False, index=True)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    session_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     full_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     # Как обращаться к человеку. ФИО хранится как «Фамилия Имя
     # Отчество», и приветствие по первому слову выходит по фамилии —

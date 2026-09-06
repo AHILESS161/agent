@@ -24,6 +24,7 @@ from app.document_processing.extractors import extract_registry_fields
 from app.document_processing.passport import extract_passport_prefill
 from app.infrastructure.database.models import DocumentKind, User
 from app.services import file_storage
+from app.services import document_sandbox
 from app.schemas.intake import (
     ParseApplicationFromTextRequest,
     ParsedApplicationResponse,
@@ -123,7 +124,7 @@ async def parse_application(
             detail="Не указано имя файла",
         )
 
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     # Тип проверяется по сигнатуре содержимого, а не по расширению.
     try:
         file_storage.validate_upload(content, file.filename)
@@ -134,7 +135,7 @@ async def parse_application(
 
     t0 = time.perf_counter()
     try:
-        raw_text = extract_text_from_bytes(content, file.filename)
+        raw_text = await document_sandbox.extract_text(content, file.filename)
     except UnsupportedDocumentType as exc:
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail=str(exc)
@@ -187,7 +188,7 @@ async def prefill_registrant(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Не указано имя файла"
         )
 
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     try:
         file_storage.validate_upload(content, file.filename)
     except file_storage.FileValidationError as exc:
@@ -197,7 +198,7 @@ async def prefill_registrant(
 
     # --- текст ---
     try:
-        pages = extract_pages_from_bytes(content, file.filename)
+        pages = await document_sandbox.extract_pages(content, file.filename)
     except (NoTextLayerError, UnsupportedDocumentType) as exc:
         # Скан без текстового слоя — реальный и частый случай. Это не
         # ошибка сервера: форму просто заполняют вручную.

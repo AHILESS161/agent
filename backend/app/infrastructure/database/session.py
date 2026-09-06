@@ -76,23 +76,27 @@ async def check_schema() -> tuple[bool, str | None]:
     Возвращает ``(ok, error)``.
     """
     from sqlalchemy import text
+    from pathlib import Path
+    from alembic.script import ScriptDirectory
 
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
             result = await conn.execute(
-                text("SELECT version_num FROM alembic_version LIMIT 1")
+                text("SELECT version_num FROM alembic_version")
             )
-            revision = result.scalar()
+            revisions = set(result.scalars())
+        migrations = Path(__file__).resolve().parents[3] / "migrations"
+        expected = set(ScriptDirectory(str(migrations)).get_heads())
     except Exception as exc:  # noqa: BLE001
         return False, (
-            f"БД недоступна или схема не инициализирована: {exc}. "
+            "БД недоступна или схема не инициализирована. "
             "Выполните: alembic upgrade head"
         )
 
-    if not revision:
+    if not revisions or revisions != expected:
         return False, (
-            "Таблица alembic_version пуста — миграции не применялись. "
+            "Версия схемы не соответствует версии приложения. "
             "Выполните: alembic upgrade head"
         )
     return True, None

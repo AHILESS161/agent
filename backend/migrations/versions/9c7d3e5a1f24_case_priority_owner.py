@@ -25,6 +25,7 @@ TABLE = "trademark_application_drafts"
 
 
 def upgrade() -> None:
+    sa.Enum("low", "medium", "high", name="casepriority").create(op.get_bind(), checkfirst=True)
     op.add_column(
         TABLE,
         sa.Column(

@@ -15,7 +15,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
+import os
 import re
+import shutil
+import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
@@ -91,7 +96,8 @@ def detect_mime(content: bytes, filename: str) -> str:
         if content.startswith(signature):
             if mime == "application/zip":
                 # DOCX — ZIP, внутри которого есть word/document.xml.
-                if b"word/" in content[:4096] or ext == ".docx":
+                if ext == ".docx":
+                    validate_docx(content)
                     return _EXT_TO_MIME[".docx"]
                 return "application/zip"
             return mime
@@ -123,6 +129,28 @@ def detect_mime(content: bytes, filename: str) -> str:
         )
 
     return "application/octet-stream"
+
+
+def validate_docx(content: bytes) -> None:
+    """Check archive structure and declared expansion before XML parsing."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            entries = archive.infolist()
+            names = {entry.filename for entry in entries}
+            if not {"word/document.xml", "[Content_Types].xml", "_rels/.rels"} <= names:
+                raise FileValidationError("DOCX не содержит обязательных частей документа")
+            if len(entries) > 2000 or len(names) != len(entries):
+                raise FileValidationError("Недопустимая структура DOCX")
+            limit = settings.DOCUMENT_MAX_EXPANDED_MB * 1024 * 1024
+            if sum(entry.file_size for entry in entries) > limit:
+                raise FileValidationError("DOCX превышает лимит распакованного содержимого")
+            for entry in entries:
+                if (entry.flag_bits & 1 or entry.filename.startswith(("/", "\\"))
+                        or ".." in entry.filename.replace("\\", "/").split("/")
+                        or entry.file_size > max(1, entry.compress_size) * 200):
+                    raise FileValidationError("Небезопасный архив DOCX")
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise FileValidationError("Повреждённый архив DOCX") from exc
 
 
 def validate_upload(content: bytes, filename: str) -> tuple[str, str]:
@@ -211,14 +239,25 @@ def save_upload(content: bytes, filename: str) -> StoredFile:
     target_dir.mkdir(parents=True, exist_ok=True)
 
     target = target_dir / f"{digest}{ext}"
-    if not target.exists():
-        target.write_bytes(content)
-
     # Проверка на выход за пределы хранилища — страховка на случай,
     # если конфигурация пути изменится.
     resolved = target.resolve()
     if not resolved.is_relative_to(root):
         raise FileValidationError("Недопустимый путь сохранения файла")
+
+    if shutil.disk_usage(root).free < len(content) + settings.STORAGE_MIN_FREE_MB * 1024 * 1024:
+        raise FileValidationError("Недостаточно свободного места в хранилище")
+    if not target.exists():
+        # Publish only a complete file; concurrent identical uploads are harmless.
+        fd, temporary = tempfile.mkstemp(prefix=".upload-", dir=target_dir)
+        try:
+            with os.fdopen(fd, "wb") as output:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary, target)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
 
     return StoredFile(
         stored_path=str(resolved.relative_to(root)).replace("\\", "/"),
@@ -257,9 +296,10 @@ def check_storage() -> tuple[bool, str | None]:
     try:
         root = get_storage_root()
         root.mkdir(parents=True, exist_ok=True)
-        probe = root / ".write_probe"
-        probe.write_bytes(b"ok")
-        probe.unlink()
+        if shutil.disk_usage(root).free < settings.STORAGE_MIN_FREE_MB * 1024 * 1024:
+            return False, "Недостаточно свободного места в хранилище"
+        with tempfile.TemporaryFile(dir=root) as probe:
+            probe.write(b"ok")
         return True, None
     except Exception as exc:  # noqa: BLE001
         return False, f"Файловое хранилище недоступно на запись: {exc}"

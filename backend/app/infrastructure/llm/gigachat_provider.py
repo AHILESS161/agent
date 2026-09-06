@@ -11,6 +11,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from app.services.resource_limits import budgeted_post
 
 from app.infrastructure.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
 
@@ -139,7 +140,7 @@ class GigaChatProvider(BaseLLMProvider):
                         force_refresh=force_token_refresh
                     )
                     force_token_refresh = False
-                    response = await self._client.post(
+                    response = await budgeted_post(self._client,
                         "/chat/completions",
                         headers={
                             "Accept": "application/json",

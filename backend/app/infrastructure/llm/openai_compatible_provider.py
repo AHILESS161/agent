@@ -8,6 +8,7 @@ import time
 from typing import Any
 
 import httpx
+from app.services.resource_limits import budgeted_post
 
 from app.infrastructure.llm.base import BaseLLMProvider, LLMMessage, LLMResponse
 
@@ -57,7 +58,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         return result
 
     async def _post(self, payload: dict) -> dict[str, Any]:
-        response = await self._client.post("/chat/completions", json=payload)
+        response = await budgeted_post(self._client, "/chat/completions", json=payload)
         response.raise_for_status()
         return response.json()
 

@@ -7,6 +7,8 @@ from urllib.parse import urlsplit
 
 from app.core.config import settings
 
+_mail_slots = asyncio.Semaphore(4)
+
 
 def signup_available() -> bool:
     url = urlsplit(settings.PUBLIC_APP_URL)
@@ -35,4 +37,8 @@ def _send(recipient: str, token: str):
 
 
 async def send_confirmation_email(recipient: str, token: str):
-    await asyncio.wait_for(asyncio.to_thread(_send, recipient, token), timeout=30)
+    await asyncio.wait_for(_mail_slots.acquire(), timeout=1)
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_send, recipient, token), timeout=30)
+    finally:
+        _mail_slots.release()

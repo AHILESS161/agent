@@ -80,11 +80,13 @@ async def request_signup(payload: SignupRequest, request: Request,
     token = secrets.token_urlsafe(32)
     session.add(PendingSignup(token_hash=_digest(token), email=email,
         expires_at=datetime.now(timezone.utc) + timedelta(hours=1)))
-    await session.flush()
+    # SMTP must not hold a pooled database connection while waiting on the network.
+    await session.commit()
     try:
         await send_confirmation_email(email, token)
     except Exception:
-        await session.rollback()
+        await session.execute(delete(PendingSignup).where(PendingSignup.token_hash == _digest(token)))
+        await session.commit()
         raise HTTPException(503, "Не удалось отправить письмо. Попробуйте позже.") from None
     return {"message": GENERIC_MESSAGE}
 

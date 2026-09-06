@@ -10,11 +10,14 @@ from app.infrastructure.database.models import (
 )
 
 
-def require_case_access(application: TrademarkApplicationDraft, user: User) -> None:
-    allowed = (user.role == UserRole.admin or application.created_by_user_id == user.id
+def has_case_access(application: TrademarkApplicationDraft, user: User) -> bool:
+    return (user.role == UserRole.admin or application.created_by_user_id == user.id
                or (user.role == UserRole.lawyer and application.assigned_lawyer_id == user.id)
                or (user.role == UserRole.manager and application.assigned_manager_id == user.id))
-    if not allowed:
+
+
+def require_case_access(application: TrademarkApplicationDraft, user: User) -> None:
+    if not has_case_access(application, user):
         raise HTTPException(403, "Нет доступа к этой заявке")
 
 

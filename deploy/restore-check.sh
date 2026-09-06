@@ -11,7 +11,9 @@ docker run -d --name "$name" --network none --memory 512m --cpus 1 \
 trap 'docker rm -fv "$name" > /dev/null' EXIT
 ready=false
 for attempt in $(seq 1 60); do
-  if docker exec "$name" pg_isready -U postgres >/dev/null 2>&1; then ready=true; break; fi
+  # The image starts a temporary socket-only server during initdb. Wait for
+  # the final TCP listener so pg_restore cannot race its shutdown.
+  if docker exec "$name" pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
 [[ $ready == true ]] || exit 1

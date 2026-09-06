@@ -56,6 +56,17 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -f backend/Dockerfile.prod -t registr-api:ci backend
       - run: docker build -f frontend/Dockerfile.prod -t registr-web:ci frontend
+      - name: Inventory built production images
+        run: |
+          mkdir image-inventory
+          docker image inspect registr-api:ci registr-web:ci > image-inventory/images.json
+          docker run --rm --entrypoint python registr-api:ci -m pip list --format=json > image-inventory/python.json
+          docker run --rm --entrypoint dpkg-query registr-api:ci -W > image-inventory/debian.txt
+          docker run --rm --entrypoint apk registr-web:ci info -v > image-inventory/alpine.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: production-image-inventory
+          path: image-inventory/
 
   production-smoke:
     runs-on: ubuntu-latest

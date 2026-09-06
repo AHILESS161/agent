@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user, require_roles
 from app.infrastructure.database.models import (
     AgentRun,
@@ -177,11 +178,7 @@ from app.api.dependencies import (  # noqa: E402
 
 def _is_owner(app: TrademarkApplicationDraft, user: User) -> bool:
     """Ведёт ли пользователь это дело."""
-    return user.id in {
-        app.created_by_user_id,
-        app.assigned_lawyer_id,
-        app.assigned_manager_id,
-    }
+    return has_case_access(app, user)
 
 
 def _ensure_access(app: TrademarkApplicationDraft, user: User) -> None:
@@ -219,8 +216,8 @@ def _visible_to(query, user: User):
     return query.where(
         or_(
             TrademarkApplicationDraft.created_by_user_id == user.id,
-            TrademarkApplicationDraft.assigned_lawyer_id == user.id,
-            TrademarkApplicationDraft.assigned_manager_id == user.id,
+            (TrademarkApplicationDraft.assigned_lawyer_id == user.id) if user.role == UserRole.lawyer else False,
+            (TrademarkApplicationDraft.assigned_manager_id == user.id) if user.role == UserRole.manager else False,
         )
     )
 

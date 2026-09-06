@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user
 from app.document_processing.classifier import classify_document
 from app.infrastructure.database.models import (
@@ -119,11 +120,7 @@ async def _load_document(session: AsyncSession, document_id: int) -> SourceDocum
 
 
 def _has_application_access(user: User, application: TrademarkApplicationDraft) -> bool:
-    return user.role is UserRole.admin or user.id in {
-        application.created_by_user_id,
-        application.assigned_lawyer_id,
-        application.assigned_manager_id,
-    }
+    return has_case_access(application, user)
 
 
 def _require_application_access(user: User, application: TrademarkApplicationDraft) -> None:

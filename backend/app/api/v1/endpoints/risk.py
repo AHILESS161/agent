@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.dependencies import _get_llm_provider, _get_registry_provider
 from app.core.logging import get_logger
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user
 from app.core.config import settings
 from app.infrastructure.database.models import (
@@ -95,11 +96,7 @@ def _require_client_access(user: User, application: TrademarkApplicationDraft) -
 def _require_application_access(user: User, application: TrademarkApplicationDraft) -> None:
     if user.role is UserRole.admin:
         return
-    if user.id not in {
-        application.created_by_user_id,
-        application.assigned_lawyer_id,
-        application.assigned_manager_id,
-    }:
+    if not has_case_access(application, user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нет доступа к анализу заявки",

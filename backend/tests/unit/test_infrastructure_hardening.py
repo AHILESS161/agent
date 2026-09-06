@@ -87,6 +87,17 @@ async def test_sandbox_extracts_text_outside_api_process(monkeypatch):
     assert "hello" in await extract_text(b"hello from sandbox", "test.txt")
 
 
+@pytest.mark.parametrize("role", ["admin", "lawyer", "manager", "client"])
+@pytest.mark.parametrize("assignment", ["assigned_lawyer_id", "assigned_manager_id"])
+def test_historical_assignment_cannot_grant_access_after_role_change(role, assignment):
+    from app.core.case_access import has_case_access
+    from app.infrastructure.database.models import User, UserRole, TrademarkApplicationDraft
+    user = User(id=42, role=UserRole(role))
+    application = TrademarkApplicationDraft(created_by_user_id=99, **{assignment: 42})
+    expected = role == "admin" or assignment == f"assigned_{role}_id"
+    assert has_case_access(application, user) == expected
+
+
 def test_long_and_unicode_passwords_use_the_entire_input():
     from app.core.security import hash_password, verify_password
     for prefix in ("a" * 72, "пароль" * 20):

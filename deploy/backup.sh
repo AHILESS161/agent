@@ -21,9 +21,10 @@ fi
 stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
 partial=$(mktemp -d "$backup_dir/.partial-$stamp-XXXXXX")
 resume=()
+running_services=$("${compose[@]}" ps --status running --services)
 while read -r service; do
   case "$service" in api|worker) resume+=("$service");; esac
-done < <("${compose[@]}" ps --status running --services)
+done <<< "$running_services"
 cleanup() {
   result=$?
   trap - EXIT

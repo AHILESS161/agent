@@ -87,5 +87,7 @@ uv pip compile backend/requirements.txt --python-version 3.12 --python-platform 
 uv pip compile backend/requirements-dev.txt -c backend/requirements.lock --python-version 3.12 --python-platform linux --generate-hashes -o backend/requirements-dev.lock
 ```
 
-Обновление lock-файлов и digest образа проходит тот же CI. Аудит пакетов не
+CI сохраняет ID/метаданные собранных образов и перечни Python, Debian и Alpine
+пакетов в артефакте `production-image-inventory`.
+Обновление lock-файлов и digest образа проходит тот же CI. Аудит Python-пакетов не
 заменяет инвентаризацию и сканирование реально развёрнутого образа на сервере.

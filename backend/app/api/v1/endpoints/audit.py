@@ -72,7 +72,6 @@ async def list_audit_logs(
             or_(
                 TrademarkApplicationDraft.created_by_user_id == current_user.id,
                 TrademarkApplicationDraft.assigned_lawyer_id == current_user.id,
-                TrademarkApplicationDraft.assigned_manager_id == current_user.id,
             )
         )
         base_q = base_q.where(AuditLog.application_id.in_(accessible_applications))

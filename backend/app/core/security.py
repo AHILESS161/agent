@@ -22,11 +22,6 @@ from app.infrastructure.database.session import get_session
 _BCRYPT_MAX_BYTES = 72  # bcrypt truncates inputs longer than 72 bytes
 
 
-def _truncate(plain_password: str) -> bytes:
-    """Encode the password and truncate to bcrypt's 72-byte limit."""
-    return plain_password.encode("utf-8")[:_BCRYPT_MAX_BYTES]
-
-
 # OAuth2 bearer scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 

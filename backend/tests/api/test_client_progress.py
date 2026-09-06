@@ -34,6 +34,9 @@ def _listed_step(client, headers: dict[str, str], application_id: int) -> int:
     response = client.get("/api/v1/applications", headers=headers)
     assert response.status_code == 200, response.text
     item = next(row for row in response.json()["items"] if row["id"] == application_id)
+    detail = client.get(f"/api/v1/applications/{application_id}", headers=headers).json()
+    assert detail["client_progress_step"] == item["client_progress_step"]
+    assert detail["client_progress_state"] == item["client_progress_state"]
     return item["client_progress_step"]
 
 

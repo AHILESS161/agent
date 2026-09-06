@@ -34,6 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError, DOCUMENT_KIND_LABELS, type SourceDocumentDto } from "@/lib/api";
+import { stageFor } from "@/lib/client-progress";
 import { useCase } from "@/lib/use-cases";
 import { cn } from "@/lib/utils";
 import { HelpTip } from "@/components/help-tip";
@@ -76,6 +77,7 @@ interface ClassNarrowingPreview {
 }
 
 interface RiskFindingSummary {
+  included_in_reviewed_result?: boolean;
   id: number;
   category?: string;
   explanation: string;
@@ -233,8 +235,16 @@ const SECTION_META: Array<{ id: Section; label: string; icon: typeof Circle }> =
   { id: "response", label: "Ответ Роспатенту", icon: MessageSquareText },
 ];
 
+const JOURNEY_STEPS = [
+  {id: "review" as Section, label: "Знак и товары", hint: "Что защищаем"},
+  {id: "analysis" as Section, label: "Результат проверки", hint: "Риски и следующие действия"},
+  {id: "documents" as Section, label: "Подготовка к подаче", hint: "Реквизиты, пошлины и документы"},
+];
+const journeySection = (section: Section) => ["upload", "fees", "response"].includes(section) ? "documents" : section;
+
 const sectionFromLocation = (location: string): Section | null => {
-  const query = location.split("?", 2)[1] || "";
+  const url = new URL(location, window.location.origin);
+  const query = url.hash.split("?")[1] || url.search;
   const value = new URLSearchParams(query).get("step");
   return SECTION_META.some((item) => item.id === value) ? value as Section : null;
 };
@@ -273,7 +283,7 @@ export default function ClientApplicationPage() {
   const appId = Number(params.id);
   const [, setLocation] = useLocation();
   const current = useCase(appId);
-  const [section, setSection] = useState<Section>(() => sectionFromLocation(window.location.href) || savedSection(appId) || "upload");
+  const [section, setSection] = useState<Section>(() => sectionFromLocation(window.location.href) || savedSection(appId) || "review");
   const [transitionDirection, setTransitionDirection] = useState<"forward" | "backward">("forward");
   const [analysisPending, setAnalysisPending] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -303,7 +313,11 @@ export default function ClientApplicationPage() {
       });
     };
     window.addEventListener("popstate", restoreFromBrowserHistory);
-    return () => window.removeEventListener("popstate", restoreFromBrowserHistory);
+    window.addEventListener("hashchange", restoreFromBrowserHistory);
+    return () => {
+      window.removeEventListener("popstate", restoreFromBrowserHistory);
+      window.removeEventListener("hashchange", restoreFromBrowserHistory);
+    };
   }, [appId]);
 
   useEffect(() => {
@@ -347,10 +361,10 @@ export default function ClientApplicationPage() {
           </div>
           <div className="flex w-fit flex-col items-start gap-2 sm:items-end">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold">
-              <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> Заявка заполняется
+              <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> {stageFor(application).label}
             </span>
             <button type="button" onClick={() => goToSection("documents")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 transition-colors hover:text-white">
-              Готовые документы и памятка →
+              Подготовка документов и памятка →
             </button>
           </div>
         </div>
@@ -361,8 +375,8 @@ export default function ClientApplicationPage() {
           aria-label="Этапы оформления заявки"
           className="sticky top-[5.25rem] z-20 -mx-1 flex gap-2 overflow-x-auto rounded-[1.3rem] border border-[#11113f]/10 bg-white/95 p-2 shadow-[0_10px_30px_rgba(21,21,55,0.08)] backdrop-blur xl:top-24 xl:mx-0 xl:grid xl:grid-cols-1 xl:gap-1 xl:overflow-visible xl:p-3"
         >
-          {SECTION_META.map((item, index) => {
-            const active = section === item.id;
+          {JOURNEY_STEPS.map((item, index) => {
+            const active = journeySection(section) === item.id;
             return (
               <button
                 key={item.id}
@@ -375,7 +389,7 @@ export default function ClientApplicationPage() {
                 )}
               >
                 <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
-                <span className="leading-snug">{item.label}</span>
+                <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.hint}</span></span>
               </button>
             );
           })}
@@ -383,9 +397,12 @@ export default function ClientApplicationPage() {
 
         <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
           <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
+            {journeySection(section) === "documents" && <nav aria-label="Подготовка к подаче" className="mb-5 flex flex-wrap gap-2">
+              {([{id:"documents", label:"Комплект документов"}, {id:"fees", label:"Расчёт пошлин"}, {id:"upload", label:"Загрузить документы заявителя"}, {id:"response", label:"Ответ на запрос Роспатента"}] as const).map((item) => <Button key={item.id} variant={section === item.id ? "default" : "outline"} size="sm" onClick={() => goToSection(item.id)}>{item.label}</Button>)}
+            </nav>}
             {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("review")} />}
             {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); goToSection("analysis"); }} />}
-            {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => setAnalysisPending(false)} onReview={() => goToSection("review")} onApplication={() => goToSection("fees")} onEditData={() => goToSection("review")} />}
+            {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => { setAnalysisPending(false); current.reload(); }} onReview={() => goToSection("review")} onApplication={() => goToSection("fees")} onEditData={() => goToSection("review")} />}
             {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => goToSection("documents")} onReview={() => goToSection("review")} />}
             {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onGoToSection={goToSection} />}
             {section === "response" && <OfficeActionResponse appId={appId} />}
@@ -434,6 +451,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const automaticDescriptionRequested = useRef(false);
   const [form, setForm] = useState({
+    clientType: client?.type || "individual",
     name: client?.fullNameOrCompanyName || "",
     inn: client?.inn || "",
     ogrn: client?.ogrnOrOgrnip || "",
@@ -497,7 +515,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
       verification_required: false,
     }
   );
-  const applicantType = filingRules.data?.requirements?.applicant_type || client?.type;
+  const applicantType = form.clientType;
   const normalized = (value?: string | null) => (value || "").trim();
   const profileMatchesForm = Boolean(
     user?.applicantProfile
@@ -971,8 +989,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
       ]);
       return;
     }
-    let representativeId: number | null = null;
-    if (usesRepresentative && client) {
+    let representativeId: number | null = usesRepresentative ? application.representativeId || null : null;
+    if (usesRepresentative && client && representative.fullName.trim()) {
       const payload = {
         full_name: representative.fullName.trim(),
         email: representative.email.trim() || null,
@@ -1005,7 +1023,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
 
     await Promise.all([
       client ? api.put(`/clients/${client.id}`, {
-        full_name_or_company_name: form.name.trim(), inn: form.inn.trim() || null,
+        type: form.clientType, full_name_or_company_name: form.name.trim(), inn: form.inn.trim() || null,
         ogrn_or_ogrnip: form.ogrn.trim() || null, address: form.address.trim() || null,
         kpp: form.kpp.trim() || null,
         country: form.country || "RU", email: form.email.trim() || null, phone: form.phone.trim() || null,
@@ -1070,38 +1088,6 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
     }
     if (mode === "review" && !form.name.trim()) {
       toast({ title: "Укажите заявителя", description: "Наименование организации или ФИО нужны для заявления.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && !form.signatoryName.trim()) {
-      toast({ title: "Укажите подписанта", description: "Нужно ФИО человека, который подпишет заявление.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && client?.type === "company" && !form.signatoryPosition.trim()) {
-      toast({ title: "Укажите должность подписанта", description: "Например: генеральный директор или представитель по доверенности.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && !form.signatureDate) {
-      toast({ title: "Укажите дату подписания", description: "По умолчанию установлена сегодняшняя дата; при необходимости измените её.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && usesRepresentative && !representative.fullName.trim()) {
-      toast({ title: "Укажите представителя", description: "Нужно ФИО человека, который будет вести заявку.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && usesRepresentative && !representative.address.trim()) {
-      toast({ title: "Укажите адрес представителя", description: "Этот адрес будет использоваться для переписки по заявке.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && usesRepresentative && representative.isPatentAttorney && !representative.registrationNumber.trim()) {
-      toast({ title: "Укажите номер патентного поверенного", description: "Введите регистрационный номер из реестра патентных поверенных.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && usesRepresentative && representative.authorityType === "power_of_attorney" && !representative.poaReference.trim()) {
-      toast({ title: "Укажите реквизиты доверенности", description: "Например: № 12 от 28.08.2026.", variant: "destructive" });
-      return false;
-    }
-    if (mode === "review" && usesRepresentative && representative.authorityType === "power_of_attorney" && !powerOfAttorneyDocument) {
-      toast({ title: "Приложите доверенность", description: "Файл доверенности должен войти в пакет для подачи.", variant: "destructive" });
       return false;
     }
     if (imageMark && !markImage) {
@@ -1202,15 +1188,6 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   };
 
   const incompleteReviewItems = mode === "review" ? [
-    !form.name.trim() ? { label: "Указать заявителя", target: "applicant-data" } : null,
-    !form.address.trim() ? { label: "Проверить адрес", target: "applicant-data" } : null,
-    !form.signatoryName.trim() ? { label: "Указать подписанта", target: "signatory-data" } : null,
-    client?.type === "company" && !form.signatoryPosition.trim() ? { label: "Указать должность подписанта", target: "signatory-data" } : null,
-    usesRepresentative && !representative.fullName.trim() ? { label: "Указать представителя", target: "representative-data" } : null,
-    usesRepresentative && !representative.address.trim() ? { label: "Указать адрес представителя", target: "representative-data" } : null,
-    usesRepresentative && representative.isPatentAttorney && !representative.registrationNumber.trim() ? { label: "Указать номер поверенного", target: "representative-data" } : null,
-    usesRepresentative && representative.authorityType === "power_of_attorney" && !representative.poaReference.trim() ? { label: "Указать доверенность", target: "representative-data" } : null,
-    usesRepresentative && representative.authorityType === "power_of_attorney" && !powerOfAttorneyDocument ? { label: "Приложить доверенность", target: "representative-data" } : null,
     !form.markName.trim() ? { label: "Указать обозначение", target: "mark-data" } : null,
     !activityDescription.trim() ? { label: "Описать товары или услуги", target: "mark-data" } : null,
     imageMark && !markImage ? { label: "Загрузить изображение", target: "mark-data" } : null,
@@ -1223,12 +1200,12 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
 
   return (
     <ClientPanel
-      title={mode === "upload" ? "Загрузите материалы" : "Проверьте сведения для заявки"}
+      title={mode === "upload" ? "Материалы знака" : "Проверьте знак и товары"}
       description={mode === "upload"
         ? "Добавьте документы заявителя и сам товарный знак. Система прочитает доступные сведения и покажет их на следующем экране."
-        : "Здесь собрана вся информация, которая пойдёт в заявление. Проверьте реквизиты, описание знака и товары или услуги; всё можно исправить."}
+        : "Для предварительной проверки нужны обозначение и товары или услуги. Подписанта, реквизиты и приложения можно заполнить после результата — перед подготовкой пакета."}
     >
-      <div className="mb-5 flex min-h-7 justify-end" aria-live="polite">
+      <div className="mb-3 flex justify-end" aria-live="polite">
         {autosaveStatus !== "idle" && (
           <span className={cn(
             "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold",
@@ -1315,7 +1292,126 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         </p>
       </section>}
       <div className="space-y-6">
-        {mode === "review" && <FormGroup step={1} id="applicant-data" title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
+        <FormGroup step={mode === "review" ? 1 : undefined} id="mark-data" title="О товарном знаке" hint="Проверьте обозначение, материалы и точный перечень товаров или услуг">
+          <MarkedField label={<span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает написанное название. Изобразительный — картинку без текста. Комбинированный — название и изображение вместе." /></span>} source={sourceFor("mark_type", Boolean(form.markType))}>
+            <Select value={form.markType} onValueChange={(value) => set("markType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(Object.keys(MARK_TYPE_LABELS) as MarkType[]).map((type) => <SelectItem key={type} value={type}>{MARK_TYPE_LABELS[type]}</SelectItem>)}</SelectContent></Select>
+          </MarkedField>
+          <MarkedField label="Обозначение" source={sourceFor("mark_name", Boolean(form.markName))}><Input value={form.markName} onChange={(e) => set("markName", e.target.value)} /></MarkedField>
+          {imageMark && (
+            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <Label className="inline-flex items-center gap-1 text-sm font-semibold">
+                    Изображение обозначения
+                    <HelpTip text="Загрузите именно тот вариант логотипа или рисунка, который планируете регистрировать. Для комбинированного знака защищается сочетание изображения и слов." />
+                  </Label>
+                  <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">PNG или JPEG. Мы проверим файл, покажем его и попробуем прочитать слова.</p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Обязательно</span>
+                  <SourceBadge source={sourceFor("mark_image", Boolean(markImage))} />
+                </div>
+              </div>
+
+              {markImage && previewUrl ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]">
+                  <div className="flex min-h-36 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-3">
+                    <img src={previewUrl} alt="Загруженное обозначение" className="max-h-32 max-w-full object-contain" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-[#11113f]">{markImage.filename}</p>
+                    <p className="mt-1 text-xs text-[#6d6d7d]">{markImage.width} × {markImage.height} px · {markImage.format} · {(markImage.file_size / 1024).toFixed(0)} КБ</p>
+                    {markImage.dominant_colors.length > 0 && (
+                      <div className="mt-3 flex items-center gap-2 text-xs text-[#6d6d7d]">
+                        Основные цвета
+                        {markImage.dominant_colors.map((color) => <span key={color} title={color} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: color }} />)}
+                      </div>
+                    )}
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f8f7f4]">
+                        <Upload className="h-4 w-4" /> Заменить
+                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
+                      </label>
+                      <button type="button" onClick={() => void removeMarkImage()} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Удалить</button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center hover:border-[#0d9f9b]">
+                  {imageUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <ImageIcon className="h-7 w-7 text-[#0d9f9b]" />}
+                  <span className="mt-2 text-sm font-semibold text-[#11113f]">{imageUploading ? "Обрабатываем изображение…" : "Выбрать изображение"}</span>
+                  <span className="mt-1 text-xs text-[#6d6d7d]">до 25 МБ</span>
+                  <input disabled={imageUploading} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
+                </label>
+              )}
+
+              {form.markType === "combined" && (
+                <div className="mt-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Слова на логотипе <HelpTip text="Мы используем подтверждённые слова для поиска похожих названий. Исправьте ошибки распознавания и укажите все читаемые словесные элементы." /></Label><SourceBadge source={sourceFor("mark_text", Boolean(form.markText))} /></div>
+                  <Input className="mt-2 bg-white" value={form.markText} onChange={(event) => set("markText", event.target.value)} placeholder="Например: Регистр" />
+                  <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">{markImage?.recognized_text ? "Текст предложен OCR — обязательно сверьте его с картинкой." : "Если на изображении есть слова, введите их вручную."}</p>
+                </div>
+              )}
+
+              <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                <strong>Что проверяется:</strong> система сравнит и слова на логотипе, и изображение с доступными карточками реестра.
+              </div>
+            </div>
+          )}
+          {soundMark && (
+            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Аудиозапись обозначения <HelpTip text="Загрузите запись именно того звука, который хотите зарегистрировать. Рекомендуемый Роспатентом формат — MP3; поддерживается и WAV." /></Label><SourceBadge source={sourceFor("mark_audio", Boolean(markAudio))} /></div>
+              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">MP3 или WAV, до 25 МБ. После загрузки отдельно проверьте описание звучания.</p>
+              {markAudio ? (
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4">
+                  <div><p className="font-semibold text-[#11113f]">{markAudio.original_filename}</p><p className="mt-1 text-xs text-[#6d6d7d]">Аудиозапись сохранена · {(markAudio.file_size / 1024 / 1024).toFixed(1)} МБ</p></div>
+                  <label className="cursor-pointer rounded-full border border-[#11113f]/15 px-4 py-2 text-xs font-semibold">Заменить<input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} /></label>
+                </div>
+              ) : (
+                <label className="mt-4 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center">
+                  {audioUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <Upload className="h-7 w-7 text-[#0d9f9b]" />}
+                  <span className="mt-2 text-sm font-semibold">{audioUploading ? "Загружаем…" : "Выбрать MP3 или WAV"}</span>
+                  <input disabled={audioUploading} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} />
+                </label>
+              )}
+            </div>
+          )}
+          {mode === "review" && <><MarkedField label={<span className="inline-flex items-center gap-1">Что вы продаёте или какие услуги оказываете <HelpTip text="Перечислите всё, что вы продаёте или делаете под этим названием. По этому описанию система подберёт классы МКТУ — группы товаров и услуг, для которых будет действовать защита знака." /></span>} source={sourceFor("goods_services", Boolean(activityDescription))}>
+            <Textarea
+              rows={3}
+              value={activityDescription}
+              onChange={(event) => setForm((old) => ({
+                ...old,
+                business: event.target.value,
+                goods: event.target.value,
+              }))}
+              placeholder="Например: ремонт квартир, пошив одежды или доставка еды"
+            />
+          </MarkedField>
+          <details className="rounded-xl border border-[#11113f]/10 bg-white p-4">
+            <summary className="cursor-pointer font-semibold text-[#11113f]">Описание и цвета для заявления</summary>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-xs leading-relaxed text-[#6d6d7d]">Система подготовит описание, основные цвета, написание латиницей и перевод. Проверьте результат перед сохранением.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Подготовить сведения</Button></div>
+            <div className="mt-4 space-y-4">
+              <MarkedField label="Описание обозначения" source={sourceFor("mark_description", Boolean(form.description))}><Textarea rows={6} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Подготовить сведения»" /></MarkedField>
+              <MarkedField label="Основные цвета обозначения" source={sourceFor("colors_claimed", Boolean(form.colors))}><Input value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></MarkedField>
+              {foreignWording && <div className="grid gap-4 sm:grid-cols-2">
+                <MarkedField label="Написание латиницей" source={sourceFor("transliteration", Boolean(form.transliteration))}><Input value={form.transliteration} onChange={(e) => set("transliteration", e.target.value)} placeholder="Определится автоматически" /></MarkedField>
+                <MarkedField label="Перевод названия" source={sourceFor("translation", Boolean(form.translation))}><Input value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Например: Friendly Neighbor" /></MarkedField>
+              </div>}
+            </div>
+          </details></>}
+        </FormGroup>
+      </div>
+        {mode === "review" && <details className="rounded-2xl border border-[#11113f]/10 p-5">
+          <summary className="cursor-pointer font-semibold text-[#11113f]">Реквизиты для подачи · можно заполнить после проверки</summary>
+          <p className="mt-2 text-sm text-[#6d6d7d]">Эти сведения нужны для заявления и скачивания пакета. Они не определяют результат предварительной проверки знака.</p>
+          <div className="mt-6 space-y-6">
+        {mode === "review" && <FormGroup id="applicant-data" title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
+          <label className="grid gap-2 text-sm font-semibold">Кому будет принадлежать знак
+            <select value={form.clientType} onChange={(event) => set("clientType", event.target.value)} className="h-10 rounded-md border bg-white px-3 font-normal">
+              <option value="individual">Физическое лицо</option><option value="sole_proprietor">Индивидуальный предприниматель</option><option value="company">Организация</option>
+            </select>
+          </label>
           <MarkedField label="Наименование или ФИО" source={sourceFor("applicant_name", Boolean(form.name))}><Input value={form.name} onChange={(e) => set("name", e.target.value)} /></MarkedField>
           <div className="grid gap-4 sm:grid-cols-3">
             {isApplicable("applicant_inn", true) && <MarkedField label="ИНН" source={sourceFor("applicant_inn", Boolean(form.inn))}><Input value={form.inn} onChange={(e) => set("inn", e.target.value)} /></MarkedField>}
@@ -1492,116 +1588,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           </div>
         </FormGroup>}
 
-        <FormGroup step={mode === "review" ? 4 : undefined} id="mark-data" title="О товарном знаке" hint="Проверьте обозначение, материалы и точный перечень товаров или услуг">
-          <MarkedField label={<span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает написанное название. Изобразительный — картинку без текста. Комбинированный — название и изображение вместе." /></span>} source={sourceFor("mark_type", Boolean(form.markType))}>
-            <Select value={form.markType} onValueChange={(value) => set("markType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(Object.keys(MARK_TYPE_LABELS) as MarkType[]).map((type) => <SelectItem key={type} value={type}>{MARK_TYPE_LABELS[type]}</SelectItem>)}</SelectContent></Select>
-          </MarkedField>
-          <MarkedField label="Обозначение" source={sourceFor("mark_name", Boolean(form.markName))}><Input value={form.markName} onChange={(e) => set("markName", e.target.value)} /></MarkedField>
-          {imageMark && (
-            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <Label className="inline-flex items-center gap-1 text-sm font-semibold">
-                    Изображение обозначения
-                    <HelpTip text="Загрузите именно тот вариант логотипа или рисунка, который планируете регистрировать. Для комбинированного знака защищается сочетание изображения и слов." />
-                  </Label>
-                  <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">PNG или JPEG. Мы проверим файл, покажем его и попробуем прочитать слова.</p>
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Обязательно</span>
-                  <SourceBadge source={sourceFor("mark_image", Boolean(markImage))} />
-                </div>
-              </div>
-
-              {markImage && previewUrl ? (
-                <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]">
-                  <div className="flex min-h-36 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-3">
-                    <img src={previewUrl} alt="Загруженное обозначение" className="max-h-32 max-w-full object-contain" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#11113f]">{markImage.filename}</p>
-                    <p className="mt-1 text-xs text-[#6d6d7d]">{markImage.width} × {markImage.height} px · {markImage.format} · {(markImage.file_size / 1024).toFixed(0)} КБ</p>
-                    {markImage.dominant_colors.length > 0 && (
-                      <div className="mt-3 flex items-center gap-2 text-xs text-[#6d6d7d]">
-                        Основные цвета
-                        {markImage.dominant_colors.map((color) => <span key={color} title={color} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: color }} />)}
-                      </div>
-                    )}
-                    <div className="mt-4 flex flex-wrap gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f8f7f4]">
-                        <Upload className="h-4 w-4" /> Заменить
-                        <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
-                      </label>
-                      <button type="button" onClick={() => void removeMarkImage()} className="inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-semibold text-red-700 hover:bg-red-50"><Trash2 className="h-4 w-4" /> Удалить</button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center hover:border-[#0d9f9b]">
-                  {imageUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <ImageIcon className="h-7 w-7 text-[#0d9f9b]" />}
-                  <span className="mt-2 text-sm font-semibold text-[#11113f]">{imageUploading ? "Обрабатываем изображение…" : "Выбрать изображение"}</span>
-                  <span className="mt-1 text-xs text-[#6d6d7d]">до 25 МБ</span>
-                  <input disabled={imageUploading} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
-                </label>
-              )}
-
-              {form.markType === "combined" && (
-                <div className="mt-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Слова на логотипе <HelpTip text="Мы используем подтверждённые слова для поиска похожих названий. Исправьте ошибки распознавания и укажите все читаемые словесные элементы." /></Label><SourceBadge source={sourceFor("mark_text", Boolean(form.markText))} /></div>
-                  <Input className="mt-2 bg-white" value={form.markText} onChange={(event) => set("markText", event.target.value)} placeholder="Например: Регистр" />
-                  <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">{markImage?.recognized_text ? "Текст предложен OCR — обязательно сверьте его с картинкой." : "Если на изображении есть слова, введите их вручную."}</p>
-                </div>
-              )}
-
-              <div className="mt-4 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                <strong>Что проверяется:</strong> система сравнит и слова на логотипе, и изображение с доступными карточками реестра.
-              </div>
-            </div>
-          )}
-          {soundMark && (
-            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Аудиозапись обозначения <HelpTip text="Загрузите запись именно того звука, который хотите зарегистрировать. Рекомендуемый Роспатентом формат — MP3; поддерживается и WAV." /></Label><SourceBadge source={sourceFor("mark_audio", Boolean(markAudio))} /></div>
-              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">MP3 или WAV, до 25 МБ. После загрузки отдельно проверьте описание звучания.</p>
-              {markAudio ? (
-                <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4">
-                  <div><p className="font-semibold text-[#11113f]">{markAudio.original_filename}</p><p className="mt-1 text-xs text-[#6d6d7d]">Аудиозапись сохранена · {(markAudio.file_size / 1024 / 1024).toFixed(1)} МБ</p></div>
-                  <label className="cursor-pointer rounded-full border border-[#11113f]/15 px-4 py-2 text-xs font-semibold">Заменить<input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} /></label>
-                </div>
-              ) : (
-                <label className="mt-4 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center">
-                  {audioUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <Upload className="h-7 w-7 text-[#0d9f9b]" />}
-                  <span className="mt-2 text-sm font-semibold">{audioUploading ? "Загружаем…" : "Выбрать MP3 или WAV"}</span>
-                  <input disabled={audioUploading} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} />
-                </label>
-              )}
-            </div>
-          )}
-          {mode === "review" && <><MarkedField label={<span className="inline-flex items-center gap-1">Что вы продаёте или какие услуги оказываете <HelpTip text="Перечислите всё, что вы продаёте или делаете под этим названием. По этому описанию система подберёт классы МКТУ — группы товаров и услуг, для которых будет действовать защита знака." /></span>} source={sourceFor("goods_services", Boolean(activityDescription))}>
-            <Textarea
-              rows={3}
-              value={activityDescription}
-              onChange={(event) => setForm((old) => ({
-                ...old,
-                business: event.target.value,
-                goods: event.target.value,
-              }))}
-              placeholder="Например: ремонт квартир, пошив одежды или доставка еды"
-            />
-          </MarkedField>
-          <details open className="rounded-xl border border-[#11113f]/10 bg-white p-4">
-            <summary className="cursor-pointer font-semibold text-[#11113f]">Описание и цвета для заявления</summary>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-xs leading-relaxed text-[#6d6d7d]">Система подготовит описание, основные цвета, написание латиницей и перевод. Проверьте результат перед сохранением.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Подготовить сведения</Button></div>
-            <div className="mt-4 space-y-4">
-              <MarkedField label="Описание обозначения" source={sourceFor("mark_description", Boolean(form.description))}><Textarea rows={6} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Подготовить сведения»" /></MarkedField>
-              <MarkedField label="Основные цвета обозначения" source={sourceFor("colors_claimed", Boolean(form.colors))}><Input value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></MarkedField>
-              {foreignWording && <div className="grid gap-4 sm:grid-cols-2">
-                <MarkedField label="Написание латиницей" source={sourceFor("transliteration", Boolean(form.transliteration))}><Input value={form.transliteration} onChange={(e) => set("transliteration", e.target.value)} placeholder="Определится автоматически" /></MarkedField>
-                <MarkedField label="Перевод названия" source={sourceFor("translation", Boolean(form.translation))}><Input value={form.translation} onChange={(e) => set("translation", e.target.value)} placeholder="Например: Friendly Neighbor" /></MarkedField>
-              </div>}
-            </div>
-          </details></>}
-        </FormGroup>
-      </div>
+          </div>
+        </details>}
       {mode === "review" && appId && onAnalysis && (
         <ClientCheck
           appId={appId}
@@ -1620,7 +1608,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
 
 function FormGroup({ id, step, title, hint, children }: { id?: string; step?: number; title: React.ReactNode; hint: string; children: React.ReactNode }) {
   return <section id={id} className="scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-    {step && <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">{step}</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Шаг {step} из 4</p></div>}
+    {step && <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">{step}</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Данные о знаке</p></div>}
     <h3 className="text-xl font-semibold">{title}</h3><p className="mt-1 text-sm text-[#6d6d7d]">{hint}</p><div className="mt-6 space-y-5">{children}</div>
   </section>;
 }
@@ -1696,6 +1684,24 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
     initialLoadStarted.current = true;
     void load();
   }, [appId]);
+
+  const [fullClassPreview, setFullClassPreview] = useState<{id: number; count: number; text: string} | null>(null);
+  const previewFullClass = async (item: ClassSuggestion) => {
+    try {
+      const result = await api.get<{items: Array<{class_number: number; item_count: number; full_description: string}>}>(`/nice-classes/catalog?q=${item.class_number}&include_items=true`);
+      const entry = result.items.find((value) => value.class_number === item.class_number);
+      if (!entry) throw new Error("Перечень недоступен");
+      setFullClassPreview({id: item.id, count: entry.item_count, text: entry.full_description});
+    } catch { toast({title: "Не удалось загрузить полный перечень", variant: "destructive"}); }
+  };
+  const includeFullClass = async (item: ClassSuggestion) => {
+    setDecidingClassId(item.id);
+    try {
+      await api.put(`/applications/${appId}/classes/${item.id}/approve`, {suggestion_id: item.id, approved: true, full_class: true});
+      setFullClassPreview(null); onDataChange(); await load(false, false);
+    } catch { toast({title: "Не удалось сохранить перечень", variant: "destructive"}); }
+    finally { setDecidingClassId(null); }
+  };
 
   const decide = async (item: ClassSuggestion, approved: boolean) => {
     setDecidingClassId(item.id);
@@ -1773,11 +1779,8 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
     setPreparing(true);
     if (!(await beforeAction())) { setPreparing(false); return; }
     try {
-      // One clear decision starts the whole workflow.  Classes which the user
-      // has not explicitly rejected are included and persisted; the same
-      // action confirms the reviewed data before the background pipeline is
-      // queued.
-      const classesToInclude = classes.filter((item) => item.approved !== false);
+      // В проверку входят только явно подтверждённые направления.
+      const classesToInclude = classes.filter((item) => item.approved === true);
       if (classesToInclude.length === 0) {
         throw new Error("Выберите хотя бы один класс товаров или услуг");
       }
@@ -1802,11 +1805,11 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
   };
 
   if (loading) return <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-    <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">4</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Шаг 4 из 4 · последнее перед анализом</p></div>
+    <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Товары и услуги · перед проверкой</p></div>
     <div className="flex min-h-40 items-center justify-center rounded-[1.2rem] border border-[#11113f]/10 bg-white text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем предложенные классы…</div>
   </section>;
 
-  const included = classes.filter((item) => item.approved !== false).length;
+  const included = classes.filter((item) => item.approved === true).length;
   const hasPendingClasses = classes.some((item) => item.approved === null);
   const usedCatalogFallback = classes.some((item) => item.confidence === 0.55);
   const narrowingClassNumbers = classes
@@ -1815,7 +1818,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
 
   return (
     <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-      <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">4</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Шаг 4 из 4 · последнее перед анализом</p></div>
+      <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Товары и услуги · перед проверкой</p></div>
       <h3 className="mt-2 text-xl font-semibold text-[#11113f]">Проверьте классы товаров и услуг</h3>
       <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Класс показывает, для каких именно товаров или услуг будет защищён знак. Отметьте каждый предложенный вариант.</p>
         <section className="mt-5 rounded-[1.3rem] border border-[#0d9f9b]/20 bg-white p-4 sm:p-5">
@@ -1833,12 +1836,12 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
                 data-testid="button-recalculate-classes"
               >
                 {recalculatingClasses ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {recalculatingClasses ? "Подбираем…" : "Подобрать заново"}
+                {recalculatingClasses ? "Подбираем…" : classes.length ? "Подобрать заново" : "Подобрать товары и услуги"}
               </Button>
             </div>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Система группирует вашу деятельность по международному справочнику МКТУ. Подтвердите только те направления, которыми вы действительно занимаетесь или планируете заниматься.</p>
-          <p className="mt-2 rounded-lg bg-[#eef9f8] px-3 py-2 text-xs leading-relaxed text-[#315c5a]">По умолчанию в заявку попадёт полный официальный перечень товаров или услуг выбранного класса. Если он не помещается в бланк, система автоматически вынесет его в приложение. Сокращайте перечень только осознанно: удалённые позиции не будут охраняться.</p>
+          <p className="mt-2 rounded-lg bg-[#eef9f8] px-3 py-2 text-xs leading-relaxed text-[#315c5a]">Предложены конкретные товары и услуги по вашему описанию. Подтвердите нужные направления. Полный класс можно выбрать отдельно после проверки его состава и стоимости.</p>
           <p className="mt-2 rounded-lg bg-[#f8f7f4] px-3 py-2 text-xs leading-relaxed text-[#5f6072]">
             Изменили документы, описание бизнеса или перечень товаров? Нажмите «Подобрать заново». Прежние классы будут удалены, а список сформируется заново по актуальным данным.
           </p>
@@ -1892,11 +1895,20 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
                       <div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={isNarrowing || recalculatingClasses} onClick={() => void narrowClass(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? `Сужаем класс ${item.class_number}…` : "Подобрать моделью"}</Button><Button type="button" size="sm" variant="ghost" className="rounded-full" disabled={isNarrowing} onClick={() => setEditingClassIds((current) => new Set(current).add(item.id))}>Уточнить вручную</Button></div>
                       {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#315f5d]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
                     </div>}
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void previewFullClass(item)}>Рассмотреть весь класс</Button>
+                    {fullClassPreview?.id === item.id && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
+                      <p className="font-semibold">Весь класс: {fullClassPreview.count} позиций</p>
+                      <p className="mt-2">Расширение увеличит объём охраны и может увеличить пошлину. Доплата за позиции сверх 10: ориентировочно {rubles(Math.max(0, fullClassPreview.count - 10) * 500)}. Итоговый расчёт — на этапе пошлин.</p>
+                      <details className="mt-2"><summary className="cursor-pointer">Прочитать полный перечень</summary><p className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap">{fullClassPreview.text}</p></details>
+                      <div className="mt-3 flex flex-wrap gap-2"><Button type="button" disabled={decidingClassId !== null} onClick={() => void includeFullClass(item)}>Выбрать весь класс</Button><Button type="button" variant="ghost" onClick={() => setFullClassPreview(null)}>Оставить конкретные товары</Button></div>
+                    </div>}
                     {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}
                     {isFullList && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950"><strong>До перехода к пошлинам:</strong> полный перечень из {itemCount} позиций добавляет примерно {rubles(Math.max(0, itemCount - 10) * 500)} к экспертизе этого класса. Автоматическое сужение оставит только позиции, подходящие под ваше описание.</div>}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {item.approved === false ? <Button disabled={decidingClassId !== null} size="sm" variant="outline" className="rounded-full" onClick={() => void decide(item, true)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {decidingClassId === item.id ? "Сохраняем…" : "Вернуть в заявку"}</Button> : <><span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-xs font-semibold text-emerald-800"><Check className="h-3.5 w-3.5" /> {item.approved === true ? "Сохранён в заявке" : "Будет включён"}</span><Button disabled={decidingClassId !== null} size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {decidingClassId === item.id ? "Сохраняем…" : "Не включать"}</Button></>}
+                    {item.approved !== true ? <Button disabled={decidingClassId !== null} size="sm" variant="outline" className="rounded-full" onClick={() => void decide(item, true)}><Check className="h-4 w-4" /> Включить</Button> : <><span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-xs font-semibold text-emerald-800"><Check className="h-3.5 w-3.5" /> Включён</span><Button disabled={decidingClassId !== null} size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>Не включать</Button></>}
+                    {item.approved === null && <Button disabled={decidingClassId !== null} size="sm" variant="ghost" onClick={() => void decide(item, false)}>Не включать</Button>}
+
                   </div>
                 </div>
               </div>
@@ -1904,7 +1916,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
           </div>
         </section>
       <div className="mt-7 rounded-[1.2rem] bg-[#11113f] p-5 text-white">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем решения и запускаем проверку" : running ? phases[phase] : recalculatingClasses || narrowingClassIds.size > 0 ? "Дождитесь завершения подбора" : classes.every((item) => item.approved === false) ? "Выберите хотя бы один класс" : "Один шаг до полного анализа"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "Классы и подтверждение данных сохраняются в заявке." : running ? "Вы уже можете следить за проверкой на следующем экране." : recalculatingClasses || narrowingClassIds.size > 0 ? "Список обновится автоматически. После этого одной кнопкой запустится вся проверка." : hasPendingClasses ? "Все предложенные классы включены по умолчанию. Исключите ненужные или сразу запустите полную проверку." : "Кнопка подтвердит введённые данные и последовательно проверит основания для отказа и похожие знаки."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || recalculatingClasses || narrowingClassIds.size > 0 || classes.every((item) => item.approved === false)} onClick={() => void run()} className="rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d]">{preparing || running || recalculatingClasses || narrowingClassIds.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : recalculatingClasses || narrowingClassIds.size > 0 ? "Подбор ещё идёт…" : "Подтвердить данные и проверить знак"}</Button></div>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем решения и запускаем проверку" : running ? phases[phase] : recalculatingClasses || narrowingClassIds.size > 0 ? "Дождитесь завершения подбора" : !classes.some((item) => item.approved === true) ? "Выберите хотя бы один класс" : "Один шаг до полного анализа"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "Классы и подтверждение данных сохраняются в заявке." : running ? "Вы уже можете следить за проверкой на следующем экране." : recalculatingClasses || narrowingClassIds.size > 0 ? "Список обновится автоматически. После этого одной кнопкой запустится вся проверка." : hasPendingClasses ? "Подтвердите нужные классы кнопкой «Включить». Неподтверждённые направления в проверку не попадут." : "Кнопка подтвердит введённые данные и последовательно проверит основания для отказа и похожие знаки."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || recalculatingClasses || narrowingClassIds.size > 0 || !classes.some((item) => item.approved === true)} onClick={() => void run()} className="rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d]">{preparing || running || recalculatingClasses || narrowingClassIds.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : recalculatingClasses || narrowingClassIds.size > 0 ? "Подбор ещё идёт…" : "Подтвердить данные и проверить знак"}</Button></div>
         {dataConfirmed && <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#79ded9]"><CheckCircle2 className="h-4 w-4" /> Сведения подтверждены</p>}
       </div>
     </section>
@@ -1914,6 +1926,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
 function ClientResult({ application, appId, analysisPending, onAnalysisComplete, onReview, onApplication, onEditData }: { application: Application; appId: number; analysisPending: boolean; onAnalysisComplete: () => void; onReview: () => void; onApplication: () => void; onEditData: () => void }) {
   const { toast } = useToast();
   const [report, setReport] = useState<RiskReport | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [memo, setMemo] = useState<Recommendation | null>(null);
   const [classes, setClasses] = useState<ClassSuggestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1922,8 +1935,12 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
 
   const load = async () => {
     setLoading(true);
+    setLoadError("");
     const [risk, recommendation, classData] = await Promise.all([
-      api.get<RiskReport>(`/applications/${appId}/risk-report`).catch(() => null),
+      api.get<RiskReport>(`/applications/${appId}/risk-report`).catch((error) => {
+        setLoadError(messageOf(error, "Не удалось загрузить результат. Попробуйте ещё раз."));
+        return null;
+      }),
       api.get<Recommendation>(`/applications/${appId}/recommendation`).catch(() => null),
       api.get<{ suggestions: ClassSuggestion[] }>(`/applications/${appId}/classes`).catch(() => ({ suggestions: [] })),
     ]);
@@ -1939,7 +1956,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
       setAnalysisJob(latest);
       if (!latest || !["queued", "running", "retrying"].includes(latest.status)) {
         await load();
-        if (latest) onAnalysisComplete();
+        if (latest && analysisPending) onAnalysisComplete();
       } else {
         setLoading(false);
       }
@@ -2024,7 +2041,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
   const registryResultIsPrevious = Boolean(
     !registrySearchSkipped && report?.refresh_warnings?.relative_grounds && lastCompletedRelativeSection
   );
-  const registryFindings = effectiveRelativeSection?.findings || [];
+  const registryFindings = (effectiveRelativeSection?.findings || []).filter((item) => item.included_in_reviewed_result !== false);
   const registrySearchComplete = Boolean(
     effectiveRelativeSection
     && !effectiveRelativeSection.is_inconclusive
@@ -2043,39 +2060,8 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
       ? "Что ещё нужно проверить: похожие знаки"
       : "Что ещё нужно проверить";
   const allAdverseFindings = findings.filter((item) => ["medium", "high", "critical"].includes(item.level || ""));
-  const rawAdverseFindings = allAdverseFindings.filter((item) => {
-    const normalized = item.explanation.toLocaleLowerCase("ru-RU");
-    if (
-      application.markType === "combined"
-      && ["misleading", "deceptive"].includes(item.category || "")
-      && /(стиральн|холодильник|компьютер|инструмент)/.test(normalized)
-      && /(ремонт|обслуживан|установк)/.test(normalized)
-    ) {
-      // Изображение предмета оказываемой услуги само по себе не сообщает
-      // ложных сведений и не является основанием пугать клиента отказом.
-      return false;
-    }
-    if (item.category !== "descriptive") return true;
-    return ![
-      "может восприниматься",
-      "может указывать",
-      "может ассоциироваться",
-      "по-соседски",
-      "состоит из общеупотребительных слов",
-    ].some((phrase) => normalized.includes(phrase));
-  });
-  const adverseFindings = rawAdverseFindings.filter((item) => {
-    if (!item.verification?.image_comparison || !item.verification.similarity) return true;
-    const similarity = item.verification.similarity;
-    // Грубая оценка картинки показывается юристу как подсказка, но не должна
-    // пугать клиента, если слова, звучание и смысл обозначений различаются.
-    return Math.max(similarity.phonetic || 0, similarity.visual || 0, similarity.semantic || 0) >= 0.5;
-  });
-  const onlyRoughImageRisks = rawAdverseFindings.length > 0 && adverseFindings.length === 0;
-  const onlySpeculativeDescriptiveRisks = allAdverseFindings.length > 0 && rawAdverseFindings.length === 0;
-  const displayedRisk = onlyRoughImageRisks || onlySpeculativeDescriptiveRisks
-    ? (incomplete ? null : "low")
-    : risk;
+  const adverseFindings = allAdverseFindings.filter((finding) => finding.included_in_reviewed_result !== false);
+  const displayedRisk = risk;
   // Уже установленный высокий риск важнее технической незавершённости
   // другой части проверки. Иначе экран одновременно советовал не подавать
   // знак, но прятал основание под заголовком «проверку нужно завершить».
@@ -2102,17 +2088,19 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
             <p className="mt-2 text-sm font-semibold text-[#087c78]">{Math.max(5, analysisJob?.progress || 0)}%</p>
           </div>
         </div>
+
       </div>
     </ClientPanel>
   );
 
   if (loading) return <div className="flex min-h-48 items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем результат…</div>;
+  if (loadError) return <ClientPanel title="Результат не удалось загрузить" description={loadError}><Button onClick={() => void load()} className="rounded-full">Обновить результат</Button></ClientPanel>;
 
   if (!presentation) return <ClientPanel title="Результата пока нет" description="Запустите проверку на предыдущем шаге. Система подберёт классы, найдёт сходные товарные знаки и подготовит понятную рекомендацию."><Button onClick={rerun} disabled={running} className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]">{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Запустить проверку</Button></ClientPanel>;
 
   const ResultIcon = presentation.icon;
   const visibleRiskFindings = adverseFindings.slice(0, 3);
-  const fallbackRisks = adverseFindings.length === 0 && !onlyRoughImageRisks && !incomplete && displayedRisk && displayedRisk !== "low"
+  const fallbackRisks = adverseFindings.length === 0 && !incomplete && displayedRisk && displayedRisk !== "low"
     ? (memo?.key_risks_json || []).slice(0, 3)
     : [];
   const hasVisibleRisks = visibleRiskFindings.length > 0 || fallbackRisks.length > 0;
@@ -2212,7 +2200,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
           ? ["Повторить проверку самого обозначения.", "Если она снова не завершится, попросить специалиста оценить обозначение по статье 1483 ГК РФ."]
           : externalServicesUnavailable
           ? ["Повторить поиск похожих товарных знаков.", "Если поиск снова не завершится, попросить специалиста проверить реестр вручную."]
-          : ["Повторить только незавершённую проверку — готовый поиск по реестру сохранится.", "Если результат снова не появится, передать обозначение юристу для ручной оценки по статье 1483 ГК РФ."]
+          : [registrySearchSkipped ? "Завершить проверку самого обозначения, затем выполнить поиск по реестру." : "Повторить только незавершённую проверку — готовый поиск по реестру сохранится.", "Если результат снова не появится, передать обозначение юристу для ручной оценки по статье 1483 ГК РФ."]
         : ["Перейти к расчёту пошлин и проверить доступные льготы.", "После этого скачать комплект документов для подачи."];
   return (
     <ClientPanel title="Результат проверки" description="Коротко: что получилось хорошо, что может помешать регистрации и что делать дальше.">
@@ -2223,7 +2211,7 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
         <section className={cn("min-w-0 overflow-hidden rounded-[1.3rem] border p-5 [overflow-wrap:anywhere] sm:p-6", registrySearchSkipped || !registrySearchComplete ? "border-amber-200 bg-amber-50/60" : registryResultIsPrevious ? "border-[#0d9f9b]/25 bg-[#eef9f8]" : "border-emerald-200 bg-emerald-50/60")}>
           <h3 className={cn("flex min-w-0 items-start gap-2 text-xl font-semibold", registrySearchSkipped || !registrySearchComplete ? "text-amber-900" : registryResultIsPrevious ? "text-[#087c78]" : "text-emerald-900")}>
             {registrySearchSkipped ? <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /> : registrySearchComplete ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />}
-            {registrySearchSkipped ? "Поиск похожих знаков пока не нужен" : registrySearchComplete ? "Похожие знаки проверены" : "Поиск похожих знаков не завершён"}
+            {registrySearchSkipped ? "Поиск похожих знаков ещё не выполнялся" : registrySearchComplete ? "Похожие знаки проверены" : "Поиск похожих знаков не завершён"}
           </h3>
           <div className={cn("mt-4 space-y-3 text-sm leading-relaxed", registrySearchSkipped || !registrySearchComplete ? "text-amber-950/80" : "text-emerald-950/80")}>
             <p>{registryAdvice}</p>

@@ -68,7 +68,7 @@ class TestWhenModelIsAsked:
 
     def test_requested_for_cross_language_pair(self):
         """Тот самый случай, ради которого нужна модель."""
-        similarity = assess("ЯБЛОКО", "APPLE", [25], [25])
+        similarity = assess("ЯБЛОКО", "APPLE", [25], [25], "одежда", "одежда")
         assert similarity.semantic == 0.0
         assert needs_semantic_check(similarity, "ЯБЛОКО", "APPLE") is True
 
@@ -150,7 +150,7 @@ class TestScoreCannotBeLowered:
         assert updated.semantic_source == "rules"
 
     def test_higher_score_changes_conclusion(self):
-        base = assess("ЯБЛОКО", "APPLE", [25], [25])
+        base = assess("ЯБЛОКО", "APPLE", [25], [25], "одежда", "одежда")
         assert base.confusion_likely is False
 
         updated = with_semantic(base, 0.9)
@@ -160,7 +160,7 @@ class TestScoreCannotBeLowered:
 
     def test_deterministic_criteria_are_untouched(self):
         """Модель отвечает за смысл и только за него."""
-        base = assess("ЯБЛОКО", "APPLE", [25], [25])
+        base = assess("ЯБЛОКО", "APPLE", [25], [25], "одежда", "одежда")
         updated = with_semantic(base, 0.9)
 
         assert updated.phonetic == base.phonetic
@@ -168,7 +168,7 @@ class TestScoreCannotBeLowered:
         assert updated.goods == base.goods
 
     def test_source_is_visible_in_output(self):
-        updated = with_semantic(assess("ЯБЛОКО", "APPLE", [25], [25]), 0.9)
+        updated = with_semantic(assess("ЯБЛОКО", "APPLE", [25], [25], "одежда", "одежда"), 0.9)
         data = updated.as_dict()
 
         assert data["semantic_source"] == "llm"

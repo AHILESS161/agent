@@ -17,6 +17,7 @@ interface ApplicationDto {
   assigned_lawyer_id: number | null;
   assigned_manager_id: number | null;
   status: ApplicationStatus;
+  client_progress_state?: string;
   client_progress_step?: 1 | 2 | 3 | 4;
   priority?: string;
   mark_type: MarkType | null;
@@ -75,6 +76,7 @@ function toApplication(dto: ApplicationDto): Application {
     clientId: dto.client_id,
     status: dto.status,
     clientProgressStep: dto.client_progress_step,
+    clientProgressState: dto.client_progress_state,
     priority: (dto.priority as Application["priority"]) ?? "medium",
     // mark_type на сервере необязателен, в интерфейсе нужен всегда.
     markType: (dto.mark_type ?? "other") as MarkType,

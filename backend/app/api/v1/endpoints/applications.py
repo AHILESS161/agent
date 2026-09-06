@@ -261,85 +261,9 @@ async def list_applications(
         .order_by(TrademarkApplicationDraft.id.desc())
     )
     apps = result.scalars().all()
-    application_ids = [app.id for app in apps]
-
-    class_application_ids: set[int] = set()
-    assessment_application_ids: set[int] = set()
-    analysis_job_application_ids: set[int] = set()
-    if application_ids:
-        class_application_ids = set(
-            (
-                await session.execute(
-                    select(NiceClassSuggestion.application_id)
-                    .where(NiceClassSuggestion.application_id.in_(application_ids))
-                    .distinct()
-                )
-            ).scalars()
-        )
-        assessment_application_ids = set(
-            (
-                await session.execute(
-                    select(RiskAssessment.application_id)
-                    .where(RiskAssessment.application_id.in_(application_ids))
-                    .distinct()
-                )
-            ).scalars()
-        )
-        analysis_jobs = (
-            await session.execute(
-                select(BackgroundJob.payload_json).where(
-                    BackgroundJob.job_type == "full_analysis",
-                    BackgroundJob.payload_json["application_id"]
-                    .as_integer()
-                    .in_(application_ids),
-                )
-            )
-        ).scalars()
-        for payload in analysis_jobs:
-            raw_application_id = (payload or {}).get("application_id")
-            try:
-                job_application_id = int(raw_application_id)
-            except (TypeError, ValueError):
-                continue
-            if job_application_id in application_ids:
-                analysis_job_application_ids.add(job_application_id)
-
-    analysis_statuses = {
-        ApplicationStatus.legal_review_pending,
-        ApplicationStatus.legal_review_in_progress,
-        ApplicationStatus.conflict_search_pending,
-        ApplicationStatus.conflict_search_in_progress,
-    }
-    result_statuses = {
-        ApplicationStatus.legal_review_done,
-        ApplicationStatus.conflict_search_done,
-        ApplicationStatus.memo_generation,
-        ApplicationStatus.memo_approved,
-        ApplicationStatus.document_generation,
-        ApplicationStatus.document_approved,
-        ApplicationStatus.submitted,
-        ApplicationStatus.closed,
-    }
-
-    items = []
-    for app in apps:
-        if app.id in assessment_application_ids or app.status in result_statuses:
-            progress_step = 4
-        elif app.id in analysis_job_application_ids or app.status in analysis_statuses:
-            progress_step = 3
-        elif app.id in class_application_ids or app.status in {
-            ApplicationStatus.classification_pending,
-            ApplicationStatus.classification_review,
-            ApplicationStatus.classification_approved,
-        }:
-            progress_step = 2
-        else:
-            progress_step = 1
-        items.append(
-            ApplicationListItem.model_validate(app).model_copy(
-                update={"client_progress_step": progress_step}
-            )
-        )
+    from app.services.client_progress import client_progress
+    progress = await client_progress(session, apps)
+    items = [ApplicationListItem.model_validate(app).model_copy(update=progress[app.id]) for app in apps]
     return PaginatedResponse.create(items=items, total=total, page=page, page_size=page_size)
 
 
@@ -470,7 +394,9 @@ async def get_application(
     """Get full application details."""
     app = await _get_app_or_404(application_id, session)
     _ensure_access(app, current_user)
-    return ApplicationResponse.model_validate(app)
+    from app.services.client_progress import client_progress
+    progress = await client_progress(session, [app])
+    return ApplicationResponse.model_validate(app).model_copy(update=progress[app.id])
 
 
 @router.put("/{application_id}", response_model=ApplicationResponse)
@@ -523,6 +449,8 @@ async def update_application(
         ip_address=_get_client_ip(request),
     )
     await session.flush()
+    from app.services.reviewed_risks import refresh_reviewed_memo
+    await refresh_reviewed_memo(session, app)
     await session.refresh(app)
     return ApplicationResponse.model_validate(app)
 
@@ -1057,20 +985,14 @@ async def add_class(
             detail=f"Класс {payload.class_number} уже есть в деле",
         )
 
-    catalog_class = next(
-        (item for item in load_catalog() if item.number == payload.class_number),
-        None,
-    )
+    description = (payload.class_description or "").strip() or None
     suggestion = NiceClassSuggestion(
         application_id=application_id,
         class_number=payload.class_number,
-        class_description=(
-            payload.class_description
-            or (catalog_class.full_description if catalog_class else None)
-        ),
+        class_description=description,
         rationale=payload.rationale or "Добавлен специалистом вручную",
-        approved=True,
-        approved_by=current_user.id,
+        approved=True if description else None,
+        approved_by=current_user.id if description else None,
     )
     session.add(suggestion)
     await session.flush()
@@ -1295,12 +1217,21 @@ async def approve_class(
             status_code=status.HTTP_404_NOT_FOUND, detail="Class suggestion not found"
         )
 
+    if payload.full_class and (not payload.approved or payload.class_description is not None):
+        raise HTTPException(status_code=422, detail="Полный класс подтверждается отдельно от ручного перечня")
+    class_number = payload.override_class if payload.override_class is not None else sug.class_number
+    description = payload.class_description if payload.class_description is not None else sug.class_description
+    if payload.full_class:
+        catalog_class = next((item for item in load_catalog() if item.number == class_number), None)
+        if catalog_class is None:
+            raise HTTPException(status_code=422, detail="Официальный перечень класса недоступен")
+        description = catalog_class.full_description
+    if payload.approved and not (description or "").strip():
+        raise HTTPException(status_code=422, detail="Укажите конкретные товары и услуги перед подтверждением")
     sug.approved = payload.approved
     sug.approved_by = current_user.id
-    if payload.class_description is not None:
-        sug.class_description = payload.class_description.strip() or None
-    if payload.override_class is not None:
-        sug.class_number = payload.override_class
+    sug.class_description = (description or "").strip() or None
+    sug.class_number = class_number
 
     app = await _get_app_or_404(application_id, session)
     await _create_audit(
@@ -1312,11 +1243,14 @@ async def approve_class(
             "class_id": class_id,
             "approved": payload.approved,
             "class_description_changed": payload.class_description is not None,
+            "full_class_explicitly_selected": payload.full_class,
             "class_description_length": len(sug.class_description or ""),
         },
         ip_address=_get_client_ip(request),
     )
     await session.flush()
+    from app.services.reviewed_risks import refresh_reviewed_memo
+    await refresh_reviewed_memo(session, app)
     await session.refresh(sug)
     return NiceClassSuggestionResponse.model_validate(sug)
 
@@ -1514,6 +1448,8 @@ async def get_recommendation(
     """Get the latest recommendation memo for an application."""
     app = await _get_app_or_404(application_id, session)
     _ensure_access(app, current_user)
+    from app.services.reviewed_risks import refresh_reviewed_memo
+    await refresh_reviewed_memo(session, app)
     result = await session.execute(
         select(RecommendationMemo)
         .where(RecommendationMemo.application_id == application_id)

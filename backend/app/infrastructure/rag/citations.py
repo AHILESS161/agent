@@ -8,7 +8,7 @@
 
 Точное совпадение слишком строго: модель нормализует пробелы, кавычки,
 может обрезать окончание. Поэтому сравнение идёт по нормализованному
-тексту, а частичное совпадение оценивается долей совпавших слов.
+тексту. Перестановка слов, пропуски и изменения чисел не допускаются.
 
 Вывод без подтверждённой цитаты не сохраняется и не показывается
 специалисту как обоснованный.
@@ -20,10 +20,6 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-# Доля слов цитаты, которая должна найтись в источнике, чтобы считать
-# цитату подтверждённой при неточном совпадении.
-PARTIAL_MATCH_THRESHOLD = 0.85
-
 # Слишком короткая «цитата» ничего не подтверждает: два-три слова
 # найдутся в любом тексте.
 MIN_QUOTE_WORDS = 4
@@ -33,6 +29,28 @@ MIN_QUOTE_WORDS = 4
 # отбрасывало верные предложения. Защита от выдумывания сохраняется:
 # цитата по-прежнему обязана дословно присутствовать в источнике.
 MIN_QUOTE_WORDS_REFERENCE = 2
+
+
+class SourceTexts(dict[str, str]):
+    """Тексты с серверными якорями; модель не определяет место нормы."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.anchors: dict[str, str] = {}
+
+
+def _anchor_parts(anchor: str) -> dict[str, str]:
+    parts = {}
+    for key, pattern in (
+        ("article", r"(?:ст\.|статья|статьи)\s*(\d+(?:\.\d+)*)"),
+        ("clause", r"(?<!\w)(?:п\.|пункт|пункта)\s*(\d+(?:\.\d+)*)"),
+        ("subclause", r"(?:подп\.|подпункт|подпункта)\s*(\d+(?:\.\d+)*)"),
+        ("class", r"класс\s*(\d+)"),
+    ):
+        match = re.search(pattern, anchor.lower())
+        if match:
+            parts[key] = match.group(1)
+    return parts
 
 
 class CitationStatus(str, Enum):
@@ -53,13 +71,17 @@ class CitationCheck:
 
     @property
     def is_trustworthy(self) -> bool:
-        return self.status in (CitationStatus.verified, CitationStatus.partial)
+        return self.status is CitationStatus.verified
 
 
 def _normalize(text: str) -> str:
     """Привести текст к виду, устойчивому к косметическим различиям."""
     text = text.lower()
     text = text.replace("ё", "е")
+    # Числовая пунктуация меняет значение: 1,5 не равно «1 5», -5 не равно 5.
+    text = re.sub(r"(?<=\d)[.,](?=\d)", "_decimal_", text)
+    text = re.sub(r"(?<=\d)\s*[-—–]\s*(?=\d)", "_range_", text)
+    text = re.sub(r"(?<!\w)[−-](?=\d)", "negative_", text)
     # Разные кавычки и тире — к единому виду.
     text = re.sub(r"[«»“”„‟\"']", " ", text)
     text = re.sub(r"[—–−-]", " ", text)
@@ -80,19 +102,21 @@ def verify_quote(
         return CitationStatus.too_short, 0.0
 
     normalized_source = _normalize(source_text)
-    normalized_quote = " ".join(quote_words)
 
-    if normalized_quote in normalized_source:
-        return CitationStatus.verified, 1.0
+    source_tokens = normalized_source.split()
+    for start in range(len(source_tokens) - len(quote_words) + 1):
+        if source_tokens[start:start + len(quote_words)] == quote_words:
+            # Не позволяем отрезать отрицание непосредственно перед цитатой.
+            if start and source_tokens[start - 1] in {"не", "ни", "not", "без"}:
+                continue
+            return CitationStatus.verified, 1.0
 
-    # Неточное совпадение: считаем долю слов цитаты, найденных
-    # в источнике. Порядок не учитываем — модель могла переставить.
+    # Доля слов служит только диагностикой. Она не подтверждает цитату:
+    # удаление отрицания также может дать 100% совпавших слов.
     source_words = set(normalized_source.split())
     matched = sum(1 for word in quote_words if word in source_words)
     ratio = matched / len(quote_words)
 
-    if ratio >= PARTIAL_MATCH_THRESHOLD:
-        return CitationStatus.partial, ratio
     return CitationStatus.not_found, ratio
 
 
@@ -120,6 +144,16 @@ def check_citation(
     status, ratio = verify_quote(
         quote, available_sources[source_id], min_words=min_words
     )
+    canonical = getattr(available_sources, "anchors", {}).get(source_id)
+    if canonical:
+        if anchor:
+            requested = _anchor_parts(anchor)
+            actual = _anchor_parts(canonical)
+            if (requested and any(actual.get(k) != v for k, v in requested.items())) or (
+                not requested and _normalize(anchor) != _normalize(canonical)
+            ):
+                status, ratio = CitationStatus.not_found, 0.0
+        anchor = canonical
     return CitationCheck(
         status=status,
         source_id=source_id,

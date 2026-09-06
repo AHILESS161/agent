@@ -143,11 +143,14 @@ def build_context(retrieved: list[RetrievedChunk]) -> tuple[str, dict[str, str]]
     может ссылаться только на то, что ей действительно показали.
     """
     blocks: list[str] = []
-    sources: dict[str, str] = {}
+    from app.infrastructure.rag.citations import SourceTexts
+
+    sources = SourceTexts()
 
     for item in retrieved:
         chunk = item.chunk
         sources[item.citation_id] = chunk.content
+        sources.anchors[item.citation_id] = chunk.anchor
         provenance = []
         if chunk.source_metadata:
             edition = chunk.source_metadata.get("edition")

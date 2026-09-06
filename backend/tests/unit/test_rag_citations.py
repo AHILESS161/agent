@@ -25,6 +25,32 @@ SOURCE = (
 SOURCES = {"kb-1": SOURCE}
 
 
+@pytest.mark.parametrize("quote, source", [
+    ("Допускается государственная регистрация товарных знаков", "Не допускается государственная регистрация товарных знаков"),
+    ("Размер составляет 1 5 процента", "Размер составляет 1,5 процента"),
+    ("Температура должна быть 5 градусов", "Температура должна быть -5 градусов"),
+    ("Registration is permitted for all marks", "Registration is not permitted for all marks"),
+    ("Не допускается регистрация в течение 5 дней", "Не допускается регистрация в течение 15 дней"),
+    ("товары характеризуют только элементы обозначения", "только обозначения характеризуют элементы товары"),
+    ("registration is permitted for all marks", "deregistration is permitted for all marks"),
+])
+def test_meaning_changing_edits_are_rejected(quote, source):
+    assert verify_quote(quote, source)[0] is CitationStatus.not_found
+
+
+def test_quote_cannot_be_attributed_to_another_clause():
+    from app.infrastructure.rag.citations import SourceTexts
+
+    sources = SourceTexts()
+    sources["kb-1"] = SOURCE
+    sources.anchors["kb-1"] = "ст. 1483, п. 1"
+    quote = "Не допускается государственная регистрация в качестве товарных знаков"
+    assert not check_citation(quote, "kb-1", sources, anchor="ст. 1483, п. 3").is_trustworthy
+    checked = check_citation(quote, "kb-1", sources)
+    assert checked.is_trustworthy
+    assert checked.anchor == "ст. 1483, п. 1"
+
+
 class TestQuoteVerification:
     def test_exact_quote_is_verified(self):
         status, ratio = verify_quote(

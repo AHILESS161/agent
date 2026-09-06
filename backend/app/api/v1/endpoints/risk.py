@@ -53,6 +53,16 @@ from app.services.full_analysis_jobs import (
     serialize_analysis_job,
 )
 
+from app.services.risk_analysis import AnalysisContext
+from app.services.reviewed_risks import refresh_reviewed_memo
+
+
+async def _serialize_reviewed(session, assessment):
+    application = await _load_application(session, assessment.application_id)
+    context = await load_class_context(session, assessment.application_id)
+    return serialize_assessment(assessment, current_fingerprint=AnalysisContext.from_application(application, context).fingerprint())
+
+
 logger = get_logger(__name__)
 
 router = APIRouter(tags=["risk-analysis"])
@@ -135,6 +145,7 @@ def _loaded(query):
 async def nice_class_catalog(
     q: str = "",
     limit: int = 20,
+    include_items: bool = False,
     _current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """Найти класс МКТУ по названию, составу или номеру.
@@ -144,7 +155,7 @@ async def nice_class_catalog(
     языковая модель здесь не участвует.
     """
     found = nice_catalog_search(q, limit=max(1, min(limit, 45)))
-    return {"query": q, "items": [item.as_dict() for item in found]}
+    return {"query": q, "items": [{**item.as_dict(), **({"full_description": item.full_description} if include_items else {})} for item in found]}
 
 
 @router.post(
@@ -388,7 +399,7 @@ async def run_analysis(
             _loaded(select(RiskAssessment).where(RiskAssessment.id == assessment.id))
         )
     ).scalar_one()
-    return serialize_assessment(loaded)
+    return await _serialize_reviewed(session, loaded)
 
 
 @router.post(
@@ -494,7 +505,7 @@ async def run_conflicts(
             _loaded(select(RiskAssessment).where(RiskAssessment.id == assessment.id))
         )
     ).scalar_one()
-    return serialize_assessment(loaded)
+    return await _serialize_reviewed(session, loaded)
 
 
 @router.get(
@@ -515,6 +526,7 @@ async def risk_report(
     _require_client_access(current_user, application)
 
     class_context = await load_class_context(session, application_id)
+    input_fingerprint = AnalysisContext.from_application(application, class_context).fingerprint()
     current_classes = class_context.as_numbers()
     sections: dict[str, Any] = {}
     last_completed_sections: dict[str, Any] = {}
@@ -534,13 +546,14 @@ async def risk_report(
                 )
             )
         ).scalar_one_or_none()
-        latest_attempts[kind.value] = serialize_assessment(latest) if latest else None
+        latest_attempts[kind.value] = await _serialize_reviewed(session, latest) if latest else None
         last_completed = await latest_completed_for_classes(
             session,
             application_id,
             kind,
             classes=current_classes,
             classes_confirmed=class_context.is_confirmed,
+            input_fingerprint=input_fingerprint,
         )
         if last_completed is not None:
             last_completed = (
@@ -553,7 +566,7 @@ async def risk_report(
                 )
             ).scalar_one()
         last_completed_sections[kind.value] = (
-            serialize_assessment(last_completed) if last_completed else None
+            await _serialize_reviewed(session, last_completed) if last_completed else None
         )
         effective = latest
         latest_was_pipeline_skip = bool(
@@ -578,7 +591,7 @@ async def risk_report(
                 else latest.inconclusive_reason
                 or "Повторную проверку временно не удалось завершить."
             )
-        sections[kind.value] = serialize_assessment(effective) if effective else None
+        sections[kind.value] = await _serialize_reviewed(session, effective) if effective else None
 
     order = ["low", "medium", "high", "critical"]
     levels = [
@@ -681,7 +694,7 @@ async def get_latest_analysis(
             "assessment": None,
             "message": "Анализ рисков по этому делу ещё не проводился",
         }
-    return {"application_id": application_id, "assessment": serialize_assessment(assessment)}
+    return {"application_id": application_id, "assessment": await _serialize_reviewed(session, assessment)}
 
 
 @router.get(
@@ -793,6 +806,16 @@ async def review_finding(
             detail=f"Вывод {finding_id} не найден",
         )
 
+    assessment = await session.get(RiskAssessment, finding.assessment_id)
+    application = await _load_application(session, assessment.application_id)
+    _require_application_access(current_user, application)
+    if payload.decision in {ReviewerDecision.reject, ReviewerDecision.modify} and not (payload.comment or "").strip():
+        raise HTTPException(status_code=422, detail="Укажите причину решения специалиста")
+    context = await load_class_context(session, application.id)
+    old_decision = {"decision": finding.reviewer_decision.value if finding.reviewer_decision else None,
+                    "comment": finding.reviewer_comment, "reviewer_id": finding.reviewer_id}
+    finding.verification_json = {**(finding.verification_json or {}),
+        "review_input_fingerprint": AnalysisContext.from_application(application, context).fingerprint()}
     finding.reviewer_id = current_user.id
     finding.reviewer_decision = payload.decision
     finding.reviewer_comment = payload.comment
@@ -801,6 +824,7 @@ async def review_finding(
         AuditLog(
             user_id=current_user.id,
             action=f"risk_finding.{payload.decision.value}",
+            old_value_json=old_decision,
             application_id=await session.scalar(select(RiskAssessment.application_id).where(
                 RiskAssessment.id == finding.assessment_id)),
             entity_type="RiskFinding",
@@ -808,10 +832,14 @@ async def review_finding(
             new_value_json={
                 "category": finding.category,
                 "decision": payload.decision.value,
+                "comment": payload.comment,
+                "input_fingerprint": finding.verification_json["review_input_fingerprint"],
             },
         )
     )
     await session.flush()
+
+    await refresh_reviewed_memo(session, application)
 
     logger.info(
         "Решение специалиста по выводу анализа",

@@ -127,6 +127,9 @@ interface FindingDto {
   recommended_action: string | null;
   confidence: number | null;
   reviewer_decision: string | null;
+  reviewer_comment?: string | null;
+  included_in_reviewed_result?: boolean;
+  review_is_current?: boolean;
   citations: {
     id: number;
     quote: string;
@@ -237,11 +240,13 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
     }
   };
 
-  const review = async (findingId: number, decision: string) => {
+  const review = async (findingId: number, decision: string, comment: string) => {
     setBusyFinding(findingId);
     try {
-      await api.post(`/risk-findings/${findingId}/review`, { decision });
+      await api.post(`/risk-findings/${findingId}/review`, { decision, comment });
+      setVerdict(null);
       report.reload();
+      recommendation.reload();
     } catch (e) {
       toast({
         title: "Не удалось сохранить решение",
@@ -269,7 +274,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
       ? { low: "proceed", medium: "proceed_with_caution", high: "revise", critical: "do_not_proceed" }[
           overallRisk
         ] ?? "inconclusive"
-      : null);
+      : absolute || relative ? "inconclusive" : null);
 
   const VerdictIcon = VERDICT_ICONS[verdictCode ?? "inconclusive"];
   const classSuggestions = classes.data?.suggestions ?? [];
@@ -310,7 +315,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
           ...(absolute?.findings ?? []),
           ...(relative?.findings ?? []),
         ]}
-        incompleteChecks={verdict?.incomplete_checks ?? []}
+        incompleteChecks={verdict?.incomplete_checks ?? Object.values(report.data?.sections || {}).filter((section) => section?.is_inconclusive).map((section) => section?.inconclusive_reason || "Требуется дополнительная проверка")}
         isRunning={isRunning}
         onRun={() => void runAll()}
       />
@@ -340,7 +345,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
                 key={finding.id}
                 finding={finding}
                 isBusy={busyFinding === finding.id}
-                onReview={(d) => void review(finding.id, d)}
+                onReview={(d, comment) => void review(finding.id, d, comment)}
               />
             ))}
           </div>
@@ -378,7 +383,7 @@ export function LegalAnalysisTab({ appId }: { appId: number }) {
                 key={finding.id}
                 finding={finding}
                 isBusy={busyFinding === finding.id}
-                onReview={(d) => void review(finding.id, d)}
+                onReview={(d, comment) => void review(finding.id, d, comment)}
               />
             ))}
           </div>
@@ -826,6 +831,7 @@ function LegalSummaryCard({
   onRun: () => void;
 }) {
   const importantRisks = findings
+    .filter((finding) => finding.included_in_reviewed_result !== false)
     .filter((finding) => finding.level === "critical" || finding.level === "high")
     .slice(0, 4);
 
@@ -929,7 +935,7 @@ function LegalSummaryCard({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm text-muted-foreground">Риски высокого и критического уровня не выявлены.</p>
+                <p className="text-sm text-muted-foreground">{incompleteChecks.length ? "Проверка не завершена; отсутствие подтверждённых рисков не означает их отсутствия." : "Риски высокого и критического уровня не выявлены."}</p>
               )}
             </div>
           </div>
@@ -957,7 +963,7 @@ function LegalSummaryCard({
 }
 
 function TrademarkMatches({ appId, findings }: { appId: number; findings: FindingDto[] }) {
-  const matches = findings.filter((finding) => finding.category === "conflicting_mark");
+  const matches = findings.filter((finding) => finding.category === "conflicting_mark" && finding.included_in_reviewed_result !== false);
   if (matches.length === 0) return null;
 
   const priority = matches.filter((finding) => finding.level === "critical" || finding.level === "high");
@@ -1183,11 +1189,13 @@ function FindingCard({
 }: {
   finding: FindingDto;
   isBusy: boolean;
-  onReview: (decision: string) => void;
+  onReview: (decision: string, comment: string) => void;
 }) {
+  const [comment, setComment] = useState(finding.reviewer_comment || "");
   const decision = finding.reviewer_decision;
-  const agreed = decision === "approve";
-  const rejected = decision === "reject";
+  const stale = Boolean(decision && finding.review_is_current === false);
+  const agreed = decision === "approve" && !stale;
+  const rejected = decision === "reject" && !stale;
 
   return (
     <div
@@ -1222,6 +1230,7 @@ function FindingCard({
       </div>
 
       <p className="text-xs leading-relaxed">{plainLegalExplanation(finding)}</p>
+      {stale && <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">Данные заявки изменились. Решение требуется подтвердить заново.</p>}
 
       {finding.citations.map((citation) => (
         <div
@@ -1247,6 +1256,10 @@ function FindingCard({
         </p>
       )}
 
+      <label className="block text-xs font-medium">
+        Обоснование решения · обязательно при отклонении или доработке
+        <textarea className="mt-2 block min-h-20 w-full rounded-md border bg-background p-2 text-sm font-normal" value={comment} onChange={(event) => setComment(event.target.value)} maxLength={2000} />
+      </label>
       <div className="flex flex-wrap gap-2 pt-0.5">
         <Button
           size="sm"
@@ -1256,7 +1269,7 @@ function FindingCard({
             agreed && "bg-emerald-600 hover:bg-emerald-700 text-white",
           )}
           disabled={isBusy}
-          onClick={() => onReview("approve")}
+          onClick={() => onReview("approve", comment)}
           data-testid={`agree-${finding.id}`}
         >
           <Check className="w-3 h-3 mr-1" />
@@ -1269,8 +1282,8 @@ function FindingCard({
             "h-7 text-[11px]",
             rejected && "bg-red-600 hover:bg-red-700 text-white",
           )}
-          disabled={isBusy}
-          onClick={() => onReview("reject")}
+          disabled={isBusy || !comment.trim()}
+          onClick={() => onReview("reject", comment)}
           data-testid={`reject-${finding.id}`}
         >
           <X className="w-3 h-3 mr-1" />
@@ -1280,8 +1293,8 @@ function FindingCard({
           size="sm"
           variant="ghost"
           className="h-7 text-[11px]"
-          disabled={isBusy}
-          onClick={() => onReview("modify")}
+          disabled={isBusy || !comment.trim()}
+          onClick={() => onReview("modify", comment)}
         >
           Требует доработки
         </Button>

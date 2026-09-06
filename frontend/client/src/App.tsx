@@ -1,6 +1,13 @@
 import { Switch, Route, Router, Redirect, useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useHashLocation } from "wouter/use-hash-location";
+
+// Direct hash links can contain a query; it must not become part of the route id.
+const useAppHashLocation: typeof useHashLocation = (options) => {
+  const [path, navigate] = useHashLocation(options);
+  return [path.split("?")[0], navigate];
+};
+const hashHref = (href: string) => `#${href}`;
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -118,7 +125,7 @@ function App() {
         <ThemeProvider>
           <AuthProvider>
             <Toaster />
-            <Router hook={useHashLocation}>
+            <Router hook={useAppHashLocation} hrefs={hashHref}>
               <AppRouter />
             </Router>
           </AuthProvider>

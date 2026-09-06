@@ -176,30 +176,16 @@ def goods_similarity(
     Классы 1–34 — товары, 35–45 — услуги: принадлежность к разным
     группам снижает однородность.
     """
-    left_set = set(left_classes or [])
-    right_set = set(right_classes or [])
-
-    if left_set and right_set:
-        if left_set & right_set:
-            # Один номер МКТУ сам по себе не доказывает однородность. Внутри
-            # широкого класса могут находиться товары и услуги с разным
-            # назначением, потребителями и каналами реализации. Поэтому без
-            # перечней оставляем лишь осторожный базовый уровень, а высокий
-            # балл даём только при совпадении самих формулировок.
-            if left_text.strip() and right_text.strip():
-                text_overlap = semantic_similarity(left_text, right_text)
-                return min(1.0, 0.6 + 0.4 * text_overlap)
-            return 0.65
-
-        left_goods = any(c <= 34 for c in left_set)
-        right_goods = any(c <= 34 for c in right_set)
-        # Разные классы: товары против услуг менее однородны.
-        base = 0.25 if left_goods == right_goods else 0.1
-    else:
-        base = 0.3  # классы неизвестны — судить не о чем
-
-    text_overlap = semantic_similarity(left_text, right_text)
-    return min(1.0, base + 0.4 * text_overlap)
+    # Номер класса — средство поиска, а не доказательство однородности.
+    # Совпадение терминов — воспроизводимый сигнал; отсутствие совпадения
+    # не доказывает неоднородность (её может установить специалист).
+    if not left_text.strip() or not right_text.strip():
+        return 0.0
+    from app.infrastructure.rag.stemmer import stem
+    generic = {stem(word) for word in ("товар", "услуга", "производство", "оказание", "изготовление")}
+    left = {stem(word) for word in _normalize(left_text).split()} - generic
+    right = {stem(word) for word in _normalize(right_text).split()} - generic
+    return len(left & right) / min(len(left), len(right)) if left and right else 0.0
 
 
 def _level(value: float) -> SimilarityLevel:
@@ -348,7 +334,7 @@ def _combine(
     confusion_likely = (
         (mark_similarity >= 0.75 and goods >= 0.4)
         or (mark_similarity >= 0.5 and goods >= 0.8)
-        or mark_similarity >= 0.98
+        or (mark_similarity >= 0.98 and goods >= 0.4)
     )
 
     if confusion_likely and not reasons:

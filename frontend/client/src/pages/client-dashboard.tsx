@@ -19,38 +19,7 @@ import { useCases } from "@/lib/use-cases";
 import { getGreetingName } from "@/lib/utils";
 import type { Application, ApplicationStatus } from "@shared/schema";
 
-const RESULT_STATUSES = new Set<ApplicationStatus>([
-  "memo_approved",
-  "document_generation",
-  "document_approved",
-  "submitted",
-  "closed",
-]);
-
-function stageFor(status: ApplicationStatus, persistedStep?: 1 | 2 | 3 | 4) {
-  if (persistedStep === 4) {
-    return { step: 4, label: status === "submitted" ? "Заявка подана" : "Результат готов", action: "Посмотреть результат", section: "analysis" };
-  }
-  if (persistedStep === 3) {
-    return { step: 3, label: "Идёт проверка", action: "Посмотреть ход проверки", section: "analysis" };
-  }
-  if (persistedStep === 2) {
-    return { step: 2, label: "Классы МКТУ", action: "Проверить классы", section: "review" };
-  }
-  if (["draft", "info_requested", "info_received"].includes(status)) {
-    return { step: 1, label: status === "info_requested" ? "Нужны данные" : "Заполнение данных", action: "Продолжить заполнение", section: "review" };
-  }
-  if (["classification_pending", "classification_review", "classification_approved"].includes(status)) {
-    return { step: 2, label: status === "classification_review" ? "Подтвердите классы" : "Подбор классов МКТУ", action: "Проверить классы", section: "review" };
-  }
-  if (["legal_review_pending", "legal_review_in_progress", "conflict_search_pending", "conflict_search_in_progress"].includes(status)) {
-    return { step: 3, label: "Идёт проверка", action: "Посмотреть ход проверки", section: "analysis" };
-  }
-  if (RESULT_STATUSES.has(status) || ["legal_review_done", "conflict_search_done", "memo_generation"].includes(status)) {
-    return { step: 4, label: status === "submitted" ? "Заявка подана" : "Результат готов", action: "Посмотреть результат", section: "analysis" };
-  }
-  return { step: 1, label: "Черновик", action: "Открыть заявку", section: "review" };
-}
+import { stageFor } from "@/lib/client-progress";
 
 function ApplicationCard({
   application,
@@ -61,7 +30,7 @@ function ApplicationCard({
 }) {
   const { toast } = useToast();
   const [isDeleting, setIsDeleting] = useState(false);
-  const stage = stageFor(application.status, application.clientProgressStep);
+  const stage = stageFor(application);
   const updated = new Date(application.updatedAt).toLocaleDateString("ru-RU", {
     day: "numeric",
     month: "long",
@@ -108,7 +77,7 @@ function ApplicationCard({
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
             <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f0f8f7] px-3.5 py-2 text-sm font-semibold text-[#087c78]">
-              {stage.step === 4 ? <CheckCircle2 className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
+              {["submitted", "closed"].includes(application.status) ? <CheckCircle2 className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
               {stage.label}
             </span>
             {canDelete && (
@@ -132,8 +101,8 @@ function ApplicationCard({
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-4 gap-2" aria-label={`Шаг ${stage.step} из 4`}>
-          {[1, 2, 3, 4].map((step) => (
+        <div className="mt-6 grid grid-cols-3 gap-2" aria-label={`Этап ${stage.step} из 3`}>
+          {[1, 2, 3].map((step) => (
             <span
               key={step}
               className={`h-1.5 rounded-full ${step <= stage.step ? "bg-[#0d9f9b]" : "bg-[#11113f]/10"}`}
@@ -141,7 +110,7 @@ function ApplicationCard({
           ))}
         </div>
         <div className="mt-5 flex items-center justify-between text-sm">
-          <span className="text-[#6d6d7d]">Шаг {stage.step} из 4</span>
+          <span className="text-[#6d6d7d]">Этап {stage.step} из 3</span>
           <span className="flex items-center gap-1.5 font-semibold text-[#11113f] group-hover:text-[#0d9f9b]">
             {stage.action} <ArrowRight className="h-4 w-4" />
           </span>
@@ -171,7 +140,7 @@ export default function ClientDashboardPage() {
             {name ? `${name}, защитим ваш бренд` : "Защитим ваш бренд"}
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
-            Опишите товарный знак и загрузите документы. Мы подскажем классы МКТУ,
+            Опишите обозначение и свою деятельность. Мы подскажем классы МКТУ,
             проверим риски отказа в регистрации и соберём всё необходимое для подачи.
           </p>
           <Button
@@ -185,7 +154,7 @@ export default function ClientDashboardPage() {
 
       <section className="grid gap-4 sm:grid-cols-3">
         {[
-          { icon: FileSearch, title: "Загрузите документы", text: "Реквизиты из выписки заполнятся автоматически" },
+          { icon: FileSearch, title: "Знак и деятельность", text: "Укажите название или изображение и товары или услуги" },
           { icon: Sparkles, title: "Получите проверку", text: "Классы и опасные совпадения — простым языком" },
           { icon: ShieldCheck, title: "Подготовьтесь к подаче", text: "Увидите, что заполнить и сколько оплатить" },
         ].map((item) => (

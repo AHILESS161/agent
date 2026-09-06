@@ -27,8 +27,8 @@ class GroundCategory(str, Enum):
     descriptive = "descriptive"                     # п.1: описательность
     common_use = "common_use"                       # п.1: вошло во всеобщее употребление
     misleading = "misleading"                       # п.3: вводит в заблуждение
-    against_public_interest = "against_public_interest"  # п.2: общественные интересы, мораль
-    official_symbols = "official_symbols"           # п.4: государственная символика
+    against_public_interest = "against_public_interest"  # подп.2 п.3: гуманность, мораль
+    official_symbols = "official_symbols"           # п.2, ст.1231.1: официальные символы
     conflicting_mark = "conflicting_mark"           # п.6: сходство с чужим знаком
     other = "other"
 
@@ -54,6 +54,13 @@ class Citation(BaseModel):
         return value
 
 
+class FactReference(BaseModel):
+    """Дословное свидетельство из конкретного поля снимка дела."""
+
+    field: str = Field(min_length=1)
+    quote: str = Field(min_length=1)
+
+
 class RiskFinding(BaseModel):
     """Один установленный риск."""
 
@@ -65,6 +72,7 @@ class RiskFinding(BaseModel):
         default_factory=list,
         description="Факты дела, на которых основан вывод",
     )
+    fact_references: list[FactReference] = Field(default_factory=list)
     citations: list[Citation] = Field(
         default_factory=list, description="Подтверждающие фрагменты базы знаний"
     )

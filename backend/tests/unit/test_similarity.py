@@ -69,7 +69,7 @@ class TestSemantic:
 class TestGoodsHomogeneity:
     def test_same_class_alone_is_not_proof_of_homogeneity(self):
         value = goods_similarity([25], [25])
-        assert 0.6 <= value < 0.8
+        assert value == 0
 
     def test_same_class_and_identical_goods_are_homogeneous(self):
         assert goods_similarity([25], [25], "детская одежда", "детская одежда") == 1.0
@@ -79,7 +79,7 @@ class TestGoodsHomogeneity:
         assert value <= 0.65
 
     def test_overlapping_classes(self):
-        assert goods_similarity([25, 35], [25]) >= 0.6
+        assert goods_similarity([25, 35], [25]) == 0
 
     def test_goods_versus_services_are_less_homogeneous(self):
         """Класс 25 (товары) и класс 42 (услуги) — разные группы."""
@@ -87,20 +87,19 @@ class TestGoodsHomogeneity:
 
     def test_unknown_classes_give_neutral_value(self):
         value = goods_similarity(None, None)
-        assert 0.0 < value < 0.6
+        assert value == 0
 
 
 class TestConfusionAssessment:
     def test_identical_mark_same_class_is_critical(self):
-        result = assess("СБЕР", "СБЕР", [36], [36])
+        result = assess("СБЕР", "СБЕР", [36], [36], "банковские услуги", "банковские услуги")
         assert result.confusion_likely is True
         assert result.level.value in ("high", "identical")
 
-    def test_identical_mark_different_class_still_flags_risk(self):
-        """По п.162 смешение возможно и при низкой однородности,
-        если обозначения тождественны."""
+    def test_identical_mark_without_goods_requires_review(self):
+        """Тождество знаков не заменяет отсутствующее доказательство однородности."""
         result = assess("ЗВЕЗДА", "ЗВЕЗДА", [30], [42])
-        assert result.confusion_likely is True
+        assert result.confusion_likely is False
         assert result.goods < 0.4
 
     def test_different_marks_same_class_no_confusion(self):

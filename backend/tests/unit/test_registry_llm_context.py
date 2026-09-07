@@ -27,6 +27,10 @@ class RecordingStructuredLLM:
             "record_reviews": [
                 {
                     "record_id": "public:registration:1",
+                    "fact_references": [
+                        {"scope": "record", "field": "mark_text", "quote": "РЕГИСТР"},
+                        {"scope": "applicant", "field": "mark_text", "quote": "Регистр"},
+                    ],
                     "legal_risk": "high",
                     "requires_attention": True,
                     "comment": "Совпадает словесный элемент.",

@@ -58,12 +58,12 @@ class TestManualClass:
         """Решение специалиста не нуждается в подтверждении системой."""
         response = client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=lawyer,
         )
         assert response.json()["approved"] is True
 
-    def test_manual_class_without_custom_text_uses_full_official_list(
+    def test_manual_class_without_goods_remains_unconfirmed(
         self, client, lawyer, case
     ):
         response = client.post(
@@ -72,18 +72,18 @@ class TestManualClass:
             headers=lawyer,
         )
         description = response.json()["class_description"]
-        assert len(description) > 2_000
-        assert ";" in description
+        assert description is None
+        assert response.json()["approved"] is None
 
     def test_duplicate_class_is_rejected(self, client, lawyer, case):
         client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=lawyer,
         )
         again = client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=lawyer,
         )
         assert again.status_code == 409
@@ -101,7 +101,7 @@ class TestManualClass:
     def test_class_can_be_removed(self, client, lawyer, case):
         created = client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=lawyer,
         ).json()
 
@@ -118,10 +118,31 @@ class TestManualClass:
 
 @pytest.mark.api
 class TestApproval:
+    def test_full_class_uses_overridden_number_and_cannot_mix_manual_goods(self, client, lawyer, case):
+        created = client.post(f"/api/v1/applications/{case}/classes",
+                              json={"class_number": 25}, headers=lawyer).json()
+        url = f"/api/v1/applications/{case}/classes/{created['id']}/approve"
+        payload = {"suggestion_id": created["id"], "approved": True, "full_class": True, "override_class": 42}
+        response = client.put(url, json={**payload, "class_description": "одежда"}, headers=lawyer)
+        assert response.status_code == 422
+        response = client.put(url, json=payload, headers=lawyer)
+        assert response.status_code == 200
+        from app.services.nice_catalog import load_catalog
+        expected = next(item for item in load_catalog() if item.number == 42)
+        assert response.json()["class_description"] == expected.full_description
+        assert response.json()["class_number"] == 42
+
+    def test_approval_cannot_clear_existing_goods(self, client, lawyer, case):
+        created = client.post(f"/api/v1/applications/{case}/classes",
+                              json={"class_number": 25, "class_description": "одежда"}, headers=lawyer).json()
+        response = client.put(f"/api/v1/applications/{case}/classes/{created['id']}/approve",
+                              json={"suggestion_id": created["id"], "approved": True, "class_description": " "}, headers=lawyer)
+        assert response.status_code == 422
+
     def test_class_can_be_approved_and_rejected(self, client, lawyer, case):
         created = client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=lawyer,
         ).json()
 
@@ -218,7 +239,7 @@ class TestAccess:
 
         response = client.post(
             f"/api/v1/applications/{case}/classes",
-            json={"class_number": 25},
+            json={"class_number": 25, "class_description": "одежда"},
             headers=manager,
         )
         assert response.status_code == 403

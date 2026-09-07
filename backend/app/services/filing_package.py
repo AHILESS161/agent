@@ -29,6 +29,8 @@ from app.infrastructure.database.models import (
     DocumentKind,
     MarkType,
     RiskAssessment,
+    RiskFinding,
+    RiskLevel,
     SourceDocument,
     TrademarkApplicationDraft,
 )
@@ -266,6 +268,12 @@ def _analysis_document(application: TrademarkApplicationDraft, assessments: dict
                 else "не определён",
             )
         document.add_paragraph(_client_analysis_summary(key, assessment))
+        if getattr(assessment, "review_applied", False):
+            _add_label(document, "Учтены решения специалиста", "да")
+            _add_label(document, "Исходная машинная оценка",
+                       _RISK_LABELS.get(assessment.machine_overall_risk, "не определена"))
+        if getattr(assessment, "review_stale", False):
+            document.add_paragraph("Данные заявки изменились. Предыдущие решения требуют повторной проверки.")
     return _docx_bytes(document)
 
 
@@ -370,10 +378,29 @@ def _checklist_text(application: TrademarkApplicationDraft, filing_files: list[s
     return "\n".join(lines).encode("utf-8-sig")
 
 
+@dataclass(frozen=True)
+class FilingAssessment:
+    """Снимок для экспорта без изменения сохранённого машинного анализа."""
+
+    overall_risk: RiskLevel | None
+    is_inconclusive: bool
+    summary: str | None
+    inconclusive_reason: str | None
+    machine_overall_risk: str | None
+    review_applied: bool
+    review_stale: bool
+
+
 async def _latest_assessments(
     session: AsyncSession, application_id: int
-) -> dict[str, RiskAssessment]:
-    result: dict[str, RiskAssessment] = {}
+) -> dict[str, FilingAssessment]:
+    from app.services.reviewed_risks import reviewed_view, reviewed_summary
+    from app.services.risk_analysis import AnalysisContext
+
+    application = await session.get(TrademarkApplicationDraft, application_id)
+    classes = await load_class_context(session, application_id)
+    fingerprint = AnalysisContext.from_application(application, classes).fingerprint()
+    result: dict[str, FilingAssessment] = {}
     for kind in (AnalysisKind.absolute_grounds, AnalysisKind.relative_grounds):
         assessment = (
             await session.execute(
@@ -387,7 +414,18 @@ async def _latest_assessments(
             )
         ).scalar_one_or_none()
         if assessment:
-            result[kind.value] = assessment
+            findings = (await session.scalars(select(RiskFinding).where(
+                RiskFinding.assessment_id == assessment.id))).all()
+            view = reviewed_view(assessment, findings, fingerprint)
+            summary = reviewed_summary(assessment, findings, view)
+            reason = ("Данные заявки изменились: повторите проверку." if view["review_stale"]
+                      else assessment.inconclusive_reason)
+            result[kind.value] = FilingAssessment(
+                overall_risk=RiskLevel(view["overall_risk"]) if view["overall_risk"] else None,
+                is_inconclusive=view["is_inconclusive"], summary=summary,
+                inconclusive_reason=reason, machine_overall_risk=view["machine_overall_risk"],
+                review_applied=view["review_applied"], review_stale=view["review_stale"],
+            )
     return result
 
 

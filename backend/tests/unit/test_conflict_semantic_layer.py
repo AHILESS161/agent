@@ -176,7 +176,8 @@ async def test_combined_mark_compares_registry_card_image(
     comparison = findings[0].verification_json["image_comparison"]
     assert comparison["score"] == 1.0
     assert assessment.verification_json["visual_records_compared"] == 1
-    assert assessment.is_inconclusive is False
+    assert assessment.is_inconclusive is True
+    assert assessment.verification_json["visual_records_compared"] == 1
 
 
 class TestCrossLanguageConflict:
@@ -392,7 +393,7 @@ class TestExperiencedLawyerLayer:
                 # конкретному коэффициенту, но фиксирует осторожную оценку
                 # однородности: один класс не равен доказанному совпадению.
                 assert '"record_id": "RU9999001"' in messages[1].content
-                assert '"goods": 0.6' in messages[1].content
+                assert '"goods": 0.0' in messages[1].content
                 return {
                     "summary": "Есть юридически значимая карточка.",
                     "overall_observation": "Нужно проверить смысловую связь.",
@@ -401,6 +402,7 @@ class TestExperiencedLawyerLayer:
                     "record_reviews": [
                         {
                             "record_id": "RU9999001",
+                            "fact_references": [{"scope": "record", "field": "mark_text", "quote": "КРОВЛЯ"}, {"scope": "applicant", "field": "mark_text", "quote": "ДОМ"}],
                             "legal_risk": "high",
                             "requires_attention": True,
                             "comment": "Простой коэффициент не исчерпывает анализ.",
@@ -438,7 +440,8 @@ class TestExperiencedLawyerLayer:
 
         findings = await _findings(async_session, assessment.id)
         assert len(findings) == 1
-        assert findings[0].level.value == "high"
+        assert findings[0].level.value == "medium"
+        assert assessment.is_inconclusive is True
         assert findings[0].verification_json["decision_source"] == "llm_legal_attention"
         assert assessment.verification_json["llm_elevated_record_ids"] == ["RU9999001"]
 
@@ -461,8 +464,8 @@ class TestModelIsNotAskedNeedlessly:
         assert assessment.overall_risk is None
         assert assessment.is_inconclusive is True
 
-    async def test_different_classes_skip_the_model(self, async_session, application):
-        """Товары неоднородны — смысловое совпадение вывод не изменит."""
+    async def test_different_classes_do_not_prove_goods_are_unrelated(self, async_session, application):
+        """Без перечней разные классы не исключают смысловую проверку."""
         async_session.add(
             NiceClassSuggestion(
                 application_id=application.id,
@@ -479,7 +482,8 @@ class TestModelIsNotAskedNeedlessly:
             llm_provider=MockLLMProvider(),
         )
 
-        assert assessment.verification_json["semantic_checks"] == 0
+        assert assessment.verification_json["semantic_checks"] == 1
+        assert assessment.is_inconclusive is True
 
     async def test_unknown_classes_still_trigger_the_check(
         self, async_session, application

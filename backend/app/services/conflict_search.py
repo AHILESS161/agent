@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -119,6 +119,17 @@ def _risk_level(similarity: float, confusion_likely: bool) -> RiskLevel:
     if similarity >= 0.5:
         return RiskLevel.medium
     return RiskLevel.low
+
+
+def priority_relation(record, applicant_priority: str | None) -> str:
+    try:
+        earlier = date.fromisoformat(record.priority_date or record.filing_date or "")
+        applicant = date.fromisoformat(applicant_priority or "")
+    except (ValueError, TypeError):
+        return "unknown"
+    if earlier > date.today() or applicant > date.today():
+        return "unknown"
+    return "earlier" if earlier < applicant else "not_earlier"
 
 
 def _llm_risk(value: Any) -> RiskLevel | None:
@@ -231,6 +242,7 @@ async def run_conflict_search(
     """
     mark_text = (application.mark_text or application.mark_name or "").strip()
     class_context = await load_class_context(session, application.id)
+    applicant_goods = "; ".join(item.class_description or "" for item in class_context.effective) or application.goods_services_raw or ""
     classes = class_context.as_numbers()
     kb_version = await knowledge_base_version(session)
     mode = _search_mode()
@@ -333,6 +345,7 @@ async def run_conflict_search(
     search_complete = True
     search_semaphore = asyncio.Semaphore(REGISTRY_SEARCH_CONCURRENCY)
 
+    coverage: list[dict[str, Any]] = []
     async def collect_phase(
         *,
         phase_variants: list[Any],
@@ -398,7 +411,12 @@ async def run_conflict_search(
             except Exception as exc:  # один сбой публичного поиска не обнуляет остальные
                 search_errors.append(f"{phase_name}: {type(exc).__name__}: {exc}")
 
+        phase_truncated = False
         for _, variant, source, found in sorted(completed, key=lambda item: item[0]):
+            truncated = getattr(found, "truncated", len(found) >= max_results)
+            phase_truncated |= truncated
+            coverage.append({"phase": phase_name, "variant": variant.text, "source": source,
+                "returned": len(found), "total": getattr(found, "total", None), "truncated": truncated})
             for record in found:
                 # Не все внешние адаптеры гарантируют серверную фильтрацию.
                 if (
@@ -415,7 +433,7 @@ async def run_conflict_search(
                         else variant.kind
                     )
                     search_scope[record.record_id] = phase_name
-        return not pending and len(completed) == len(tasks)
+        return not pending and len(completed) == len(tasks) and not phase_truncated
 
     try:
         search_deadline = time.monotonic() + REGISTRY_SEARCH_BUDGET_SECONDS
@@ -473,8 +491,8 @@ async def run_conflict_search(
                 conflicting_mark=record.mark_text,
                 applicant_classes=classes,
                 conflicting_classes=record.classes,
-                applicant_goods=application.goods_services_raw or "",
-                conflicting_goods=" ".join(str(c) for c in record.classes),
+                applicant_goods=applicant_goods,
+                conflicting_goods=record.goods_services or "",
             ),
         )
         for record in records.values()
@@ -487,7 +505,7 @@ async def run_conflict_search(
     try:
         scored, semantic_verdicts = await asyncio.wait_for(
             _apply_semantic_layer(
-                scored, mark_text, llm_provider, goods_known=bool(classes)
+                scored, mark_text, llm_provider, goods_known=bool(applicant_goods and all(record.goods_services for record in records.values()))
             ),
             timeout=SEMANTIC_LAYER_BUDGET_SECONDS,
         )
@@ -578,7 +596,7 @@ async def run_conflict_search(
                     application.mark_type.value if application.mark_type else None
                 ),
                 applicant_classes=classes,
-                applicant_goods=application.goods_services_raw or "",
+                applicant_goods=applicant_goods,
                 conflicts=review_candidates,
                 provider_name=getattr(settings, "FIPS_PROVIDER", "mock"),
                 search_mode=mode.value,
@@ -642,6 +660,16 @@ async def run_conflict_search(
 
     def effective_level(pair: tuple[Any, Any]) -> RiskLevel:
         record, similarity = pair
+        # Недействующее право не является действующим препятствием по п. 6.
+        if record.status in {"expired", "cancelled"}:
+            return RiskLevel.low
+        if priority_relation(record, application.priority_claim) == "not_earlier":
+            return RiskLevel.low
+        # До подтверждения перечней, статуса и более раннего приоритета
+        # карточка направляется на проверку, а не получает высокий риск.
+        if (record.status not in {"registered", "pending"} or not record.goods_services
+                or priority_relation(record, application.priority_claim) != "earlier"):
+            return RiskLevel.medium
         deterministic = _risk_level(similarity.overall, similarity.confusion_likely)
         comment = (
             registry_review.comments.get(record.record_id)
@@ -766,6 +794,19 @@ async def run_conflict_search(
     if application.mark_type is MarkType.combined and not visual_comparisons:
         missing.append("Изображения карточек для визуального сопоставления")
 
+    coverage_gaps = []
+    if not search_complete: coverage_gaps.append("Неполная выдача или незавершённые запросы реестра")
+    if query_variants_timed_out or llm_provider is None: coverage_gaps.append("Поиск по переводу и смыслу не завершён")
+    if semantic_layer_timed_out: coverage_gaps.append("Смысловое сравнение не завершено")
+    if len(records) > (sum(comment.get("facts_verified") is True for comment in registry_review.comments.values()) if registry_review else 0):
+        coverage_gaps.append("Правовой разбор выполнен не для всех найденных карточек")
+    if any(not r.goods_services for r in records.values()): coverage_gaps.append("Перечни товаров части найденных знаков неизвестны")
+    if any(r.status == "unknown" for r in records.values()): coverage_gaps.append("Статус части прав неизвестен")
+    if not application.priority_claim: coverage_gaps.append("Приоритет заявленного обозначения не установлен")
+    missing.extend(coverage_gaps)
+    if coverage_gaps:
+        assessment.is_inconclusive = True
+        assessment.inconclusive_reason = "; ".join(coverage_gaps)
     assessment.limitations_json = limitations
     assessment.missing_data_json = missing
     assessment.sources_used_json = [
@@ -776,7 +817,9 @@ async def run_conflict_search(
         methods.append("llm_semantic")
     if registry_review is not None:
         methods.append("llm_registry_review")
+    from app.services.risk_analysis import AnalysisContext
     assessment.verification_json = {
+        "input_fingerprint": AnalysisContext.from_application(application, class_context).fingerprint(),
         "records_examined": len(records),
         "conflicts_found": len(conflicts),
         "method": " + ".join(methods),
@@ -791,6 +834,8 @@ async def run_conflict_search(
         ),
         "applications_checked": applications_checked,
         "search_complete": search_complete,
+        "query_coverage": coverage,
+        "records_not_reviewed_by_llm": len(records) - (sum(comment.get("facts_verified") is True for comment in registry_review.comments.values()) if registry_review else 0),
         "search_errors": search_errors[:10],
         "query_variants_timed_out": query_variants_timed_out,
         "semantic_layer_timed_out": semantic_layer_timed_out,
@@ -848,7 +893,7 @@ async def run_conflict_search(
         else "доступной части реестра"
     )
     assessment.summary = (
-        f"Поиск в {class_wording} завершён. Для сравнения отобрано "
+        f"В доступной выдаче по {class_wording} для сравнения отобрано "
         f"{len(conflicts)} обозначений. Наиболее близкое — "
         f"«{highest_record.mark_text}»; по предварительной оценке оно "
         f"{risk_wording}."
@@ -981,6 +1026,9 @@ async def run_conflict_search(
                         "owner": record.owner,
                         "classes": record.classes,
                         "status": record.status,
+            "goods_services": record.goods_services,
+            "priority_date": record.priority_date,
+            "filing_date": record.filing_date,
                         "source": record.source,
                         "application_number": record.application_number,
                         "registration_number": record.registration_number,

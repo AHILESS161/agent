@@ -107,6 +107,9 @@ def _record_payload(record: Any, similarity: Any) -> dict[str, Any]:
         "owner": _bounded_text(record.owner, 500),
         "classes": list(record.classes or [])[:45],
         "status": _bounded_text(record.status, 50),
+        "goods_services": _bounded_text(getattr(record, "goods_services", None), 6000),
+        "priority_date": getattr(record, "priority_date", None),
+        "expiry_date": getattr(record, "expiry_date", None),
         "filing_date": record.filing_date,
         "registration_date": record.registration_date,
         "application_number": record.application_number,
@@ -133,6 +136,20 @@ def _strings(value: Any, *, count: int, limit: int) -> list[str]:
         return []
     result = [_bounded_text(item, limit) for item in value[:count]]
     return [item for item in result if item]
+
+
+def verify_fact_references(references, record, applicant):
+    if not isinstance(references, list) or not references:
+        return False
+    scopes = {"record": record, "applicant": applicant}
+    fields = {"mark_text", "goods_services", "status", "filing_date", "priority_date", "owner", "mark_type"}
+    for reference in references:
+        if not isinstance(reference, dict): return False
+        field, scope, quote = reference.get("field"), reference.get("scope"), reference.get("quote")
+        value = scopes.get(scope, {}).get(field)
+        if field not in fields or not isinstance(value, str) or not isinstance(quote, str) or not quote.strip() or quote not in value:
+            return False
+    return {r.get("scope") for r in references} == {"record", "applicant"}
 
 
 async def review_registry_context(
@@ -263,7 +280,17 @@ async def review_registry_context(
             factors = _strings(item.get("confusion_factors"), count=8, limit=400)
             risk = _risk(item.get("legal_risk"))
             attention = item.get("requires_attention") is True
+            record = next(record for record in records if record["record_id"] == record_id)
+            facts_verified = verify_fact_references(item.get("fact_references"), record, applicant)
+            if not facts_verified:
+                # Свободный комментарий без опоры на снимок не является результатом проверки.
+                comments[record_id] = {"facts_verified": False, "legal_risk": "uncertain",
+                    "requires_attention": False, "comment": "Фактические основания комментария не подтверждены.",
+                    "missing_evidence": ["Проверка фактических оснований специалистом"]}
+                continue
             comments[record_id] = {
+                "facts_verified": True,
+                "fact_references": item["fact_references"],
                 "comment": _bounded_text(item.get("comment"), 1000),
                 "legal_risk": risk,
                 "requires_attention": attention,

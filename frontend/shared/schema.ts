@@ -84,6 +84,7 @@ export interface Application {
   id: number;
   clientId: number;
   status: ApplicationStatus;
+  clientProgressState?: string;
   clientProgressStep?: 1 | 2 | 3 | 4;
   /** Срочность в работе, не конвенционный приоритет заявки. */
   priority: CasePriority;

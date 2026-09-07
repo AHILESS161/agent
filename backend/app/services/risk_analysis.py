@@ -33,9 +33,10 @@ from app.infrastructure.database.models import (
     RiskFinding,
     RiskLevel,
     SearchMode,
+    SourceDocument,
     TrademarkApplicationDraft,
 )
-from app.infrastructure.rag.citations import verify_all
+from app.infrastructure.rag.citations import SourceTexts, verify_all
 from app.services.class_analysis import ClassContext, load_class_context
 from app.infrastructure.rag.store import knowledge_base_version, load_active_chunks
 
@@ -69,6 +70,8 @@ class AnalysisContext:
     classes_confirmed: bool = False
     colors: str | None = None
     image_attached: bool = False
+    image_file_id: str | None = None
+    priority_claim: str | None = None
 
     @classmethod
     def from_application(
@@ -77,14 +80,18 @@ class AnalysisContext:
         class_context: "ClassContext | None" = None,
     ) -> "AnalysisContext":
         return cls(
-            mark_text=application.mark_text or application.mark_name,
+            mark_text=(None if application.mark_type is MarkType.figurative else application.mark_text or application.mark_name),
             mark_type=application.mark_type.value if application.mark_type else None,
             description=application.description_of_mark,
-            goods_services=application.goods_services_raw,
+            goods_services=("; ".join(item.class_description or "" for item in class_context.effective)
+                            if class_context and class_context.has_any and any(item.class_description for item in class_context.effective)
+                            else application.goods_services_raw),
             classes=class_context.describe() if class_context else None,
             classes_confirmed=bool(class_context and class_context.is_confirmed),
             colors=application.colors_claimed,
             image_attached=bool(application.mark_image_file_id),
+            image_file_id=application.mark_image_file_id,
+            priority_claim=application.priority_claim,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -94,8 +101,11 @@ class AnalysisContext:
             "description": self.description,
             "goods_services": self.goods_services,
             "classes": self.classes,
+            "classes_confirmed": self.classes_confirmed,
             "colors": self.colors,
             "image_attached": self.image_attached,
+            "image_file_id": self.image_file_id,
+            "priority_claim": self.priority_claim,
         }
 
     def fingerprint(self) -> str:
@@ -125,6 +135,24 @@ def _chunk_id_from_ref(source_ref: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def visual_evidence_state(context: AnalysisContext, document: SourceDocument | None) -> dict[str, Any]:
+    """Загрузка, распознавание текста и визуальная экспертиза — разные события."""
+    method = getattr(getattr(document, "extraction_method", None), "value", None)
+    status = getattr(getattr(document, "processing_status", None), "value", None)
+    ocr = "not_recorded"
+    if method == "ocr":
+        ocr = "text_found" if document.char_count else "no_text_found"
+    elif status == "failed":
+        ocr = "processing_failed"
+    return {
+        "image_upload": "attached" if context.image_attached else "not_attached",
+        "document_id": document.id if document else None,
+        "ocr": ocr,
+        "description": "provided" if (context.description or "").strip() else "missing",
+        "visual_review": "not_recorded",
+    }
+
+
 async def run_absolute_grounds_analysis(
     session: AsyncSession,
     application: TrademarkApplicationDraft,
@@ -134,6 +162,13 @@ async def run_absolute_grounds_analysis(
     """Выполнить анализ абсолютных оснований и сохранить результат."""
     class_context = await load_class_context(session, application.id)
     context = AnalysisContext.from_application(application, class_context)
+    image_document = None
+    if (context.image_file_id or "").isdigit():
+        image_document = await session.scalar(select(SourceDocument).where(
+            SourceDocument.id == int(context.image_file_id),
+            SourceDocument.application_id == application.id,
+        ))
+    image_evidence = visual_evidence_state(context, image_document)
     chunks = await load_active_chunks(session)
     kb_version = await knowledge_base_version(session)
 
@@ -150,7 +185,7 @@ async def run_absolute_grounds_analysis(
         created_by_user_id=user_id,
         classes_considered_json=class_context.as_numbers(),
         classes_confirmed=class_context.is_confirmed,
-        verification_json={"input_fingerprint": context.fingerprint()},
+        verification_json={"input_fingerprint": context.fingerprint(), "visual_evidence": image_evidence},
     )
 
     # --- недостаточно данных дела ---
@@ -213,6 +248,7 @@ async def run_absolute_grounds_analysis(
             "повторите только эту проверку позже."
         ]
         assessment.verification_json = {
+            "visual_evidence": image_evidence,
             "timed_out": True,
             "budget_seconds": ABSOLUTE_ANALYSIS_BUDGET_SECONDS,
             "input_fingerprint": context.fingerprint(),
@@ -229,6 +265,7 @@ async def run_absolute_grounds_analysis(
     assessment.sources_used_json = outcome.sources_used
     assessment.verification_json = {
         **outcome.verification,
+        "visual_evidence": image_evidence,
         "input_fingerprint": context.fingerprint(),
     }
     assessment.model_name = (
@@ -255,21 +292,22 @@ async def run_absolute_grounds_analysis(
             application_id=application.id,
             reason=assessment.inconclusive_reason,
         )
-        return assessment
+        if outcome.partial_result is None:
+            return assessment
 
-    result = outcome.result
+    result = outcome.result or outcome.partial_result
     assessment.overall_risk = RiskLevel(result.overall_risk.value)
     assessment.summary = result.summary
 
     # Вывод об описательности зависит от перечня классов. Если классы
     # не подтверждены специалистом, вывод опирается на неподтверждённый
     # вход, и это должно быть видно в отчёте, а не подразумеваться.
-    limitations = list(result.limitations)
-    missing = list(result.missing_data)
+    limitations = list(dict.fromkeys([*(assessment.limitations_json or []), *result.limitations]))
+    missing = list(dict.fromkeys([*(assessment.missing_data_json or []), *result.missing_data]))
     if application.mark_type in {MarkType.figurative, MarkType.combined}:
         limitations.append(
-            "Изображение обозначения принято и его словесные элементы распознаны OCR, "
-            "но текстовая модель оценивает только подтверждённый текст, описание и "
+            "Наличие изображения не подтверждает распознавание или визуальную экспертизу. "
+            "Текстовая модель оценивает только подтверждённый текст, описание и "
             "заявленные цвета, а не графику как таковую."
         )
     if not class_context.has_any:
@@ -292,11 +330,11 @@ async def run_absolute_grounds_analysis(
     await session.flush()
 
     # Карта источников для повторной проверки цитат при сохранении.
-    available = {
-        chunk.citation_id: chunk.content
-        for chunk in chunks
-        if chunk.citation_id in set(outcome.sources_used)
-    }
+    available = SourceTexts()
+    for chunk in chunks:
+        if chunk.citation_id in set(outcome.sources_used):
+            available[chunk.citation_id] = chunk.content
+            available.anchors[chunk.citation_id] = chunk.anchor
 
     for finding_data in result.findings:
         finding = RiskFinding(
@@ -342,14 +380,17 @@ async def run_absolute_grounds_analysis(
     return assessment
 
 
-def serialize_assessment(assessment: RiskAssessment) -> dict[str, Any]:
+def serialize_assessment(assessment: RiskAssessment, *, current_fingerprint: str | None = None) -> dict[str, Any]:
     """Представление оценки рисков для API и отчёта."""
+    from app.services.reviewed_risks import reviewed_view, reviewed_summary
+    reviewed = reviewed_view(assessment, assessment.findings, current_fingerprint)
     return {
         "id": assessment.id,
         "application_id": assessment.application_id,
         "analysis_kind": assessment.analysis_kind.value,
         "overall_risk": assessment.overall_risk.value if assessment.overall_risk else None,
-        "summary": assessment.summary,
+        "summary": reviewed_summary(assessment, assessment.findings, reviewed),
+        "machine_summary": assessment.summary,
         "is_inconclusive": assessment.is_inconclusive,
         "inconclusive_reason": assessment.inconclusive_reason,
         "limitations": assessment.limitations_json or [],
@@ -373,6 +414,7 @@ def serialize_assessment(assessment: RiskAssessment) -> dict[str, Any]:
                 "id": finding.id,
                 "category": finding.category,
                 "level": finding.level.value,
+                "included_in_reviewed_result": finding.id in reviewed["active_finding_ids"],
                 "legal_basis": finding.legal_basis,
                 "explanation": finding.explanation,
                 "case_facts": finding.case_facts_json or [],
@@ -387,6 +429,7 @@ def serialize_assessment(assessment: RiskAssessment) -> dict[str, Any]:
                     else None
                 ),
                 "reviewer_comment": finding.reviewer_comment,
+                "review_is_current": bool(current_fingerprint and (finding.verification_json or {}).get("review_input_fingerprint") == current_fingerprint),
                 "citations": [
                     {
                         "id": citation.id,
@@ -397,14 +440,15 @@ def serialize_assessment(assessment: RiskAssessment) -> dict[str, Any]:
                         "status": citation.status.value,
                         "matched_ratio": citation.matched_ratio,
                         # Отклонённые цитаты показываются явно.
-                        "is_trustworthy": citation.status
-                        in (CitationStatus.verified, CitationStatus.partial),
+                        "is_trustworthy": citation.status is CitationStatus.verified,
                     }
                     for citation in finding.citations
                 ],
             }
             for finding in assessment.findings
         ],
+        **reviewed,
+        **({"inconclusive_reason": "Данные изменились; повторите проверку и решения специалиста."} if reviewed["review_stale"] else {}),
         "disclaimer": (
             "Результаты сформированы с применением AI и носят предварительный "
             "информационный характер. Они требуют проверки специалистом."

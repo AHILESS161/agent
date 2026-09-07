@@ -75,7 +75,7 @@ def _mask_text(value: str) -> str:
 
 
 def _mask_value(key: str, value: Any) -> Any:
-    if key.lower() in _SENSITIVE_KEYS:
+    if str(key).lower() in _SENSITIVE_KEYS:
         return "***"
     if isinstance(value, str):
         return _mask_text(value)

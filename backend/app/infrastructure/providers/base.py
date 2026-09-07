@@ -24,6 +24,19 @@ class RegistryRecord(BaseModel):
     application_number: str | None = None
     registration_number: str | None = None
     image_url: str | None = None
+    goods_services: str | None = None
+    priority_date: str | None = None
+    expiry_date: str | None = None
+
+
+class RegistrySearchResults(list[RegistryRecord]):
+    """Выдача и её покрытие принадлежат одному запросу (без shared state)."""
+
+    def __init__(self, records=(), *, total=None, truncated=False, source=None):
+        super().__init__(records)
+        self.total = total
+        self.truncated = truncated
+        self.source = source
 
 
 class SubmissionPayload(BaseModel):

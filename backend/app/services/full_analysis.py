@@ -499,9 +499,12 @@ async def run_full_analysis(
     # При high/critical поиск также не нужен: уже найдено самостоятельное
     # препятствие, которое сначала необходимо устранить.
     relative_attempts = 0
+    from app.services.reviewed_risks import reviewed_view
+    absolute_findings = (await session.scalars(select(RiskFinding).where(RiskFinding.assessment_id == absolute.id))).all()
+    absolute_reviewed = reviewed_view(absolute, absolute_findings, absolute_input_fingerprint)
     absolute_stops_pipeline = (
-        absolute.is_inconclusive
-        or absolute.overall_risk in _ABSOLUTE_GROUNDS_STOP_LEVELS
+        absolute_reviewed["is_inconclusive"]
+        or absolute_reviewed["overall_risk"] in {level.value for level in _ABSOLUTE_GROUNDS_STOP_LEVELS}
     )
     if absolute_stops_pipeline:
         await progress(
@@ -582,11 +585,22 @@ async def run_full_analysis(
     )
 
     # --- 4. Сводный вердикт ----------------------------------------------
-    levels = [a.overall_risk for a in (absolute, relative) if a.overall_risk]
+    from app.services.reviewed_risks import reviewed_view
+    reviewed_levels = []
+    review_incomplete = False
+    for assessment in (absolute, relative):
+        findings = (await session.scalars(select(RiskFinding).where(RiskFinding.assessment_id == assessment.id))).all()
+        view = reviewed_view(assessment, findings, absolute_input_fingerprint)
+        review_incomplete |= view["is_inconclusive"]
+        if view["overall_risk"]:
+            reviewed_levels.append(RiskLevel(view["overall_risk"]))
+    levels = reviewed_levels
     overall = _max_risk(levels)
 
     # Незавершённая проверка не должна выглядеть как «препятствий нет».
     incomplete: list[str] = []
+    if review_incomplete:
+        incomplete.append("требуется проверка решений специалиста и актуальности данных")
     if absolute.is_inconclusive:
         incomplete.append("абсолютные основания (ст. 1483 п. 1–5)")
     if relative.is_inconclusive and not _is_pipeline_skip(relative):
@@ -661,5 +675,7 @@ async def run_full_analysis(
             "информационный характер. Они требуют проверки специалистом."
         ),
     }
+    from app.services.reviewed_risks import refresh_reviewed_memo
+    await refresh_reviewed_memo(session, application)
     await progress("completed", 100, "Проверка завершена")
     return result

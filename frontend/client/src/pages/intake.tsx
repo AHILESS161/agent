@@ -19,7 +19,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -100,7 +99,7 @@ interface Attached {
 
 export default function IntakePage() {
   const { toast } = useToast();
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const cases = useCases();
@@ -120,7 +119,6 @@ export default function IntakePage() {
   const [address, setAddress] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [rememberApplicantData, setRememberApplicantData] = useState(false);
 
   // Обозначение и деятельность.
   const [markName, setMarkName] = useState("");
@@ -163,6 +161,10 @@ export default function IntakePage() {
         setAddress(profile.address || "");
         setContactEmail(profile.email || user?.email || "");
         setContactPhone(profile.phone || "");
+      } else if (user?.role === "client" && user.fullName && !user.fullName.includes("@")) {
+        setClientType("individual");
+        setName(user.fullName);
+        setContactEmail(user.email);
       }
       return;
     }
@@ -334,12 +336,15 @@ export default function IntakePage() {
   };
 
   const validate = (): string | null => {
-    if (useExistingClient) {
-      if (!clientId) return "Выберите клиента или заполните данные нового.";
-    } else if (name.trim().length < 2) {
-      return "Укажите наименование или ФИО заявителя.";
+    if (!clientPortal) {
+      if (useExistingClient) {
+        if (!clientId) return "Выберите клиента или заполните данные нового.";
+      } else if (name.trim().length < 2) {
+        return "Укажите наименование или ФИО заявителя.";
+      }
     }
     if (!markName.trim()) return "Укажите заявляемое обозначение.";
+    if (clientPortal && !clientActivity.trim()) return "Опишите товары или услуги для проверки.";
     if (imageMark && !markImageFile) {
       return "Добавьте изображение товарного знака в формате PNG или JPEG.";
     }
@@ -355,6 +360,21 @@ export default function IntakePage() {
 
     setIsSaving(true);
     try {
+      // До подготовки заявления дело связано с учётной записью. Реквизиты
+      // заявителя пользователь проверит отдельно после оценки риска.
+      const profile = user?.applicantProfile;
+      const preliminaryClient = {
+        type: profile?.type || "individual",
+        full_name_or_company_name: [profile?.fullNameOrCompanyName, user?.fullName, user?.email]
+          .map((value) => value?.trim()).find((value) => value && value.length >= 2),
+        inn: profile?.inn || null,
+        ogrn_or_ogrnip: profile?.ogrnOrOgrnip || null,
+        kpp: profile?.kpp || null,
+        address: profile?.address || null,
+        country: profile?.country || "RU",
+        email: profile?.email || user?.email || null,
+        phone: profile?.phone || null,
+      };
       // 1. Регистрируем обращение и создаём дело.
       const event = await api.post<{
         id: number;
@@ -365,8 +385,8 @@ export default function IntakePage() {
         sender: sender || null,
         body_text: bodyText || null,
         create_case: true,
-        client_id: useExistingClient ? Number(clientId) : null,
-        new_client: useExistingClient
+        client_id: !clientPortal && useExistingClient ? Number(clientId) : null,
+        new_client: clientPortal ? preliminaryClient : useExistingClient
           ? null
           : {
               type: clientType,
@@ -427,7 +447,7 @@ export default function IntakePage() {
           markImageUploadFailed = true;
         }
       }
-      for (const item of attached) {
+      for (const item of clientPortal ? [] : attached) {
         // Отдельно выбранное изображение имеет приоритет над файлом,
         // ранее помеченным как изображение в общем списке документов.
         if (markImageFile && item.documentKind === "mark_image") continue;
@@ -455,42 +475,20 @@ export default function IntakePage() {
         }
       }
 
-      let profileSaveFailed = false;
-      if (clientPortal && !useExistingClient && rememberApplicantData) {
-        try {
-          await api.patch("/auth/me", {
-            applicant_profile_json: {
-              type: clientType,
-              full_name_or_company_name: name.trim() || null,
-              inn: inn.trim() || null,
-              ogrn_or_ogrnip: ogrn.trim() || null,
-              kpp: kpp.trim() || null,
-              address: address.trim() || null,
-              country: "RU",
-              email: contactEmail.trim() || null,
-              phone: contactPhone.trim() || null,
-            },
-          });
-          await refreshProfile();
-        } catch {
-          // Заявка уже создана: ошибка профиля не должна отменять результат.
-          profileSaveFailed = true;
-        }
-      }
-
       setCaseId(newCaseId);
-      localStorage.removeItem(draftKey);
+      try { localStorage.removeItem(draftKey); } catch { /* server draft is saved */ }
       toast({
         title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
-        description: profileSaveFailed
-          ? "Заявка создана, но сохранить реквизиты в профиль не удалось. Это можно повторить на экране проверки данных."
-          : markImageUploadFailed
+        description: markImageUploadFailed
           ? "Заявка сохранена, но изображение не загрузилось. Добавьте его ещё раз на экране «Данные»."
+          : clientPortal
+          ? "Обозначение сохранено. Теперь выберите товары и услуги для проверки."
           : uploaded
           ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
-        variant: markImageUploadFailed || profileSaveFailed ? "destructive" : undefined,
+        variant: markImageUploadFailed ? "destructive" : undefined,
       });
+      if (clientPortal) setLocation(`/applications/${newCaseId}?step=review`);
     } catch (e) {
       toast({
         title: "Не удалось создать дело",
@@ -534,275 +532,19 @@ export default function IntakePage() {
           <h1 className="text-4xl font-semibold sm:text-5xl">{clientPortal ? "Начнём с главного" : "Создание проекта"}</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted-foreground">
             {clientPortal
-              ? "Добавьте документ или заполните короткую форму. Всё можно сохранить и дополнить позже."
+              ? "Начните с обозначения и деятельности. Сведения для подачи и документы можно дополнить после предварительной проверки."
               : "Три шага: документы, заявитель и обозначение. Все данные можно изменить позже."}
           </p>
         </div>
         <div className="hidden items-center gap-2 text-sm text-muted-foreground sm:flex">
           <span className="h-2.5 w-2.5 rounded-full bg-primary" />
-          Автосохранение после создания
+          Черновик сохраняется в этом браузере
         </div>
       </div>
 
-      {/* Шаг 1: документы (первым — с них начинается работа) */}
-      <ProjectStep
-        n={1}
-        title="Добавьте документы"
-        description="Необязательно. Добавьте выписку ЕГРЮЛ/ЕГРИП, паспорт физлица, изображение или аудиозапись знака."
-      >
-          <div
-            className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary/35 bg-primary/[0.035] px-6 py-9 text-center transition-colors hover:border-primary/60 hover:bg-primary/[0.055]"
-            data-testid="intake-dropzone"
-          >
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Upload className="h-6 w-6" />
-            </span>
-            <Button
-              variant="default"
-              disabled={isReading}
-              onClick={() => fileInput.current?.click()}
-              data-testid="button-attach"
-            >
-              {isReading ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Upload className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              {isReading ? "Читаем документ…" : "Выбрать документ"}
-            </Button>
-            <p className="text-sm text-muted-foreground">
-              PDF, DOCX, TXT, PNG, JPG, MP3 или WAV · до 25 МБ
-            </p>
-          </div>
-          <input
-            ref={fileInput}
-            type="file"
-            accept={ACCEPTED}
-            className="hidden"
-            data-testid="input-attachment"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void readDocument(file);
-            }}
-          />
-
-          {attached.length > 0 && (
-            <div className="mt-5 space-y-2">
-              {attached.map((item, index) => (
-                <div
-                  key={`${item.file.name}-${index}`}
-                  className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3"
-                >
-                  <FileText className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{item.file.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {DOCUMENT_KIND_LABELS[item.documentKind ?? ""] ??
-                        "Тип не определён"}
-                    </p>
-                    {item.warning && (
-                      <p className="mt-1 flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
-                        <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                        {item.warning}
-                      </p>
-                    )}
-                    {/\.(png|jpe?g)$/i.test(item.file.name) && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button type="button" onClick={() => setAttachmentKind(index, "mark_image")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind === "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это изображение знака</button>
-                        <button type="button" onClick={() => setAttachmentKind(index, clientType === "individual" ? "passport" : "other")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind !== "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это документ заявителя</button>
-                      </div>
-                    )}
-                  </div>
-                  {item.autofilled && (
-                    <Badge className="shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
-                      <Sparkles className="w-3 h-3 mr-1" />
-                      данные в форме
-                    </Badge>
-                  )}
-                  <button
-                    type="button"
-                    className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
-                    onClick={() => removeAttachment(index)}
-                    data-testid={`remove-attachment-${index}`}
-                  >
-                    убрать
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-      </ProjectStep>
-
-      {/* Шаг 2: заявитель */}
-      <ProjectStep
-        n={2}
-        title="Укажите заявителя"
-        description="Создайте нового заявителя или выберите существующего из базы."
-      >
-          {!clientPortal && <div className="inline-flex rounded-lg bg-muted p-1">
-            <button
-              type="button"
-              className={cn(
-                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
-                !useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setUseExistingClient(false)}
-            >
-              Новый заявитель
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
-                useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-              )}
-              onClick={() => setUseExistingClient(true)}
-            >
-              Выбрать из базы
-            </button>
-          </div>}
-
-          {useExistingClient ? (
-            <div className="mt-6">
-            <Field label="Заявитель">
-              <Select value={clientId} onValueChange={setClientId}>
-                <SelectTrigger data-testid="select-client">
-                  <SelectValue placeholder="Начните вводить название" />
-                </SelectTrigger>
-                <SelectContent>
-                  {clients.map((client) => (
-                    <SelectItem key={client.id} value={String(client.id)}>
-                      {client.shortName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            </div>
-          ) : (
-            <div className="mt-6 grid gap-5">
-              <Field label="Тип заявителя">
-                <Select
-                  value={clientType}
-                  onValueChange={(v) => setClientType(v as ClientType)}
-                >
-                  <SelectTrigger data-testid="select-client-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(CLIENT_TYPE_LABELS) as ClientType[]).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {CLIENT_TYPE_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-
-              <Field
-                label={
-                  clientType === "company"
-                    ? "Полное наименование организации"
-                    : "ФИО"
-                }
-              >
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={
-                    clientType === "company"
-                      ? "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «ПРИМЕР»"
-                      : "Иванов Иван Иванович"
-                  }
-                  data-testid="input-name"
-                />
-              </Field>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="ИНН">
-                  <Input
-                    value={inn}
-                    onChange={(e) => setInn(e.target.value)}
-                    placeholder={clientType === "company" ? "7700000000" : "770000000000"}
-                    data-testid="input-inn"
-                  />
-                </Field>
-                {clientType !== "individual" && (
-                  <Field label={ID_LABEL[clientType]}>
-                    <Input
-                      value={ogrn}
-                      onChange={(e) => setOgrn(e.target.value)}
-                      placeholder={clientType === "company" ? "1027700000000" : "300000000000000"}
-                      data-testid="input-ogrn"
-                    />
-                  </Field>
-                )}
-                {clientType === "company" && (
-                  <Field label="КПП">
-                    <Input value={kpp} onChange={(e) => setKpp(e.target.value)} placeholder="770001001" data-testid="input-kpp" />
-                  </Field>
-                )}
-              </div>
-
-              <Field
-                label="Адрес"
-                hint={
-                  clientType === "sole_proprietor"
-                    ? "В выписке ЕГРИП адрес места жительства скрыт — укажите вручную"
-                    : undefined
-                }
-              >
-                <Input
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="123456, г. Москва, ул. Примерная, д. 1"
-                  data-testid="input-address"
-                />
-              </Field>
-
-              <div className="grid gap-5 sm:grid-cols-2">
-                <Field label="E-mail для переписки">
-                  <Input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="name@example.ru" />
-                </Field>
-                <Field label="Телефон для переписки">
-                  <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+7 900 000-00-00" />
-                </Field>
-              </div>
-
-              {clientPortal && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/20 bg-primary/[0.045] p-4">
-                  <Checkbox
-                    checked={rememberApplicantData}
-                    onCheckedChange={(checked) => setRememberApplicantData(checked === true)}
-                    data-testid="remember-applicant-data"
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-foreground">
-                      {user?.applicantProfile
-                        ? "Обновить сохранённые данные заявителя"
-                        : "Запомнить данные для следующих заявок"}
-                    </span>
-                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                      После создания заявки эти реквизиты сохранятся в профиле и автоматически появятся в новой форме. Их всегда можно изменить в разделе «Профиль».
-                    </span>
-                  </span>
-                </label>
-              )}
-
-              {clientType === "individual" && (
-                <p className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
-                  <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
-                  Текст скана распознаётся, но паспортные реквизиты пока нужно
-                  проверить и перенести в поля вручную.
-                </p>
-              )}
-            </div>
-          )}
-      </ProjectStep>
-
       {/* Шаг 3: обозначение и деятельность */}
       <ProjectStep
-        n={3}
+        n={1}
         title="Опишите товарный знак"
         description="Укажите обозначение и коротко расскажите, для каких товаров или услуг оно нужно."
       >
@@ -951,6 +693,251 @@ export default function IntakePage() {
           </details>}
       </ProjectStep>
 
+      {!clientPortal && <details open className="rounded-2xl border border-border p-5">
+        <summary className="cursor-pointer font-semibold">Заявитель для подачи · {name || "укажите имя"}</summary>
+      {/* Шаг 2: заявитель */}
+      <ProjectStep
+        n={2}
+        title="Укажите заявителя"
+        description="Создайте нового заявителя или выберите существующего из базы."
+      >
+          {!clientPortal && <div className="inline-flex rounded-lg bg-muted p-1">
+            <button
+              type="button"
+              className={cn(
+                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
+                !useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setUseExistingClient(false)}
+            >
+              Новый заявитель
+            </button>
+            <button
+              type="button"
+              className={cn(
+                "rounded-md px-5 py-2.5 text-sm font-semibold transition-all",
+                useExistingClient ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+              )}
+              onClick={() => setUseExistingClient(true)}
+            >
+              Выбрать из базы
+            </button>
+          </div>}
+
+          {useExistingClient ? (
+            <div className="mt-6">
+            <Field label="Заявитель">
+              <Select value={clientId} onValueChange={setClientId}>
+                <SelectTrigger data-testid="select-client">
+                  <SelectValue placeholder="Начните вводить название" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={String(client.id)}>
+                      {client.shortName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            </div>
+          ) : (
+            <div className="mt-6 grid gap-5">
+              <Field label="Тип заявителя">
+                <Select
+                  value={clientType}
+                  onValueChange={(v) => setClientType(v as ClientType)}
+                >
+                  <SelectTrigger data-testid="select-client-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(CLIENT_TYPE_LABELS) as ClientType[]).map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {CLIENT_TYPE_LABELS[t]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field
+                label={
+                  clientType === "company"
+                    ? "Полное наименование организации"
+                    : "ФИО"
+                }
+              >
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={
+                    clientType === "company"
+                      ? "ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ «ПРИМЕР»"
+                      : "Иванов Иван Иванович"
+                  }
+                  data-testid="input-name"
+                />
+              </Field>
+
+<details className="rounded-xl border border-border p-4"><summary className="cursor-pointer text-sm font-semibold">Реквизиты и контакты для подачи · необязательно сейчас</summary><div className="mt-4 grid gap-5">              <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="ИНН">
+                  <Input
+                    value={inn}
+                    onChange={(e) => setInn(e.target.value)}
+                    placeholder={clientType === "company" ? "7700000000" : "770000000000"}
+                    data-testid="input-inn"
+                  />
+                </Field>
+                {clientType !== "individual" && (
+                  <Field label={ID_LABEL[clientType]}>
+                    <Input
+                      value={ogrn}
+                      onChange={(e) => setOgrn(e.target.value)}
+                      placeholder={clientType === "company" ? "1027700000000" : "300000000000000"}
+                      data-testid="input-ogrn"
+                    />
+                  </Field>
+                )}
+                {clientType === "company" && (
+                  <Field label="КПП">
+                    <Input value={kpp} onChange={(e) => setKpp(e.target.value)} placeholder="770001001" data-testid="input-kpp" />
+                  </Field>
+                )}
+              </div>
+
+              <Field
+                label="Адрес"
+                hint={
+                  clientType === "sole_proprietor"
+                    ? "В выписке ЕГРИП адрес места жительства скрыт — укажите вручную"
+                    : undefined
+                }
+              >
+                <Input
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="123456, г. Москва, ул. Примерная, д. 1"
+                  data-testid="input-address"
+                />
+              </Field>
+
+              <div className="grid gap-5 sm:grid-cols-2">
+                <Field label="E-mail для переписки">
+                  <Input type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} placeholder="name@example.ru" />
+                </Field>
+                <Field label="Телефон для переписки">
+                  <Input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} placeholder="+7 900 000-00-00" />
+                </Field>
+              </div>
+
+</div></details>
+
+              {clientType === "individual" && (
+                <p className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
+                  <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                  Текст скана распознаётся, но паспортные реквизиты пока нужно
+                  проверить и перенести в поля вручную.
+                </p>
+              )}
+            </div>
+          )}
+      </ProjectStep>
+
+
+
+      </details>}
+      {!clientPortal && <details className="rounded-2xl border border-border p-5"><summary className="cursor-pointer text-base font-semibold">Документы заявителя · можно добавить позже</summary>
+      <ProjectStep
+        n={3}
+        title="Добавьте документы"
+        description="Необязательно. Добавьте выписку ЕГРЮЛ/ЕГРИП, паспорт физлица, изображение или аудиозапись знака."
+      >
+          <div
+            className="flex flex-col items-center gap-3 rounded-xl border-2 border-dashed border-primary/35 bg-primary/[0.035] px-6 py-9 text-center transition-colors hover:border-primary/60 hover:bg-primary/[0.055]"
+            data-testid="intake-dropzone"
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
+              <Upload className="h-6 w-6" />
+            </span>
+            <Button
+              variant="default"
+              disabled={isReading}
+              onClick={() => fileInput.current?.click()}
+              data-testid="button-attach"
+            >
+              {isReading ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Upload className="w-3.5 h-3.5 mr-1.5" />
+              )}
+              {isReading ? "Читаем документ…" : "Выбрать документ"}
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              PDF, DOCX, TXT, PNG, JPG, MP3 или WAV · до 25 МБ
+            </p>
+          </div>
+          <input
+            ref={fileInput}
+            type="file"
+            accept={ACCEPTED}
+            className="hidden"
+            data-testid="input-attachment"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void readDocument(file);
+            }}
+          />
+
+          {attached.length > 0 && (
+            <div className="mt-5 space-y-2">
+              {attached.map((item, index) => (
+                <div
+                  key={`${item.file.name}-${index}`}
+                  className="flex items-start gap-3 rounded-lg border border-border bg-background px-4 py-3"
+                >
+                  <FileText className="w-4 h-4 shrink-0 mt-0.5 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{item.file.name}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {DOCUMENT_KIND_LABELS[item.documentKind ?? ""] ??
+                        "Тип не определён"}
+                    </p>
+                    {item.warning && (
+                      <p className="mt-1 flex items-start gap-1 text-xs text-amber-600 dark:text-amber-500">
+                        <AlertCircle className="w-3 h-3 mt-0.5 shrink-0" />
+                        {item.warning}
+                      </p>
+                    )}
+                    {/\.(png|jpe?g)$/i.test(item.file.name) && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => setAttachmentKind(index, "mark_image")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind === "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это изображение знака</button>
+                        <button type="button" onClick={() => setAttachmentKind(index, clientType === "individual" ? "passport" : "other")} className={cn("rounded-full border px-2.5 py-1 text-[11px] font-semibold", item.documentKind !== "mark_image" ? "border-primary bg-primary/10 text-primary" : "border-border")}>Это документ заявителя</button>
+                      </div>
+                    )}
+                  </div>
+                  {item.autofilled && (
+                    <Badge className="shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">
+                      <Sparkles className="w-3 h-3 mr-1" />
+                      данные в форме
+                    </Badge>
+                  )}
+                  <button
+                    type="button"
+                    className="shrink-0 text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => removeAttachment(index)}
+                    data-testid={`remove-attachment-${index}`}
+                  >
+                    убрать
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+      </ProjectStep>
+
+</details>}
+
       <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
         <div className="flex items-center gap-3">
           <Button variant="outline" onClick={() => saveDraft(true)} disabled={isSaving}>Сохранить черновик</Button>
@@ -962,7 +949,7 @@ export default function IntakePage() {
           ) : (
             <CheckCircle2 className="w-4 h-4 mr-2" />
           )}
-          {clientPortal ? "Создать заявку" : "Создать проект"}
+          {clientPortal ? "Перейти к подбору товаров и услуг" : "Создать проект"}
         </Button>
       </div>
     </div>

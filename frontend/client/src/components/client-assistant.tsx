@@ -15,7 +15,7 @@ import {
 import { api, ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-type ChatMessage = { role: "user" | "assistant"; content: string; sources?: string[] };
+type ChatMessage = { role: "user" | "assistant"; content: string; sources?: string[]; supporting_sources?: Array<{ title: string; url: string; quote: string }> };
 
 const QUICK_QUESTIONS = [
   "Что такое класс МКТУ?",
@@ -43,14 +43,14 @@ export function ClientAssistant() {
     setQuestion("");
     setLoading(true);
     try {
-      const result = await api.post<{ answer: string; sources: string[] }>("/assistant/ask", {
+      const result = await api.post<{ answer: string; sources: string[]; supporting_sources: Array<{ title: string; url: string; quote: string }> }>("/assistant/ask", {
         question: clean,
         application_id: useCaseContext ? applicationId : null,
         history,
       });
       setMessages((old) => [
         ...old,
-        { role: "assistant", content: result.answer, sources: result.sources },
+        { role: "assistant", content: result.answer, sources: result.sources, supporting_sources: result.supporting_sources },
       ]);
     } catch (error) {
       setMessages((old) => [
@@ -145,14 +145,14 @@ export function ClientAssistant() {
   );
 }
 
-function MessageBubble({ role, content, sources, loading = false }: ChatMessage & { loading?: boolean }) {
+function MessageBubble({ role, content, sources, supporting_sources, loading = false }: ChatMessage & { loading?: boolean }) {
   const assistant = role === "assistant";
   return (
     <div className={cn("flex gap-2.5", assistant ? "justify-start" : "justify-end")}>
       {assistant && <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e8f7f6] text-[#087c78]"><Bot className="h-3.5 w-3.5" /></span>}
       <div className={cn("max-w-[84%] rounded-2xl px-4 py-3 text-sm leading-relaxed", assistant ? "rounded-tl-sm border border-[#11113f]/8 bg-white text-[#33334e]" : "rounded-tr-sm bg-[#11113f] text-white")}>
         {loading ? <span className="flex items-center gap-2 text-[#77778a]"><Loader2 className="h-4 w-4 animate-spin" /> Думаю…</span> : <p className="whitespace-pre-wrap">{content}</p>}
-        {assistant && sources && sources.length > 0 && <p className="mt-2 border-t border-[#11113f]/8 pt-2 text-[11px] text-[#77778a]">Материалы: {sources.join(", ")}</p>}
+        {assistant && supporting_sources?.map((source, index) => <details key={`${source.url}-${index}`} className="mt-2 border-t pt-2 text-xs text-[#55556f]"><summary className="cursor-pointer">Основание ответа: {source.title}</summary><blockquote className="mt-2 border-l-2 pl-2">{source.quote}</blockquote><a href={source.url} target="_blank" rel="noreferrer" className="mt-2 inline-block underline">Открыть источник</a></details>)}
       </div>
       {!assistant && <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#11113f]/10 text-[#11113f]"><UserRound className="h-3.5 w-3.5" /></span>}
     </div>

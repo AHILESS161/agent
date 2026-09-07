@@ -168,7 +168,7 @@ async def test_search_applications_uses_application_filter() -> None:
 
     assert len(records) == 1
     assert records[0].source == "application"
-    assert records[0].status == "pending"
+    assert records[0].status == "unknown"
     assert records[0].application_number == "2024777000"
     assert tasks[0]["data"]["filter"] == {"trademark_type": 2}
     parameters = tasks[0]["data"]["query"]["data"]["parameters"]

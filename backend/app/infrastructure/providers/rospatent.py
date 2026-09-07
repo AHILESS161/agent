@@ -25,6 +25,7 @@ import httpx
 from app.infrastructure.providers.base import (
     ExternalStatusResult,
     RegistryRecord,
+    RegistrySearchResults,
     SearchQuery,
     SubmissionPayload,
     SubmissionResult,
@@ -107,6 +108,16 @@ def _parse_classes(value: Any) -> list[int]:
     return sorted(result)
 
 
+def _goods_text(value: Any) -> str:
+    """Извлечь формулировки, не превращая номера классов в товары."""
+    if isinstance(value, list):
+        return "; ".join(filter(None, (_goods_text(item) for item in value)))
+    if isinstance(value, dict):
+        return _goods_text(_first(value, "goods_services", "goods", "description", "text", "name"))
+    text = _as_text(value)
+    return text if re.search(r"[a-zа-яё]", text, re.I) else ""
+
+
 def _normalise_date(value: Any) -> str | None:
     text = _as_text(value)
     if not text:
@@ -119,31 +130,16 @@ def _normalise_date(value: Any) -> str | None:
 
 def _normalise_status(value: Any, source: str) -> str:
     status = _as_text(value).casefold()
-    if source == "application" and not status:
-        return "pending"
-    if any(word in status for word in ("действ", "valid", "active", "registered")):
-        return "registered"
-    if any(
-        word in status
-        for word in (
-            "заяв",
-            "pending",
-            "received",
-            "processing",
-            "examination",
-            "рассмотр",
-            "экспертиз",
-        )
-    ):
-        return "pending"
-    if any(word in status for word in ("истек", "expired", "termination")):
-        return "expired"
-    if any(
-        word in status
-        for word in ("отозв", "отклон", "прекращ", "аннулир", "cancel", "reject", "invalid")
-    ):
+    # Отрицательные статусы проверяются раньше «valid» / «действ».
+    if any(word in status for word in ("недейств", "не действ", "inactive", "invalid", "отозв", "отклон", "прекращ", "аннулир", "cancel", "reject")):
         return "cancelled"
-    return "pending" if source == "application" else "registered"
+    if any(word in status for word in ("истек", "истёк", "expired", "termination")):
+        return "expired"
+    if status in {"valid", "active", "registered"} or "действует" in status:
+        return "registered"
+    if any(word in status for word in ("pending", "received", "processing", "examination", "рассмотр", "экспертиз")):
+        return "pending"
+    return "unknown"
 
 
 def _normalise_mark_type(value: Any) -> str:
@@ -252,6 +248,9 @@ def _record_from_document(document: dict[str, Any], source: str) -> RegistryReco
         owner=owner,
         classes=classes,
         status=_normalise_status(status_value, source),
+        goods_services=_goods_text(_first(data, "goods_services", "goods", "trademark.goods_services", "icgs")) or None,
+        priority_date=_normalise_date(_first(data, "priority_date", "priority.date")),
+        expiry_date=_normalise_date(_first(data, "expiry_date", "expiration_date")),
         filing_date=_normalise_date(
             _first(
                 data,
@@ -480,7 +479,15 @@ class RospatentSearchProvider:
             if query.classes and record.classes and not set(query.classes) & set(record.classes):
                 continue
             records.append(record)
-        return records[: query.max_results]
+        total = payload.get("total") if isinstance(payload, dict) else None
+        raw_hits = payload.get("hits") if isinstance(payload, dict) else None
+        if isinstance(raw_hits, dict):
+            total = raw_hits.get("total", total)
+        if isinstance(total, dict):
+            total = total.get("value")
+        total = total if isinstance(total, int) else None
+        return RegistrySearchResults(records[:query.max_results], total=total,
+            truncated=(total > len(hits) if total is not None else len(hits) >= query.max_results), source=source)
 
     async def search_marks(self, query: SearchQuery) -> list[RegistryRecord]:
         return await self._search(query, "registration")

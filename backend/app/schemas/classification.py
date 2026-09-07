@@ -86,6 +86,8 @@ class ManualClassRequest(BaseModel):
 class ClassApprovalRequest(BaseModel):
     """Payload for a lawyer to approve or reject a class suggestion."""
 
+    full_class: bool = False
+
     suggestion_id: int
     approved: bool
     class_description: Optional[str] = Field(

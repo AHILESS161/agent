@@ -22,9 +22,11 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
+from app.infrastructure.providers.rospatent import _goods_text, _normalise_status
 from app.infrastructure.providers.base import (
     ExternalStatusResult,
     RegistryRecord,
+    RegistrySearchResults,
     SearchQuery,
     SubmissionPayload,
     SubmissionResult,
@@ -61,17 +63,16 @@ def _source_of(item: dict[str, Any]) -> str:
 
 
 def _status_of(item: dict[str, Any], source: str) -> str:
-    if source == "application":
-        return "pending"
     code = str(item.get("status_code") or "")
     if code == "1":
         return "cancelled"
-    if code == "2":
-        return "registered"
     expiry = _date(item.get("expiry_date"))
     if expiry and expiry < time.strftime("%Y-%m-%d"):
         return "expired"
-    return "registered"
+    explicit = _normalise_status(item.get("status") or item.get("legal_status"), source)
+    if explicit != "unknown":
+        return explicit
+    return "registered" if code == "2" and source == "registration" else "unknown"
 
 
 def _image_url(item: dict[str, Any]) -> str | None:
@@ -121,6 +122,9 @@ def _record_from_public_result(item: dict[str, Any]) -> RegistryRecord:
         owner=_as_text(item.get("holders") or item.get("applicants")),
         classes=classes,
         status=_status_of(item, source),
+        goods_services=_goods_text(item.get("goods_services") or item.get("goods") or item.get("goodClasses")) or None,
+        priority_date=_date(item.get("priority_date")),
+        expiry_date=_date(item.get("expiry_date")),
         filing_date=_date(item.get("appl_date")),
         registration_date=_date(item.get("reg_date")),
         application_number=application_number,
@@ -363,7 +367,9 @@ class RospatentPublicSearchProvider:
             if not items or page * size >= requested:
                 break
             page += 1
-        return list(records.values())[:target]
+        return RegistrySearchResults(list(records.values())[:target],
+            total=payload.get("totalElements") if isinstance(payload.get("totalElements"), int) else None,
+            truncated=page < total_pages or len(records) >= target, source=source)
 
     async def search_marks(self, query: SearchQuery) -> list[RegistryRecord]:
         return await self._search(query, "registration")

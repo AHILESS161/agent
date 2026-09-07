@@ -89,6 +89,8 @@ class ApplicationResponse(BaseModel):
     assigned_manager_id: Optional[int] = None
     representative_id: Optional[int] = None
     status: ApplicationStatus
+    client_progress_step: int = Field(default=1, ge=1, le=4)
+    client_progress_state: str = "draft"
     priority: CasePriority = CasePriority.medium
     mark_type: Optional[MarkType] = None
     mark_name: Optional[str] = None
@@ -161,5 +163,6 @@ class ApplicationListItem(BaseModel):
     assigned_manager_id: Optional[int] = None
     representative_id: Optional[int] = None
     client_progress_step: int = Field(default=1, ge=1, le=4)
+    client_progress_state: str = "draft"
     created_at: datetime
     updated_at: datetime

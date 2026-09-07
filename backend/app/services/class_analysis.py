@@ -221,7 +221,7 @@ async def load_class_context(
     )
     return ClassContext(
         approved=[r for r in rows if r.approved is True],
-        suggested=[r for r in rows if r.approved is not True],
+        suggested=[r for r in rows if r.approved is None],
     )
 
 
@@ -310,14 +310,9 @@ async def run_class_analysis(
         record = NiceClassSuggestion(
             application_id=application.id,
             class_number=suggestion.class_number,
-            # По умолчанию заявление охватывает полный официальный перечень
-            # позиций класса. Заголовок класса — лишь краткое описание и не
-            # заменяет перечень товаров/услуг в заявлении.
-            class_description=(
-                catalog_by_number.get(suggestion.class_number).full_description
-                if catalog_by_number.get(suggestion.class_number)
-                else "; ".join(suggestion.goods_services)
-            ) or None,
+            # Предлагаем только товары из анализа деятельности. Расширение
+            # до полного класса — отдельное решение пользователя.
+            class_description="; ".join(suggestion.goods_services) or None,
             rationale=suggestion.rationale,
             confidence=suggestion.confidence,
             category=_CATEGORY_MAP.get(suggestion.category, NiceCategory.borderline),
@@ -458,9 +453,7 @@ async def _catalog_fallback(
         record = NiceClassSuggestion(
             application_id=application.id,
             class_number=number,
-            # Пока клиент явно не сузил перечень, используем полный
-            # официальный перечень позиций выбранного класса.
-            class_description=item.full_description,
+            class_description=phrase,
             rationale=(
                 f"Класс {number} может охватывать указанное вами направление «{phrase}». "
                 "Проверьте, будет ли обозначение использоваться именно для этих товаров "

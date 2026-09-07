@@ -136,12 +136,13 @@ export default function ClientDashboardPage() {
           <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#43c7c2]">
             Личный кабинет
           </p>
-          <h1 className="mt-4 text-4xl font-semibold leading-tight sm:text-5xl lg:text-6xl">
-            {name ? `${name}, защитим ваш бренд` : "Защитим ваш бренд"}
+          <h1 className="mt-4 text-[clamp(1.5rem,4.8vw,3.75rem)] font-semibold leading-tight">
+            {name && <span className="block whitespace-nowrap">{name},</span>}
+            <span className="block">{name ? "защитим ваш бренд" : "Защитим ваш бренд"}</span>
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
-            Опишите обозначение и свою деятельность. Мы подскажем классы МКТУ,
-            проверим риски отказа в регистрации и соберём всё необходимое для подачи.
+            Опишите обозначение и сферу деятельности. Подберём классы МКТУ,
+            оценим риск отказа в регистрации и сформируем комплект документов для подачи регистрации.
           </p>
           <Button
             className="mt-8 h-13 rounded-full bg-[#12aaa5] px-7 text-base text-white hover:bg-[#0d918d]"
@@ -154,9 +155,9 @@ export default function ClientDashboardPage() {
 
       <section className="grid gap-4 sm:grid-cols-3">
         {[
-          { icon: FileSearch, title: "Знак и деятельность", text: "Укажите название или изображение и товары или услуги" },
-          { icon: Sparkles, title: "Получите проверку", text: "Классы и опасные совпадения — простым языком" },
-          { icon: ShieldCheck, title: "Подготовьтесь к подаче", text: "Увидите, что заполнить и сколько оплатить" },
+          { icon: FileSearch, title: "Обозначение и деятельность", text: "Название или логотип, товары и услуги" },
+          { icon: Sparkles, title: "Результат проверки", text: "Классы МКТУ и схожие знаки — без юридического языка" },
+          { icon: ShieldCheck, title: "Подготовка к подаче", text: "Состав документов и итоговая стоимость" },
         ].map((item) => (
           <div key={item.title} className="rounded-[1.35rem] border border-[#11113f]/10 bg-white p-5">
             <item.icon className="h-6 w-6 text-[#0d9f9b]" />

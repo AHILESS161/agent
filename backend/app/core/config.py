@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    PUBLIC_SIGNUP_ENABLED: bool = False
+    PUBLIC_APP_URL: str = "https://registr-ai.ru"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = Field(default=465, ge=1, le=65535)
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
+    SMTP_USE_SSL: bool = True
+    SIGNUP_DAILY_EMAIL_LIMIT: int = Field(default=5, ge=1)
+    SIGNUP_HOURLY_IP_LIMIT: int = Field(default=10, ge=1)
+    SIGNUP_DAILY_GLOBAL_LIMIT: int = Field(default=100, ge=1)
     API_DOCS_ENABLED: bool = True
     ALLOWED_HOSTS: Annotated[List[str], NoDecode] = Field(
         default_factory=lambda: ["*"]

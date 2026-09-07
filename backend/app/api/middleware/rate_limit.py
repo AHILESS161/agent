@@ -38,6 +38,8 @@ RULES: dict[str, Rule] = {
     # Подбор пароля — самый чувствительный сценарий.
     "/api/v1/auth/login": Rule(limit=10, window=60),
     "/api/v1/auth/register": Rule(limit=5, window=300),
+    "/api/v1/auth/signup/request": Rule(limit=5, window=300),
+    "/api/v1/auth/signup/confirm": Rule(limit=10, window=300),
     # Загрузка файлов: защита от исчерпания дискового пространства.
     "/api/v1/applications": Rule(limit=120, window=60),
     "/api/v1/source-documents": Rule(limit=120, window=60),

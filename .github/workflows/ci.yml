@@ -90,6 +90,7 @@ jobs:
           docker compose --env-file deploy/ci.env -f docker-compose.prod.yml -f deploy/ci-compose.yml up -d --wait --wait-timeout 180 api worker web
           curl -fsS http://127.0.0.1:18080/ready
           docker compose --env-file deploy/ci.env -f docker-compose.prod.yml exec -T api python -m scripts.production_smoke
+          docker compose --env-file deploy/ci.env -f docker-compose.prod.yml exec -T api python -m scripts.signup_smoke
       - name: Check restart and stale worker detection
         run: |
           docker compose --env-file deploy/ci.env -f docker-compose.prod.yml stop worker

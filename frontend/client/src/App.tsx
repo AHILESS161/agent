@@ -1,4 +1,4 @@
-import { Switch, Route, Router, Redirect } from "wouter";
+import { Switch, Route, Router, Redirect, useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
@@ -10,6 +10,7 @@ import { ThemeProvider } from "@/lib/theme";
 import { AppLayout } from "@/components/layout";
 import { ClientPortalLayout } from "@/components/client-portal-layout";
 import LoginPage from "@/pages/login";
+import SignupPage from "@/pages/signup";
 import DashboardPage from "@/pages/dashboard";
 import ApplicationsListPage from "@/pages/applications-list";
 import ApplicationDetailPage from "@/pages/application-detail";
@@ -86,6 +87,9 @@ function AuthenticatedRoutes() {
 
 function AppRouter() {
   const { isAuthenticated, isLoading } = useAuth();
+  const [location] = useLocation();
+  if (location.split("?")[0] === "/signup") return <SignupPage key="signup" />;
+  if (location.split("?")[0] === "/verify-email") return <SignupPage key="verify-email" verify />;
 
   // Пока восстанавливается сессия из сохранённого токена, показывать
   // экран входа нельзя — иначе он мигает при каждой перезагрузке.

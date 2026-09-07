@@ -10,6 +10,7 @@ from app.api.v1.endpoints.applications import router as applications_router
 from app.api.v1.endpoints.assistant import router as assistant_router
 from app.api.v1.endpoints.audit import router as audit_router
 from app.api.v1.endpoints.auth import router as auth_router
+from app.api.v1.endpoints.signup import router as signup_router
 from app.api.v1.endpoints.clients import router as clients_router
 from app.api.v1.endpoints.documents import router as documents_router
 from app.api.v1.endpoints.drafts import router as drafts_router
@@ -31,6 +32,7 @@ api_router.include_router(health_router)
 api_router.include_router(intake_router)
 api_router.include_router(inbound_router)
 api_router.include_router(auth_router)
+api_router.include_router(signup_router)
 api_router.include_router(users_router)
 api_router.include_router(clients_router)
 api_router.include_router(applications_router, dependencies=[Depends(authorize_case_route)])

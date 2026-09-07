@@ -19,7 +19,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -100,7 +99,7 @@ interface Attached {
 
 export default function IntakePage() {
   const { toast } = useToast();
-  const { user, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const fileInput = useRef<HTMLInputElement>(null);
   const cases = useCases();
@@ -120,7 +119,6 @@ export default function IntakePage() {
   const [address, setAddress] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
-  const [rememberApplicantData, setRememberApplicantData] = useState(false);
 
   // Обозначение и деятельность.
   const [markName, setMarkName] = useState("");
@@ -338,10 +336,12 @@ export default function IntakePage() {
   };
 
   const validate = (): string | null => {
-    if (useExistingClient) {
-      if (!clientId) return "Выберите клиента или заполните данные нового.";
-    } else if (name.trim().length < 2) {
-      return "Укажите наименование или ФИО заявителя.";
+    if (!clientPortal) {
+      if (useExistingClient) {
+        if (!clientId) return "Выберите клиента или заполните данные нового.";
+      } else if (name.trim().length < 2) {
+        return "Укажите наименование или ФИО заявителя.";
+      }
     }
     if (!markName.trim()) return "Укажите заявляемое обозначение.";
     if (clientPortal && !clientActivity.trim()) return "Опишите товары или услуги для проверки.";
@@ -360,6 +360,21 @@ export default function IntakePage() {
 
     setIsSaving(true);
     try {
+      // До подготовки заявления дело связано с учётной записью. Реквизиты
+      // заявителя пользователь проверит отдельно после оценки риска.
+      const profile = user?.applicantProfile;
+      const preliminaryClient = {
+        type: profile?.type || "individual",
+        full_name_or_company_name: [profile?.fullNameOrCompanyName, user?.fullName, user?.email]
+          .map((value) => value?.trim()).find((value) => value && value.length >= 2),
+        inn: profile?.inn || null,
+        ogrn_or_ogrnip: profile?.ogrnOrOgrnip || null,
+        kpp: profile?.kpp || null,
+        address: profile?.address || null,
+        country: profile?.country || "RU",
+        email: profile?.email || user?.email || null,
+        phone: profile?.phone || null,
+      };
       // 1. Регистрируем обращение и создаём дело.
       const event = await api.post<{
         id: number;
@@ -370,8 +385,8 @@ export default function IntakePage() {
         sender: sender || null,
         body_text: bodyText || null,
         create_case: true,
-        client_id: useExistingClient ? Number(clientId) : null,
-        new_client: useExistingClient
+        client_id: !clientPortal && useExistingClient ? Number(clientId) : null,
+        new_client: clientPortal ? preliminaryClient : useExistingClient
           ? null
           : {
               type: clientType,
@@ -432,7 +447,7 @@ export default function IntakePage() {
           markImageUploadFailed = true;
         }
       }
-      for (const item of attached) {
+      for (const item of clientPortal ? [] : attached) {
         // Отдельно выбранное изображение имеет приоритет над файлом,
         // ранее помеченным как изображение в общем списке документов.
         if (markImageFile && item.documentKind === "mark_image") continue;
@@ -460,41 +475,18 @@ export default function IntakePage() {
         }
       }
 
-      let profileSaveFailed = false;
-      if (clientPortal && !useExistingClient && rememberApplicantData) {
-        try {
-          await api.patch("/auth/me", {
-            applicant_profile_json: {
-              type: clientType,
-              full_name_or_company_name: name.trim() || null,
-              inn: inn.trim() || null,
-              ogrn_or_ogrnip: ogrn.trim() || null,
-              kpp: kpp.trim() || null,
-              address: address.trim() || null,
-              country: "RU",
-              email: contactEmail.trim() || null,
-              phone: contactPhone.trim() || null,
-            },
-          });
-          await refreshProfile();
-        } catch {
-          // Заявка уже создана: ошибка профиля не должна отменять результат.
-          profileSaveFailed = true;
-        }
-      }
-
       setCaseId(newCaseId);
       try { localStorage.removeItem(draftKey); } catch { /* server draft is saved */ }
       toast({
         title: clientPortal ? `Заявка №${newCaseId} создана` : `Дело №${newCaseId} создано`,
-        description: profileSaveFailed
-          ? "Заявка создана, но сохранить реквизиты в профиль не удалось. Это можно повторить на экране проверки данных."
-          : markImageUploadFailed
+        description: markImageUploadFailed
           ? "Заявка сохранена, но изображение не загрузилось. Добавьте его ещё раз на экране «Данные»."
+          : clientPortal
+          ? "Обозначение сохранено. Теперь выберите товары и услуги для проверки."
           : uploaded
           ? `Документов приложено: ${uploaded}. Реквизиты ждут проверки на этапе «Данные».`
           : "Документы не приложены — их можно добавить в карточке дела.",
-        variant: markImageUploadFailed || profileSaveFailed ? "destructive" : undefined,
+        variant: markImageUploadFailed ? "destructive" : undefined,
       });
       if (clientPortal) setLocation(`/applications/${newCaseId}?step=review`);
     } catch (e) {
@@ -701,9 +693,8 @@ export default function IntakePage() {
           </details>}
       </ProjectStep>
 
-      <details open={!clientPortal || !name} className="rounded-2xl border border-border p-5">
+      {!clientPortal && <details open className="rounded-2xl border border-border p-5">
         <summary className="cursor-pointer font-semibold">Заявитель для подачи · {name || "укажите имя"}</summary>
-        {clientPortal && <p className="mt-2 text-sm text-muted-foreground">Для черновика использовано имя из профиля. Если знак будет принадлежать организации или другому лицу, измените заявителя здесь или в реквизитах перед подачей.</p>}
       {/* Шаг 2: заявитель */}
       <ProjectStep
         n={2}
@@ -840,25 +831,7 @@ export default function IntakePage() {
                 </Field>
               </div>
 
-</div></details>              {clientPortal && (
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-primary/20 bg-primary/[0.045] p-4">
-                  <Checkbox
-                    checked={rememberApplicantData}
-                    onCheckedChange={(checked) => setRememberApplicantData(checked === true)}
-                    data-testid="remember-applicant-data"
-                  />
-                  <span>
-                    <span className="block text-sm font-semibold text-foreground">
-                      {user?.applicantProfile
-                        ? "Обновить сохранённые данные заявителя"
-                        : "Запомнить данные для следующих заявок"}
-                    </span>
-                    <span className="mt-1 block text-xs leading-relaxed text-muted-foreground">
-                      После создания заявки эти реквизиты сохранятся в профиле и автоматически появятся в новой форме. Их всегда можно изменить в разделе «Профиль».
-                    </span>
-                  </span>
-                </label>
-              )}
+</div></details>
 
               {clientType === "individual" && (
                 <p className="flex items-start gap-2 rounded-lg bg-muted/60 p-3 text-sm text-muted-foreground">
@@ -873,8 +846,8 @@ export default function IntakePage() {
 
 
 
-      </details>
-<details className="rounded-2xl border border-border p-5"><summary className="cursor-pointer text-base font-semibold">Документы заявителя · можно добавить позже</summary>      {/* Шаг 1: документы (первым — с них начинается работа) */}
+      </details>}
+      {!clientPortal && <details className="rounded-2xl border border-border p-5"><summary className="cursor-pointer text-base font-semibold">Документы заявителя · можно добавить позже</summary>
       <ProjectStep
         n={3}
         title="Добавьте документы"
@@ -963,7 +936,7 @@ export default function IntakePage() {
           )}
       </ProjectStep>
 
-</details>
+</details>}
 
       <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
         <div className="flex items-center gap-3">

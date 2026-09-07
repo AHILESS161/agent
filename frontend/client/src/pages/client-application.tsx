@@ -51,7 +51,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-type Section = "upload" | "review" | "analysis" | "fees" | "documents" | "response";
+type Section = "upload" | "review" | "analysis" | "applicant" | "fees" | "documents" | "response";
 
 interface ClassSuggestion {
   id: number;
@@ -230,6 +230,7 @@ const SECTION_META: Array<{ id: Section; label: string; icon: typeof Circle }> =
   { id: "upload", label: "Загрузка", icon: Upload },
   { id: "review", label: "Проверка данных", icon: PencilLine },
   { id: "analysis", label: "Анализ", icon: Sparkles },
+  { id: "applicant", label: "Сведения для заявки", icon: FileSignature },
   { id: "fees", label: "Пошлины", icon: ReceiptText },
   { id: "documents", label: "Документы", icon: Archive },
   { id: "response", label: "Ответ Роспатенту", icon: MessageSquareText },
@@ -240,7 +241,7 @@ const JOURNEY_STEPS = [
   {id: "analysis" as Section, label: "Результат проверки", hint: "Риски и следующие действия"},
   {id: "documents" as Section, label: "Подготовка к подаче", hint: "Реквизиты, пошлины и документы"},
 ];
-const journeySection = (section: Section) => ["upload", "fees", "response"].includes(section) ? "documents" : section;
+const journeySection = (section: Section) => ["upload", "applicant", "fees", "response"].includes(section) ? "documents" : section;
 
 const sectionFromLocation = (location: string): Section | null => {
   const url = new URL(location, window.location.origin);
@@ -283,11 +284,22 @@ export default function ClientApplicationPage() {
   const appId = Number(params.id);
   const [, setLocation] = useLocation();
   const current = useCase(appId);
+  const filingRisk = useApi<RiskReport>(`/applications/${appId}/risk-report`);
   const [section, setSection] = useState<Section>(() => sectionFromLocation(window.location.href) || savedSection(appId) || "review");
   const [transitionDirection, setTransitionDirection] = useState<"forward" | "backward">("forward");
   const [analysisPending, setAnalysisPending] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const firstSectionRender = useRef(true);
+  const canPrepareApplication = Boolean(!filingRisk.isLoading && !filingRisk.error && filingRisk.data?.overall_risk && !analysisPending);
+  const preparingApplication = journeySection(section) === "documents";
+  const reloadApplication = () => {
+    current.reload();
+    filingRisk.reload();
+  };
+
+  useEffect(() => {
+    if (preparingApplication) filingRisk.reload();
+  }, [appId, preparingApplication]);
 
   const goToSection = (next: Section) => {
     if (next === section) return;
@@ -363,9 +375,9 @@ export default function ClientApplicationPage() {
             <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold">
               <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> {stageFor(application).label}
             </span>
-            <button type="button" onClick={() => goToSection("documents")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 transition-colors hover:text-white">
-              Подготовка документов и памятка →
-            </button>
+            {canPrepareApplication && <button type="button" onClick={() => goToSection("applicant")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 transition-colors hover:text-white">
+              Подготовить заявку на регистрацию →
+            </button>}
           </div>
         </div>
       </section>
@@ -382,14 +394,15 @@ export default function ClientApplicationPage() {
                 key={item.id}
                 type="button"
                 aria-current={active ? "step" : undefined}
-                onClick={() => goToSection(item.id)}
+                disabled={item.id === "documents" && !canPrepareApplication}
+                onClick={() => goToSection(item.id === "documents" ? "applicant" : item.id)}
                 className={cn(
-                  "flex min-h-14 min-w-[10.5rem] shrink-0 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition-[background-color,color,transform,box-shadow] duration-300 ease-out active:scale-[0.98] xl:min-w-0 xl:w-full",
+                  "flex min-h-14 min-w-[10.5rem] shrink-0 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition-[background-color,color,transform,box-shadow] duration-300 ease-out active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 xl:min-w-0 xl:w-full",
                   active ? "bg-[#e9f7f6] text-[#087c78] shadow-[inset_0_0_0_1px_rgba(13,159,155,0.16)]" : "text-[#66667a] hover:bg-[#f6f5f1] hover:text-[#11113f]",
                 )}
               >
                 <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
-                <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.hint}</span></span>
+                <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.id === "documents" && !canPrepareApplication ? "После оценки риска" : item.hint}</span></span>
               </button>
             );
           })}
@@ -397,15 +410,25 @@ export default function ClientApplicationPage() {
 
         <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
           <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
-            {journeySection(section) === "documents" && <nav aria-label="Подготовка к подаче" className="mb-5 flex flex-wrap gap-2">
-              {([{id:"documents", label:"Комплект документов"}, {id:"fees", label:"Расчёт пошлин"}, {id:"upload", label:"Загрузить документы заявителя"}, {id:"response", label:"Ответ на запрос Роспатента"}] as const).map((item) => <Button key={item.id} variant={section === item.id ? "default" : "outline"} size="sm" onClick={() => goToSection(item.id)}>{item.label}</Button>)}
+            {preparingApplication && !canPrepareApplication ? (
+              <ClientPanel title={filingRisk.isLoading ? "Загружаем результат проверки" : "Сначала оценим риск отказа"} description={filingRisk.error || "Подготовка заявки станет доступна после получения оценки риска. Пока проверьте обозначение и выбранные товары или услуги."}>
+                {filingRisk.isLoading ? <Loader2 className="h-6 w-6 animate-spin text-[#0d9f9b]" /> : <div className="flex flex-wrap gap-3">
+                  <Button onClick={() => goToSection("analysis")}>К результату проверки</Button>
+                  {filingRisk.error && <Button variant="outline" onClick={filingRisk.reload}>Повторить загрузку</Button>}
+                </div>}
+              </ClientPanel>
+            ) : <>
+            {preparingApplication && <nav aria-label="Подготовка к подаче" className="mb-5 flex flex-wrap gap-2">
+              {([{id:"applicant", label:"Сведения для заявки"}, {id:"upload", label:"Документы заявителя"}, {id:"fees", label:"Расчёт пошлин"}, {id:"documents", label:"Комплект документов"}, {id:"response", label:"Ответ на запрос Роспатента"}] as const).map((item) => <Button key={item.id} variant={section === item.id ? "default" : "outline"} size="sm" onClick={() => goToSection(item.id)}>{item.label}</Button>)}
             </nav>}
-            {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("review")} />}
-            {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); goToSection("analysis"); }} />}
-            {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => { setAnalysisPending(false); current.reload(); }} onReview={() => goToSection("review")} onApplication={() => goToSection("fees")} onEditData={() => goToSection("review")} />}
+            {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={reloadApplication} onNext={() => goToSection("applicant")} />}
+            {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={reloadApplication} onAnalysis={() => { setAnalysisPending(true); goToSection("analysis"); }} />}
+            {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => { setAnalysisPending(false); reloadApplication(); }} onReview={() => goToSection("review")} onApplication={() => goToSection("applicant")} onEditData={() => goToSection("review")} />}
+            {section === "applicant" && <ClientDataForm mode="filing" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("fees")} />}
             {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => goToSection("documents")} onReview={() => goToSection("review")} />}
             {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onGoToSection={goToSection} />}
             {section === "response" && <OfficeActionResponse appId={appId} />}
+            </>}
           </div>
         </div>
       </div>
@@ -424,11 +447,11 @@ function ClientPanel({ title, description, children }: { title: string; descript
   );
 }
 
-function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onAnalysis }: { mode: "upload" | "review"; application: any; client: any; appId?: number; onSaved: () => void | Promise<void>; onNext?: () => void; onAnalysis?: () => void }) {
+function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onAnalysis }: { mode: "upload" | "review" | "filing"; application: any; client: any; appId?: number; onSaved: () => void | Promise<void>; onNext?: () => void; onAnalysis?: () => void }) {
   const { toast } = useToast();
   const { user, refreshProfile } = useAuth();
   const filingRules = useApi<FilingPackageStatus>(
-    mode === "review" ? `/applications/${application.id}/filing-package` : null,
+    mode !== "upload" ? `/applications/${application.id}/filing-package` : null,
   );
   const applicantDocumentInput = useRef<HTMLInputElement>(null);
   const powerOfAttorneyInput = useRef<HTMLInputElement>(null);
@@ -557,7 +580,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
     const registryDocument = result.items.find((item) =>
       ["egrul_extract", "egrip_extract", "unknown_registry_extract"].includes(item.document_kind),
     );
-    if (!registryDocument) return;
+    if (!registryDocument || mode === "review") return;
 
     let extracted = await api.get<{ items: ExtractedRegistrantFieldDto[] }>(
       `/source-documents/${registryDocument.id}/fields`,
@@ -595,7 +618,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   };
 
   const loadRepresentative = async () => {
-    if (!client || mode !== "review") return;
+    if (!client || mode !== "filing") return;
     const items = await api.get<RepresentativeDto[]>(`/clients/${client.id}/representatives`);
     const selected = items.find((item) => item.id === application.representativeId);
     if (!selected) return;
@@ -905,7 +928,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   }, [application.id]);
 
   useEffect(() => {
-    loadRepresentative().catch(() => undefined);
+    if (mode === "filing") loadRepresentative().catch(() => undefined);
   }, [application.id, application.representativeId, client?.id, mode]);
 
   useEffect(() => () => {
@@ -962,6 +985,20 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   };
 
   const persistForm = async () => {
+    if (mode === "review") {
+      await api.put(`/applications/${application.id}`, {
+        mark_name: form.markName.trim(),
+        mark_text: form.markType === "figurative" ? "" : (form.markType === "combined" ? form.markText.trim() : form.markName.trim()),
+        mark_type: form.markType,
+        business_description: activityDescription.trim() || null,
+        goods_services_raw: activityDescription.trim() || null,
+        description_of_mark: form.description.trim() || null,
+        colors_claimed: form.colors.trim() || null,
+        transliteration: form.transliteration.trim() || null,
+        translation: form.translation.trim() || null,
+      });
+      return;
+    }
     if (mode === "upload") {
       await Promise.all([
         api.put(`/applications/${application.id}`, {
@@ -1029,12 +1066,6 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         country: form.country || "RU", email: form.email.trim() || null, phone: form.phone.trim() || null,
       }) : Promise.resolve(),
       api.put(`/applications/${application.id}`, {
-        mark_name: form.markName.trim(),
-        mark_text: form.markType === "figurative" ? "" : (form.markType === "combined" ? form.markText.trim() : form.markName.trim()),
-        mark_type: form.markType,
-        business_description: activityDescription.trim() || null, goods_services_raw: activityDescription.trim() || null,
-        description_of_mark: form.description.trim() || null, colors_claimed: form.colors.trim() || null,
-        transliteration: form.transliteration.trim() || null, translation: form.translation.trim() || null,
         territory: COUNTRY_OPTIONS.find((item) => item.code === form.country)?.name || "Россия",
         filing_method: form.filingMethod,
         request_paper_certificate: form.requestPaperCertificate,
@@ -1063,7 +1094,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
     if (formSnapshot === lastSavedSnapshot.current) return;
     setAutosaveStatus("dirty");
     setDataConfirmed(false);
-    if (!form.markName.trim() || (mode === "review" && !form.name.trim())) return;
+    if (mode === "filing" ? form.name.trim().length < 2 : !form.markName.trim()) return;
     if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
     autosaveTimer.current = window.setTimeout(async () => {
       setAutosaveStatus("saving");
@@ -1082,30 +1113,33 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
   }, [formSnapshot]);
 
   const save = async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
-    if (!form.markName.trim()) {
+    if (mode !== "filing" && !form.markName.trim()) {
       toast({ title: "Укажите обозначение", description: "Введите название знака или короткое рабочее название.", variant: "destructive" });
       return false;
     }
-    if (mode === "review" && !form.name.trim()) {
+    if (mode === "filing" && form.name.trim().length < 2) {
       toast({ title: "Укажите заявителя", description: "Наименование организации или ФИО нужны для заявления.", variant: "destructive" });
       return false;
     }
-    if (imageMark && !markImage) {
+    if (mode !== "filing" && imageMark && !markImage) {
       toast({ title: "Загрузите изображение знака", description: "Оно обязательно для изобразительного и комбинированного обозначения.", variant: "destructive" });
       return false;
     }
-    if (soundMark && !markAudio) {
+    if (mode !== "filing" && soundMark && !markAudio) {
       toast({ title: "Загрузите аудиозапись знака", description: "Для звукового обозначения нужен файл MP3 или WAV.", variant: "destructive" });
       return false;
     }
     setSaving(true);
     try {
       if (autosaveTimer.current !== null) window.clearTimeout(autosaveTimer.current);
-      if (lastSavedSnapshot.current !== formSnapshot || autosaveStatus === "error") {
+      if (mode === "filing" || lastSavedSnapshot.current !== formSnapshot || autosaveStatus === "error") {
         setAutosaveStatus("saving");
         await persistForm();
         lastSavedSnapshot.current = formSnapshot;
         setAutosaveStatus("saved");
+      }
+      if (mode === "filing") {
+        await api.post(`/applications/${application.id}/data-confirmation`);
       }
       filingRules.reload();
       if (mode === "upload") {
@@ -1200,10 +1234,12 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
 
   return (
     <ClientPanel
-      title={mode === "upload" ? "Материалы знака" : "Проверьте знак и товары"}
+      title={mode === "filing" ? "Сведения для заявки" : mode === "upload" ? "Документы заявителя" : "Проверьте знак и товары"}
       description={mode === "upload"
         ? "Добавьте документы заявителя и сам товарный знак. Система прочитает доступные сведения и покажет их на следующем экране."
-        : "Для предварительной проверки нужны обозначение и товары или услуги. Подписанта, реквизиты и приложения можно заполнить после результата — перед подготовкой пакета."}
+        : mode === "filing"
+        ? "Укажите, кому будет принадлежать знак и кто подпишет заявление. Проверьте подставленные данные: они войдут в документы для Роспатента."
+        : "Проверьте обозначение и выберите товары или услуги. По этим данным оценим риск отказа в регистрации."}
     >
       <div className="mb-3 flex justify-end" aria-live="polite">
         {autosaveStatus !== "idle" && (
@@ -1234,7 +1270,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           </div>
         </section>
       )}
-      {mode === "upload" && <section className="mb-8 rounded-[1.3rem] border-2 border-[#0d9f9b]/25 bg-[#eef9f8] p-5 sm:p-6">
+      {mode !== "review" && <section className="mb-8 rounded-[1.3rem] border-2 border-[#0d9f9b]/25 bg-[#eef9f8] p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-3">
@@ -1291,7 +1327,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           После загрузки проверьте обновившиеся поля ниже. На следующий шаг попадут именно значения, которые вы сохраните здесь.
         </p>
       </section>}
-      <div className="space-y-6">
+      {mode !== "filing" && <div className="space-y-6">
         <FormGroup step={mode === "review" ? 1 : undefined} id="mark-data" title="О товарном знаке" hint="Проверьте обозначение, материалы и точный перечень товаров или услуг">
           <MarkedField label={<span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает написанное название. Изобразительный — картинку без текста. Комбинированный — название и изображение вместе." /></span>} source={sourceFor("mark_type", Boolean(form.markType))}>
             <Select value={form.markType} onValueChange={(value) => set("markType", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{(Object.keys(MARK_TYPE_LABELS) as MarkType[]).map((type) => <SelectItem key={type} value={type}>{MARK_TYPE_LABELS[type]}</SelectItem>)}</SelectContent></Select>
@@ -1401,12 +1437,9 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             </div>
           </details></>}
         </FormGroup>
-      </div>
-        {mode === "review" && <details className="rounded-2xl border border-[#11113f]/10 p-5">
-          <summary className="cursor-pointer font-semibold text-[#11113f]">Реквизиты для подачи · можно заполнить после проверки</summary>
-          <p className="mt-2 text-sm text-[#6d6d7d]">Эти сведения нужны для заявления и скачивания пакета. Они не определяют результат предварительной проверки знака.</p>
-          <div className="mt-6 space-y-6">
-        {mode === "review" && <FormGroup id="applicant-data" title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
+      </div>}
+        {mode === "filing" && <div className="space-y-6">
+        <FormGroup id="applicant-data" title={<span className="inline-flex items-center gap-1">О заявителе <HelpTip text="Заявитель — человек, ИП или организация, на имя которых будет зарегистрирован товарный знак. После регистрации именно заявитель станет правообладателем." /></span>} hint="Эти сведения попадут в заявление как данные правообладателя">
           <label className="grid gap-2 text-sm font-semibold">Кому будет принадлежать знак
             <select value={form.clientType} onChange={(event) => set("clientType", event.target.value)} className="h-10 rounded-md border bg-white px-3 font-normal">
               <option value="individual">Физическое лицо</option><option value="sole_proprietor">Индивидуальный предприниматель</option><option value="company">Организация</option>
@@ -1471,9 +1504,9 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               )}
             </div>
           )}
-        </FormGroup>}
+        </FormGroup>
 
-        {mode === "review" && <FormGroup step={2} id="signatory-data" title="Кто подпишет заявление" hint="Это человек, чьей подписью будет заверена подача. Для организации обычно это руководитель; представитель по доверенности указывается отдельно на следующем шаге">
+        <FormGroup id="signatory-data" title="Кто подпишет заявление" hint="Это человек, чьей подписью будет заверена подача. Для организации обычно это руководитель; представитель по доверенности указывается отдельно ниже">
             <div className="mt-4 space-y-4">
               <MarkedField label="Способ подачи" source={sourceFor("filing_method", Boolean(form.filingMethod))}>
                 <Select value={form.filingMethod} onValueChange={(value) => set("filingMethod", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="electronic">Электронно через официальный сервис</SelectItem><SelectItem value="paper">На бумаге</SelectItem></SelectContent></Select>
@@ -1493,9 +1526,9 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               <MarkedField label="Дата подписания" source={sourceFor("signature_date", Boolean(form.signatureDate))}><Input type="date" value={form.signatureDate} onChange={(event) => set("signatureDate", event.target.value)} /></MarkedField>
               <div className="rounded-lg bg-[#eef9f8] p-3 text-xs leading-relaxed text-[#315c5a]">{form.filingMethod === "electronic" ? "Рисовать подпись здесь не нужно. При отправке заявление подписывается электронной подписью в официальном сервисе Роспатента." : "Скачайте и распечатайте заявление, затем поставьте собственноручную подпись в оставленном поле. Картинка или нарисованная мышкой подпись её не заменяет."}</div>
             </div>
-        </FormGroup>}
+        </FormGroup>
 
-        {mode === "review" && <FormGroup step={3} id="representative-data" title="Кто будет вести заявку" hint="Если вы подаёте сами, дополнительные сведения не нужны. Если от вашего имени действует другой человек, укажите его здесь">
+        <FormGroup id="representative-data" title="Кто будет вести заявку" hint="Если вы подаёте сами, дополнительные сведения не нужны. Если от вашего имени действует другой человек, укажите его здесь">
           <div className="mt-4 space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <button
@@ -1586,10 +1619,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               </div>
             )}
           </div>
-        </FormGroup>}
-
-          </div>
-        </details>}
+        </FormGroup>
+        </div>}
       {mode === "review" && appId && onAnalysis && (
         <ClientCheck
           appId={appId}
@@ -1602,6 +1633,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         />
       )}
       {mode === "upload" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Перейти к проверке данных <ChevronRight className="h-4 w-4" /></Button></div>}
+      {mode === "filing" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Подтвердить сведения и перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button></div>}
     </ClientPanel>
   );
 }
@@ -2285,8 +2317,8 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
           {retryAvailable && (
             <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Обновляем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : registryResultIsPrevious ? "Обновить поиск знаков" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
           )}
-          {!incomplete && (
-            <Button className={cn("rounded-full px-6", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button>
+          {displayedRisk && (
+            <Button className={cn("rounded-full px-6", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Подготовить заявку на регистрацию <ChevronRight className="h-4 w-4" /></Button>
           )}
         </div>
       </div>
@@ -2818,7 +2850,7 @@ function ClientFilingPackage({
       analysisComplete
       openRequest={1}
       application={application}
-      onEditData={() => onGoToSection("review")}
+      onEditData={() => onGoToSection("applicant")}
       onEditClasses={() => onGoToSection("review")}
       onSaved={async () => {
         await onSaved();

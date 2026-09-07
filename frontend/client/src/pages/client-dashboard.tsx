@@ -142,7 +142,7 @@ export default function ClientDashboardPage() {
           </h1>
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
             Опишите обозначение и сферу деятельности. Подберём классы МКТУ,
-            оценим риск отказа в регистрации и сформируем комплект документов для подачи регистрации.
+            оценим риск отказа и подготовим документы для подачи заявки в Роспатент.
           </p>
           <Button
             className="mt-8 h-13 rounded-full bg-[#12aaa5] px-7 text-base text-white hover:bg-[#0d918d]"
@@ -155,7 +155,7 @@ export default function ClientDashboardPage() {
 
       <section className="grid gap-4 sm:grid-cols-3">
         {[
-          { icon: FileSearch, title: "Обозначение и деятельность", text: "Название или логотип, товары и услуги" },
+          { icon: FileSearch, title: "Обозначение и деятельность", text: <>Название или логотип,<br />товары и услуги</> },
           { icon: Sparkles, title: "Результат проверки", text: "Классы МКТУ и схожие знаки — без юридического языка" },
           { icon: ShieldCheck, title: "Подготовка к подаче", text: "Состав документов и итоговая стоимость" },
         ].map((item) => (

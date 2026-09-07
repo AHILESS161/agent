@@ -131,6 +131,10 @@ interface RiskReport {
   refresh_warnings?: Record<string, string>;
 }
 
+const hasAnalysisResult = (report: RiskReport | null) => Boolean(
+  report?.overall_risk || Object.values(report?.sections || {}).some(Boolean),
+);
+
 interface Recommendation {
   summary: string | null;
   risk_assessment: string | null;
@@ -290,7 +294,7 @@ export default function ClientApplicationPage() {
   const [analysisPending, setAnalysisPending] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
   const firstSectionRender = useRef(true);
-  const canPrepareApplication = Boolean(!filingRisk.isLoading && !filingRisk.error && filingRisk.data?.overall_risk && !analysisPending);
+  const canPrepareApplication = !filingRisk.isLoading && !filingRisk.error && hasAnalysisResult(filingRisk.data) && !analysisPending;
   const preparingApplication = journeySection(section) === "documents";
   const reloadApplication = () => {
     current.reload();
@@ -376,7 +380,7 @@ export default function ClientApplicationPage() {
               <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> {stageFor(application).label}
             </span>
             {canPrepareApplication && <button type="button" onClick={() => goToSection("applicant")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 transition-colors hover:text-white">
-              Подготовить заявку на регистрацию →
+              Перейти к подготовке к подаче →
             </button>}
           </div>
         </div>
@@ -402,7 +406,7 @@ export default function ClientApplicationPage() {
                 )}
               >
                 <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
-                <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.id === "documents" && !canPrepareApplication ? "После оценки риска" : item.hint}</span></span>
+                <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.id === "documents" && !canPrepareApplication ? "После результата проверки" : item.hint}</span></span>
               </button>
             );
           })}
@@ -411,13 +415,17 @@ export default function ClientApplicationPage() {
         <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
           <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
             {preparingApplication && !canPrepareApplication ? (
-              <ClientPanel title={filingRisk.isLoading ? "Загружаем результат проверки" : "Сначала оценим риск отказа"} description={filingRisk.error || "Подготовка заявки станет доступна после получения оценки риска. Пока проверьте обозначение и выбранные товары или услуги."}>
+              <ClientPanel title={filingRisk.isLoading ? "Загружаем результат проверки" : "Сначала запустите проверку знака"} description={filingRisk.error || "Подготовка заявки станет доступна после первого результата проверки, даже если для окончательной оценки риска потребуется дополнительная проверка."}>
                 {filingRisk.isLoading ? <Loader2 className="h-6 w-6 animate-spin text-[#0d9f9b]" /> : <div className="flex flex-wrap gap-3">
                   <Button onClick={() => goToSection("analysis")}>К результату проверки</Button>
                   {filingRisk.error && <Button variant="outline" onClick={filingRisk.reload}>Повторить загрузку</Button>}
                 </div>}
               </ClientPanel>
             ) : <>
+            {preparingApplication && filingRisk.data?.is_complete !== true && <div role="status" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              <p className="font-semibold">Проверка знака ещё не завершена</p>
+              <p className="mt-1">Можно заполнить сведения и подготовить черновик. Перед формированием полного комплекта документов потребуется завершить проверку.</p>
+            </div>}
             {preparingApplication && <nav aria-label="Подготовка к подаче" className="mb-5 flex flex-wrap gap-2">
               {([{id:"applicant", label:"Сведения для заявки"}, {id:"upload", label:"Документы заявителя"}, {id:"fees", label:"Расчёт пошлин"}, {id:"documents", label:"Комплект документов"}, {id:"response", label:"Ответ на запрос Роспатента"}] as const).map((item) => <Button key={item.id} variant={section === item.id ? "default" : "outline"} size="sm" onClick={() => goToSection(item.id)}>{item.label}</Button>)}
             </nav>}
@@ -426,7 +434,7 @@ export default function ClientApplicationPage() {
             {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => { setAnalysisPending(false); reloadApplication(); }} onReview={() => goToSection("review")} onApplication={() => goToSection("applicant")} onEditData={() => goToSection("review")} />}
             {section === "applicant" && <ClientDataForm mode="filing" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("fees")} />}
             {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => goToSection("documents")} onReview={() => goToSection("review")} />}
-            {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onGoToSection={goToSection} />}
+            {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} analysisComplete={filingRisk.data?.is_complete === true} onSaved={current.reload} onGoToSection={goToSection} />}
             {section === "response" && <OfficeActionResponse appId={appId} />}
             </>}
           </div>
@@ -2309,16 +2317,16 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
         </details>
       )}
 
-      <div className="mt-7 flex flex-col gap-3 rounded-[1.2rem] bg-[#f8f7f4] p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mt-7 flex flex-col gap-3 rounded-[1.2rem] bg-[#f8f7f4] p-5">
         <p className="max-w-2xl text-sm leading-relaxed text-[#6d6d7d]">Это предварительная проверка по доступным данным. Окончательное решение о регистрации принимает Роспатент.</p>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="rounded-full bg-white" onClick={onReview}>Изменить классы</Button>
           <Button variant="outline" className="rounded-full bg-white" onClick={onEditData}>Изменить данные</Button>
           {retryAvailable && (
             <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Обновляем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : registryResultIsPrevious ? "Обновить поиск знаков" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
           )}
-          {displayedRisk && (
-            <Button className={cn("rounded-full px-6", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Подготовить заявку на регистрацию <ChevronRight className="h-4 w-4" /></Button>
+          {hasAnalysisResult(report) && (
+            <Button className={cn("h-auto min-h-10 whitespace-normal rounded-full px-6 py-2", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Перейти к подготовке к подаче <ChevronRight className="h-4 w-4 shrink-0" /></Button>
           )}
         </div>
       </div>
@@ -2701,12 +2709,14 @@ function ClientFilingPackage({
   appId,
   application,
   client,
+  analysisComplete,
   onSaved,
   onGoToSection,
 }: {
   appId: number;
   application: Application;
   client: Client | null;
+  analysisComplete: boolean;
   onSaved: () => void | Promise<void>;
   onGoToSection: (section: Section) => void;
 }) {
@@ -2847,7 +2857,7 @@ function ClientFilingPackage({
     <>
     <ClientDraftPreview
       appId={appId}
-      analysisComplete
+      analysisComplete={analysisComplete}
       openRequest={1}
       application={application}
       onEditData={() => onGoToSection("applicant")}

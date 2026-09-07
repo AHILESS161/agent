@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import pytest
+import io
+from docx import Document
 
 from app.services import file_storage
 from app.services.file_storage import FileValidationError
@@ -16,7 +18,9 @@ from app.services.file_storage import FileValidationError
 PDF_BYTES = b"%PDF-1.4\n" + b"0" * 200
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"0" * 200
 JPEG_BYTES = b"\xff\xd8\xff\xe0" + b"0" * 200
-DOCX_BYTES = b"PK\x03\x04" + b"word/document.xml" + b"0" * 200
+_docx_buffer = io.BytesIO()
+Document().save(_docx_buffer)
+DOCX_BYTES = _docx_buffer.getvalue()
 TXT_BYTES = "Выписка из ЕГРЮЛ".encode("utf-8")
 MP3_BYTES = b"ID3" + b"\x04\x00\x00" + b"0" * 200
 WAV_BYTES = b"RIFF" + (200).to_bytes(4, "little") + b"WAVEfmt " + b"0" * 200

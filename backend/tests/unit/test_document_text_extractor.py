@@ -47,6 +47,7 @@ def test_ocr_reconstructs_lines_and_calculates_confidence(monkeypatch):
 
 def test_scanned_pdf_page_uses_ocr(monkeypatch):
     page = SimpleNamespace(
+        width=595, height=842,
         extract_text=lambda: "",
         to_image=lambda **_kwargs: SimpleNamespace(original=object()),
     )
@@ -88,6 +89,7 @@ def test_digital_pdf_does_not_run_ocr(monkeypatch):
 
 def test_short_text_layer_survives_unavailable_ocr(monkeypatch):
     page = SimpleNamespace(
+        width=595, height=842,
         extract_text=lambda: "Короткая подпись",
         to_image=lambda **_kwargs: SimpleNamespace(original=object()),
     )

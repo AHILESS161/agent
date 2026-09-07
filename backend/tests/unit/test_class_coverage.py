@@ -10,7 +10,11 @@ from app.agents.classification.rag_class_analyzer import (
     SYSTEM_PROMPT,
 )
 from app.infrastructure.rag.store import StoredChunk
-from app.services.class_analysis import _apply_service_intent, _service_intent
+from app.services.class_analysis import (
+    _apply_service_intent,
+    _apply_trade_product_intent,
+    _service_intent,
+)
 from app.agents.classification.rag_class_analyzer import ClassSuggestion
 
 
@@ -85,9 +89,11 @@ class TestTradeServicesRequireExplicitActivity:
 
 
 class TestPromptAsksForPrecision:
-    def test_prompt_rejects_speculative_classes(self):
-        assert "только классы" in SYSTEM_PROMPT
-        assert "на всякий случай" in SYSTEM_PROMPT
+    def test_prompt_allows_only_grounded_coverage_candidates(self):
+        prompt = " ".join(SYSTEM_PROMPT.split())
+        assert "разумно следует ещё один объект охраны" in prompt
+        assert "конкретной фразой пользователя" in prompt
+        assert "Не добавляй случайные далёкие направления" in prompt
 
     def test_prompt_mentions_online_trade(self):
         assert "интернет" in SYSTEM_PROMPT.lower()
@@ -134,3 +140,30 @@ class TestServiceIntentCorrection:
         )
 
         assert {item.class_number for item in corrected} == {9, 37}
+
+
+class TestTradeProductIntent:
+    def test_toy_sales_offer_store_and_product_scenarios(self):
+        trade = ClassSuggestion(
+            class_number=35,
+            rationale="Продажа товаров относится к классу 35, а не 28.",
+            goods_services=["продажа детских игрушек"],
+            confidence=0.9,
+        )
+
+        corrected = _apply_trade_product_intent(
+            [trade],
+            "Продажа детских игрушек",
+        )
+
+        by_number = {item.class_number: item for item in corrected}
+        assert set(by_number) == {28, 35}
+        assert by_number[35].category == "primary"
+        assert by_number[28].category == "borderline"
+        assert "упаковку" in by_number[28].rationale
+        assert "не сами игрушки" in by_number[35].rationale
+
+    def test_toy_product_is_not_added_without_trade_activity(self):
+        corrected = _apply_trade_product_intent([], "ремонт детских игрушек")
+
+        assert corrected == []

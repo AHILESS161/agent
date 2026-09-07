@@ -32,7 +32,11 @@ async def release_unreferenced_blob(
     session: AsyncSession,
     stored_path: str,
 ) -> bool:
-    """Unlink ``stored_path`` only when no database row still references it."""
+    """Defer physical deletion to offline GC after committed references are checked.
+
+    Unlinking here can lose a document on rollback or race an uncommitted upload.
+    The maintenance GC runs with API and worker stopped, with a retention period.
+    """
 
     remaining = await session.scalar(
         select(func.count(SourceDocument.id)).where(
@@ -41,7 +45,7 @@ async def release_unreferenced_blob(
     )
     if remaining:
         return False
-    return file_storage.delete_file(stored_path)
+    return False
 
 
 async def release_unreferenced_blobs(

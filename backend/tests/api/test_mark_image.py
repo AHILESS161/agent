@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from unittest.mock import AsyncMock
 
 import pytest
 from PIL import Image
@@ -52,9 +53,9 @@ async def mark_case(client, api_user_factory, monkeypatch):
         headers=headers,
     ).json()
     monkeypatch.setattr(
-        documents,
-        "process_mark_image",
-        lambda content, filename: MarkImageResult(
+        documents.document_sandbox,
+        "inspect_image",
+        AsyncMock(return_value=MarkImageResult(
             width=120,
             height=80,
             image_format="PNG",
@@ -64,7 +65,7 @@ async def mark_case(client, api_user_factory, monkeypatch):
             recognized_text="РЕГИСТР",
             ocr_confidence=0.91,
             ocr_warning=None,
-        ),
+        )),
     )
     return headers, application["id"]
 

@@ -12,7 +12,7 @@
 from __future__ import annotations
 
 import time
-from collections import defaultdict, deque
+from collections import deque
 from dataclasses import dataclass
 
 from fastapi import Request, status
@@ -38,6 +38,8 @@ RULES: dict[str, Rule] = {
     # Подбор пароля — самый чувствительный сценарий.
     "/api/v1/auth/login": Rule(limit=10, window=60),
     "/api/v1/auth/register": Rule(limit=5, window=300),
+    "/api/v1/auth/signup/request": Rule(limit=5, window=300),
+    "/api/v1/auth/signup/confirm": Rule(limit=10, window=300),
     # Загрузка файлов: защита от исчерпания дискового пространства.
     "/api/v1/applications": Rule(limit=120, window=60),
     "/api/v1/source-documents": Rule(limit=120, window=60),
@@ -49,13 +51,26 @@ DEFAULT_RULE = Rule(limit=300, window=60)
 class RateLimiter:
     """Счётчик запросов по ключу (скользящее окно)."""
 
-    def __init__(self) -> None:
-        self._hits: dict[str, deque[float]] = defaultdict(deque)
+    def __init__(self, max_keys: int = 10000) -> None:
+        self._hits: dict[str, deque[float]] = {}
+        self._expires: dict[str, float] = {}
+        self._max_keys = max_keys
+        self._next_cleanup = 0.0
 
     def check(self, key: str, rule: Rule, now: float | None = None) -> tuple[bool, int]:
         """Вернуть ``(разрешено, сколько секунд ждать)``."""
         now = now if now is not None else time.monotonic()
+        if now >= self._next_cleanup or len(self._hits) >= self._max_keys:
+            for expired in [k for k, end in self._expires.items() if end <= now]:
+                self._hits.pop(expired, None)
+                self._expires.pop(expired, None)
+            self._next_cleanup = now + 30
+        if key not in self._hits:
+            if len(self._hits) >= self._max_keys:
+                return False, 30  # fail closed; never evict an active quota
+            self._hits[key] = deque()
         hits = self._hits[key]
+        self._expires[key] = now + rule.window
 
         cutoff = now - rule.window
         while hits and hits[0] <= cutoff:
@@ -70,6 +85,8 @@ class RateLimiter:
 
     def reset(self) -> None:
         self._hits.clear()
+        self._expires.clear()
+        self._next_cleanup = 0.0
 
 
 _limiter = RateLimiter()
@@ -89,9 +106,8 @@ def _client_key(request: Request) -> str:
     За обратным прокси и туннелем реальный адрес приходит
     в X-Forwarded-For.
     """
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # Uvicorn resolves forwarded headers only from its configured trusted proxy.
+    # Never parse an untrusted header a second time in application code.
     return request.client.host if request.client else "unknown"
 
 
@@ -108,8 +124,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         rule = _rule_for(request.url.path)
-        key = f"{_client_key(request)}:{request.url.path}"
-        allowed, retry_after = _limiter.check(key, rule)
+        path = request.url.path
+        group = next((p for p in sorted(RULES, key=len, reverse=True)
+                      if path == p or path.startswith(p + "/")), "other")
+        client = _client_key(request)
+        allowed, retry_after = _limiter.check(f"{client}:all", DEFAULT_RULE)
+        if allowed:
+            allowed, retry_after = _limiter.check(f"{client}:{group}", rule)
 
         if not allowed:
             logger.warning(

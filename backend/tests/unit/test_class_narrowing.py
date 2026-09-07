@@ -17,6 +17,14 @@ class FakeProvider:
         return self.result
 
 
+class FailingProvider:
+    def __init__(self, fallback):
+        self.fallback = fallback
+
+    async def generate_structured(self, **_kwargs):
+        raise TimeoutError("primary provider timeout")
+
+
 @pytest.mark.asyncio
 async def test_model_can_only_select_exact_official_positions():
     candidates = (
@@ -71,3 +79,24 @@ def test_apply_keeps_official_order_from_confirmed_preview():
         ["ремонт телефонов", "ремонт компьютеров", "ремонт телефонов"],
         ("ремонт компьютеров", "ремонт телефонов"),
     ) == ("ремонт телефонов", "ремонт компьютеров")
+
+
+@pytest.mark.asyncio
+async def test_transport_failure_uses_configured_fallback():
+    result = await narrow_class_items(
+        FailingProvider(
+            FakeProvider(
+                {
+                    "selected_indices": [2],
+                    "rationale": "Резервная модель выбрала точную позицию.",
+                    "assumptions": [],
+                }
+            )
+        ),
+        class_number=37,
+        business_description="Ремонтируем телефоны",
+        goods_services="ремонт телефонов",
+        candidates=("строительство зданий", "ремонт телефонов"),
+    )
+
+    assert result.selected_items == ("ремонт телефонов",)

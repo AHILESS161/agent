@@ -33,7 +33,8 @@ from app.infrastructure.database.models import (
     UserRole,
 )
 from app.infrastructure.database.session import get_session
-from app.services import file_storage, inbound
+from app.services import file_storage
+from app.services import document_sandbox, inbound
 from app.services.document_text_extractor import (
     NoTextLayerError,
     UnsupportedDocumentType,
@@ -263,10 +264,12 @@ async def add_attachment(
     _require_write_access(current_user)
     event = await _load_event(session, event_id)
 
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     filename = file_storage.normalize_upload_filename(file.filename or "upload")
 
     try:
+        from app.services.resource_limits import check_storage_quota
+        await check_storage_quota(session, current_user.id, len(content))
         stored = file_storage.save_upload(content, filename)
     except file_storage.FileValidationError as exc:
         await inbound.attach_document(
@@ -301,7 +304,7 @@ async def add_attachment(
     await session.flush()
 
     try:
-        pages = extract_pages_from_bytes(content, filename)
+        pages = await document_sandbox.extract_pages(content, filename)
     except (NoTextLayerError, UnsupportedDocumentType) as exc:
         reason = str(exc)
         pages = None

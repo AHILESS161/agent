@@ -10,6 +10,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user, require_roles
 from app.infrastructure.database.models import (
     AgentRun,
@@ -177,11 +178,7 @@ from app.api.dependencies import (  # noqa: E402
 
 def _is_owner(app: TrademarkApplicationDraft, user: User) -> bool:
     """Ведёт ли пользователь это дело."""
-    return user.id in {
-        app.created_by_user_id,
-        app.assigned_lawyer_id,
-        app.assigned_manager_id,
-    }
+    return has_case_access(app, user)
 
 
 def _ensure_access(app: TrademarkApplicationDraft, user: User) -> None:
@@ -191,6 +188,20 @@ def _ensure_access(app: TrademarkApplicationDraft, user: User) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нет доступа к этой заявке",
         )
+
+
+async def _validate_assignments(session: AsyncSession, user: User, values: dict) -> None:
+    for field, role in (("assigned_lawyer_id", UserRole.lawyer), ("assigned_manager_id", UserRole.manager)):
+        if field not in values:
+            continue
+        if user.role != UserRole.admin:
+            if values[field] is not None:
+                raise HTTPException(403, "Назначение сотрудников доступно администратору")
+            continue
+        if values[field] is not None:
+            assigned = await session.get(User, values[field])
+            if assigned is None or not assigned.is_active or assigned.role != role:
+                raise HTTPException(422, "Сотрудник должен быть активным и иметь соответствующую роль")
 
 
 def _visible_to(query, user: User):
@@ -205,8 +216,8 @@ def _visible_to(query, user: User):
     return query.where(
         or_(
             TrademarkApplicationDraft.created_by_user_id == user.id,
-            TrademarkApplicationDraft.assigned_lawyer_id == user.id,
-            TrademarkApplicationDraft.assigned_manager_id == user.id,
+            (TrademarkApplicationDraft.assigned_lawyer_id == user.id) if user.role == UserRole.lawyer else False,
+            (TrademarkApplicationDraft.assigned_manager_id == user.id) if user.role == UserRole.manager else False,
         )
     )
 
@@ -340,6 +351,14 @@ async def create_application(
     current_user: User = Depends(get_current_user),
 ) -> ApplicationResponse:
     """Create a new application draft."""
+    from app.services.resource_limits import check_application_quota
+    await check_application_quota(session, current_user.id)
+    client = await session.get(Client, payload.client_id)
+    if client is None:
+        raise HTTPException(404, "Заявитель не найден")
+    if current_user.role == UserRole.client and client.created_by_user_id != current_user.id:
+        raise HTTPException(403, "Нет доступа к заявителю")
+    await _validate_assignments(session, current_user, payload.model_dump(exclude_unset=True))
     if payload.representative_id is not None:
         representative = (
             await session.execute(
@@ -467,6 +486,9 @@ async def update_application(
     _ensure_access(app, current_user)
 
     old_val = {"status": app.status.value}
+    if app.status in {ApplicationStatus.submitted, ApplicationStatus.closed}:
+        raise HTTPException(409, "Поданное или закрытое дело нельзя редактировать общим запросом")
+    await _validate_assignments(session, current_user, payload.model_dump(exclude_unset=True))
     update_values = payload.model_dump(exclude_none=True)
     if "representative_id" in payload.model_fields_set:
         update_values["representative_id"] = payload.representative_id
@@ -1847,7 +1869,22 @@ async def transition_status(
     current_user: User = Depends(get_current_user),
 ) -> ApplicationResponse:
     """Transition an application to a new status (validates via state machine)."""
-    app = await _get_app_or_404(application_id, session)
+    app = (await session.scalars(select(TrademarkApplicationDraft)
+           .where(TrademarkApplicationDraft.id == application_id).with_for_update()
+           .execution_options(populate_existing=True))).one()
+    _ensure_access(app, current_user)
+    if payload.expected_status is None or app.status != payload.expected_status:
+        raise HTTPException(409, "Передайте актуальный expected_status и повторите переход")
+    manual = {ApplicationStatus.draft, ApplicationStatus.info_requested,
+              ApplicationStatus.info_received, ApplicationStatus.closed}
+    if payload.new_status not in manual:
+        raise HTTPException(409, "Этот статус устанавливается только профильной операцией")
+    if current_user.role == UserRole.client and payload.new_status not in {
+        ApplicationStatus.info_received, ApplicationStatus.closed
+    }:
+        raise HTTPException(403, "Клиент не может назначать служебные статусы")
+    if app.status == ApplicationStatus.submitted and current_user.role == UserRole.client:
+        raise HTTPException(403, "Закрытие поданного дела доступно специалисту")
 
     sm = ApplicationStateMachine(session)
     await sm.transition(

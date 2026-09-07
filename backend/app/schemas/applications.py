@@ -142,6 +142,7 @@ class ApplicationStatusUpdate(BaseModel):
     """Payload for transitioning an application to a new status."""
 
     new_status: ApplicationStatus
+    expected_status: Optional[ApplicationStatus] = None
     reason: Optional[str] = None
 
 

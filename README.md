@@ -191,6 +191,7 @@ cd backend
 | [`docs/current-state.md`](docs/current-state.md) | единая точка правды о текущем продукте |
 | [`docs/business-go-to-market.md`](docs/business-go-to-market.md) | бизнес-модель и план продвижения |
 | [`docs/demo-deployment.md`](docs/demo-deployment.md) | запуск, туннель, чек-лист безопасности |
+| [`docs/registr-ai-deployment.md`](docs/registr-ai-deployment.md) | действующий стенд registr-ai.ru, обновление и диагностика |
 | [`docs/production-architecture.md`](docs/production-architecture.md) | production Docker-контур, обновление, бэкапы и масштабирование |
 | [`docs/testing.md`](docs/testing.md) | команды и покрытие |
 | [`docs/roadmap.md`](docs/roadmap.md) | план и честные ограничения |

@@ -58,6 +58,10 @@ interface ClassSuggestion {
   class_description: string | null;
   rationale: string | null;
   approved: boolean | null;
+  category?: "primary" | "secondary" | "borderline" | null;
+  risks_if_omitted?: string | null;
+  risks_if_included?: string | null;
+  confidence?: number | null;
 }
 
 interface ClassNarrowingPreview {
@@ -235,6 +239,15 @@ const sectionFromLocation = (location: string): Section | null => {
   return SECTION_META.some((item) => item.id === value) ? value as Section : null;
 };
 
+const savedSection = (applicationId: number): Section | null => {
+  try {
+    const value = localStorage.getItem(`registr:application-step:${applicationId}`);
+    return SECTION_META.some((item) => item.id === value) ? value as Section : null;
+  } catch {
+    return null;
+  }
+};
+
 function messageOf(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
 }
@@ -260,7 +273,7 @@ export default function ClientApplicationPage() {
   const appId = Number(params.id);
   const [, setLocation] = useLocation();
   const current = useCase(appId);
-  const [section, setSection] = useState<Section>(() => sectionFromLocation(window.location.href) || "upload");
+  const [section, setSection] = useState<Section>(() => sectionFromLocation(window.location.href) || savedSection(appId) || "upload");
   const [transitionDirection, setTransitionDirection] = useState<"forward" | "backward">("forward");
   const [analysisPending, setAnalysisPending] = useState(false);
   const stageRef = useRef<HTMLDivElement>(null);
@@ -272,6 +285,7 @@ export default function ClientApplicationPage() {
     const nextIndex = SECTION_META.findIndex((item) => item.id === next);
     setTransitionDirection(nextIndex >= currentIndex ? "forward" : "backward");
     setSection(next);
+    try { localStorage.setItem(`registr:application-step:${appId}`, next); } catch { /* optional browser storage */ }
     setLocation(`/applications/${appId}?step=${next}`);
   };
 
@@ -279,6 +293,7 @@ export default function ClientApplicationPage() {
     const restoreFromBrowserHistory = () => {
       const requested = sectionFromLocation(window.location.href);
       if (!requested) return;
+      try { localStorage.setItem(`registr:application-step:${appId}`, requested); } catch { /* optional browser storage */ }
       setSection((currentSection) => {
         if (requested === currentSection) return currentSection;
         const currentIndex = SECTION_META.findIndex((item) => item.id === currentSection);
@@ -289,7 +304,7 @@ export default function ClientApplicationPage() {
     };
     window.addEventListener("popstate", restoreFromBrowserHistory);
     return () => window.removeEventListener("popstate", restoreFromBrowserHistory);
-  }, []);
+  }, [appId]);
 
   useEffect(() => {
     if (firstSectionRender.current) {
@@ -341,34 +356,40 @@ export default function ClientApplicationPage() {
         </div>
       </section>
 
-      <nav className="grid grid-cols-2 gap-2 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-2 lg:grid-cols-6">
-        {SECTION_META.map((item, index) => {
-          const active = section === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => goToSection(item.id)}
-              className={cn(
-                "flex min-h-14 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition-[background-color,color,transform,box-shadow] duration-300 ease-out active:scale-[0.98]",
-                active ? "bg-[#e9f7f6] text-[#087c78] shadow-[inset_0_0_0_1px_rgba(13,159,155,0.12)]" : "text-[#66667a] hover:bg-[#f6f5f1] hover:text-[#11113f]",
-              )}
-            >
-              <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
-              {item.label}
-            </button>
-          );
-        })}
-      </nav>
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[15.5rem_minmax(0,1fr)] xl:items-start xl:gap-7">
+        <nav
+          aria-label="Этапы оформления заявки"
+          className="sticky top-[5.25rem] z-20 -mx-1 flex gap-2 overflow-x-auto rounded-[1.3rem] border border-[#11113f]/10 bg-white/95 p-2 shadow-[0_10px_30px_rgba(21,21,55,0.08)] backdrop-blur xl:top-24 xl:mx-0 xl:grid xl:grid-cols-1 xl:gap-1 xl:overflow-visible xl:p-3"
+        >
+          {SECTION_META.map((item, index) => {
+            const active = section === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                aria-current={active ? "step" : undefined}
+                onClick={() => goToSection(item.id)}
+                className={cn(
+                  "flex min-h-14 min-w-[10.5rem] shrink-0 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition-[background-color,color,transform,box-shadow] duration-300 ease-out active:scale-[0.98] xl:min-w-0 xl:w-full",
+                  active ? "bg-[#e9f7f6] text-[#087c78] shadow-[inset_0_0_0_1px_rgba(13,159,155,0.16)]" : "text-[#66667a] hover:bg-[#f6f5f1] hover:text-[#11113f]",
+                )}
+              >
+                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
+                <span className="leading-snug">{item.label}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-      <div ref={stageRef} className="min-w-0 scroll-mt-5 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 lg:p-10">
-        <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
-          {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("review")} />}
-          {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); goToSection("analysis"); }} />}
-          {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => setAnalysisPending(false)} onReview={() => goToSection("review")} onApplication={() => goToSection("fees")} onEditData={() => goToSection("review")} />}
-          {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => goToSection("documents")} onReview={() => goToSection("review")} />}
-          {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onGoToSection={goToSection} />}
-          {section === "response" && <OfficeActionResponse appId={appId} />}
+        <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
+          <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
+            {section === "upload" && <ClientDataForm mode="upload" application={application} client={client} onSaved={current.reload} onNext={() => goToSection("review")} />}
+            {section === "review" && <ClientDataForm mode="review" application={application} client={client} appId={appId} onSaved={current.reload} onAnalysis={() => { setAnalysisPending(true); goToSection("analysis"); }} />}
+            {section === "analysis" && <ClientResult application={application} appId={appId} analysisPending={analysisPending} onAnalysisComplete={() => setAnalysisPending(false)} onReview={() => goToSection("review")} onApplication={() => goToSection("fees")} onEditData={() => goToSection("review")} />}
+            {section === "fees" && <ClientFeeEstimate appId={appId} onDocuments={() => goToSection("documents")} onReview={() => goToSection("review")} />}
+            {section === "documents" && <ClientFilingPackage appId={appId} application={application} client={client} onSaved={current.reload} onGoToSection={goToSection} />}
+            {section === "response" && <OfficeActionResponse appId={appId} />}
+          </div>
         </div>
       </div>
     </div>
@@ -1042,7 +1063,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
     };
   }, [formSnapshot]);
 
-  const save = async (): Promise<boolean> => {
+  const save = async ({ silent = false }: { silent?: boolean } = {}): Promise<boolean> => {
     if (!form.markName.trim()) {
       toast({ title: "Укажите обозначение", description: "Введите название знака или короткое рабочее название.", variant: "destructive" });
       return false;
@@ -1107,7 +1128,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         onNext?.();
         return true;
       }
-      toast({ title: "Данные сохранены" });
+      if (!silent) toast({ title: "Данные сохранены" });
       await onSaved();
       onNext?.();
       return true;
@@ -1585,7 +1606,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         <ClientCheck
           appId={appId}
           onAnalysis={onAnalysis}
-          beforeAction={save}
+          beforeAction={() => save({ silent: true })}
           dataConfirmed={dataConfirmed}
           confirmingData={confirmingData}
           onConfirmData={confirmReviewedData}
@@ -1639,15 +1660,15 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
   const [preparing, setPreparing] = useState(false);
   const [decidingClassId, setDecidingClassId] = useState<number | null>(null);
   const [recalculatingClasses, setRecalculatingClasses] = useState(false);
+  const [classRecalculationStage, setClassRecalculationStage] = useState<"saving" | "analyzing" | null>(null);
   const [editingClassIds, setEditingClassIds] = useState<Set<number>>(new Set());
-  const [narrowingClassId, setNarrowingClassId] = useState<number | null>(null);
-  const [narrowingPreviews, setNarrowingPreviews] = useState<Record<number, ClassNarrowingPreview>>({});
+  const [narrowingClassIds, setNarrowingClassIds] = useState<Set<number>>(new Set());
   const [phase, setPhase] = useState(0);
 
   const phases = [
     "Определяем подходящие классы товаров и услуг",
-    "Ищем сходные товарные знаки и заявки",
     "Проверяем возможные основания для отказа",
+    "Ищем сходные товарные знаки и заявки",
     "Собираем понятный итог и рекомендации",
   ];
 
@@ -1660,15 +1681,15 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
     return () => window.clearInterval(timer);
   }, [running]);
 
-  const load = async (autoSuggest = true) => {
-    setLoading(true);
+  const load = async (autoSuggest = true, showLoading = true) => {
+    if (showLoading) setLoading(true);
     const classData = await api.get<{ suggestions: ClassSuggestion[] }>(`/applications/${appId}/classes`).catch(() => ({ suggestions: [] }));
     if (autoSuggest && classData.suggestions.length === 0) {
       await api.post(`/applications/${appId}/nice-classes/suggest`).catch(() => undefined);
-      return load(false);
+      return load(false, showLoading);
     }
     setClasses(classData.suggestions);
-    setLoading(false);
+    if (showLoading) setLoading(false);
   };
   useEffect(() => {
     if (initialLoadStarted.current) return;
@@ -1680,62 +1701,48 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
     setDecidingClassId(item.id);
     const payload: { suggestion_id: number; approved: boolean; class_description?: string | null } = { suggestion_id: item.id, approved };
     if (editingClassIds.has(item.id)) payload.class_description = item.class_description;
-    try { await api.put(`/applications/${appId}/classes/${item.id}/approve`, payload); setEditingClassIds((current) => { const next = new Set(current); next.delete(item.id); return next; }); onDataChange(); await load(); }
+    try { await api.put(`/applications/${appId}/classes/${item.id}/approve`, payload); setEditingClassIds((current) => { const next = new Set(current); next.delete(item.id); return next; }); onDataChange(); await load(false, false); }
     catch (error) { toast({ title: "Не удалось сохранить выбор", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" }); }
     finally { setDecidingClassId(null); }
   };
 
-  const previewNarrowing = async (item: ClassSuggestion) => {
-    setNarrowingClassId(item.id);
+  const narrowClass = async (item: ClassSuggestion) => {
+    setNarrowingClassIds((current) => new Set(current).add(item.id));
     try {
       const preview = await api.post<ClassNarrowingPreview>(
         `/applications/${appId}/classes/${item.id}/narrow`,
         {},
       );
-      setNarrowingPreviews((current) => ({ ...current, [item.id]: preview }));
-    } catch (error) {
-      toast({
-        title: "Не удалось сузить перечень",
-        description: messageOf(error, "Полный перечень не изменён. Попробуйте ещё раз."),
-        variant: "destructive",
-      });
-    } finally {
-      setNarrowingClassId(null);
-    }
-  };
-
-  const applyNarrowing = async (item: ClassSuggestion, preview: ClassNarrowingPreview) => {
-    setNarrowingClassId(item.id);
-    try {
       await api.post(
         `/applications/${appId}/classes/${item.id}/narrow/apply`,
         { selected_items: preview.selected_items },
       );
-      setNarrowingPreviews((current) => {
-        const next = { ...current };
-        delete next[item.id];
-        return next;
-      });
       onDataChange();
-      await load();
+      await load(false, false);
       toast({
-        title: "Перечень сокращён",
-        description: `Оставлено ${preview.selected_count} из ${preview.source_count} официальных позиций. Проверьте список и подтвердите класс.`,
+        title: `Перечень сокращён: ${preview.source_count} → ${preview.selected_count}`,
+        description: `Новый перечень сохранён. Предварительная доплата уменьшилась на ${rubles((Math.max(0, preview.source_count - 10) - Math.max(0, preview.selected_count - 10)) * 500)}.`,
       });
     } catch (error) {
       toast({
-        title: "Не удалось применить перечень",
-        description: messageOf(error, "Исходный перечень не изменён."),
+        title: `Не удалось сузить перечень класса ${item.class_number}`,
+        description: messageOf(error, "Полный перечень не изменён. Повторите попытку для этого класса."),
         variant: "destructive",
       });
     } finally {
-      setNarrowingClassId(null);
+      setNarrowingClassIds((current) => {
+        const next = new Set(current);
+        next.delete(item.id);
+        return next;
+      });
     }
   };
 
   const recalculateClasses = async () => {
     setRecalculatingClasses(true);
-    if (!(await beforeAction())) { setRecalculatingClasses(false); return; }
+    setClassRecalculationStage("saving");
+    if (!(await beforeAction())) { setRecalculatingClasses(false); setClassRecalculationStage(null); return; }
+    setClassRecalculationStage("analyzing");
     try {
       const result = await api.post<{
         status: string;
@@ -1743,7 +1750,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
         reason?: string;
       }>(`/applications/${appId}/nice-classes/suggest?replace_all=true`);
       onDataChange();
-      await load(false);
+      await load(false, false);
       toast({
         title: result.status === "ok" ? "Классы подобраны моделью" : "Использован справочник МКТУ",
         description: result.status === "ok"
@@ -1758,21 +1765,40 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
       });
     } finally {
       setRecalculatingClasses(false);
+      setClassRecalculationStage(null);
     }
   };
 
   const run = async () => {
     setPreparing(true);
     if (!(await beforeAction())) { setPreparing(false); return; }
-    setPreparing(false);
-    setRunning(true);
     try {
+      // One clear decision starts the whole workflow.  Classes which the user
+      // has not explicitly rejected are included and persisted; the same
+      // action confirms the reviewed data before the background pipeline is
+      // queued.
+      const classesToInclude = classes.filter((item) => item.approved !== false);
+      if (classesToInclude.length === 0) {
+        throw new Error("Выберите хотя бы один класс товаров или услуг");
+      }
+      await Promise.all(classesToInclude
+        .filter((item) => item.approved !== true || editingClassIds.has(item.id))
+        .map((item) => api.put(`/applications/${appId}/classes/${item.id}/approve`, {
+          suggestion_id: item.id,
+          approved: true,
+          ...(editingClassIds.has(item.id) ? { class_description: item.class_description } : {}),
+        })));
+      if (!dataConfirmed) {
+        await api.post(`/applications/${appId}/data-confirmation`);
+      }
+      setPreparing(false);
+      setRunning(true);
       await api.post<AnalysisJob>(`/applications/${appId}/full-analysis/jobs`, { retry_incomplete_only: false });
       onAnalysis();
-      toast({ title: "Проверка началась", description: "Открылся экран с ходом анализа. Его можно безопасно покинуть и вернуться позже." });
+      toast({ title: "Полная проверка началась", description: "Само обозначение и похожие знаки будут проверены автоматически. Дополнительных нажатий не требуется." });
     }
-    catch (error) { toast({ title: "Проверка не выполнена", description: messageOf(error, "Попробуйте ещё раз"), variant: "destructive" }); }
-    finally { setRunning(false); }
+    catch (error) { toast({ title: "Проверка не выполнена", description: messageOf(error, error instanceof Error ? error.message : "Попробуйте ещё раз"), variant: "destructive" }); }
+    finally { setPreparing(false); setRunning(false); }
   };
 
   if (loading) return <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
@@ -1780,9 +1806,12 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
     <div className="flex min-h-40 items-center justify-center rounded-[1.2rem] border border-[#11113f]/10 bg-white text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем предложенные классы…</div>
   </section>;
 
-  const approved = classes.filter((item) => item.approved === true).length;
+  const included = classes.filter((item) => item.approved !== false).length;
   const hasPendingClasses = classes.some((item) => item.approved === null);
-  const usedCatalogFallback = classes.some((item) => item.rationale?.startsWith("Справочник МКТУ:"));
+  const usedCatalogFallback = classes.some((item) => item.confidence === 0.55);
+  const narrowingClassNumbers = classes
+    .filter((item) => narrowingClassIds.has(item.id))
+    .map((item) => item.class_number);
 
   return (
     <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
@@ -1793,12 +1822,12 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="inline-flex items-center gap-1 font-semibold">Предложенные классы <HelpTip text="МКТУ — международный справочник из 45 классов. Классы 1–34 относятся к товарам, 35–45 — к услугам. Правовая охрана действует в отношении товаров и услуг, перечисленных в заявке, поэтому важно правильно выбрать направления работы." /></h4>
             <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">Выбрано: {approved}</Badge>
+              <Badge variant="outline">Будет включено: {included}</Badge>
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
-                disabled={recalculatingClasses}
+                disabled={recalculatingClasses || narrowingClassIds.size > 0}
                 onClick={() => void recalculateClasses()}
                 className="rounded-full"
                 data-testid="button-recalculate-classes"
@@ -1813,6 +1842,20 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
           <p className="mt-2 rounded-lg bg-[#f8f7f4] px-3 py-2 text-xs leading-relaxed text-[#5f6072]">
             Изменили документы, описание бизнеса или перечень товаров? Нажмите «Подобрать заново». Прежние классы будут удалены, а список сформируется заново по актуальным данным.
           </p>
+          {classRecalculationStage && <div className="mt-3 overflow-hidden rounded-xl border border-[#0d9f9b]/35 bg-[#eef9f8] p-4" role="status" aria-live="polite">
+            <div className="flex items-start gap-3">
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#0d8f8b]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-[#11113f]">{classRecalculationStage === "saving" ? "Сохраняем актуальные данные…" : "Подбираем классы заново…"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#526866]">{classRecalculationStage === "saving" ? "После сохранения модель автоматически начнёт новый подбор." : "Модель анализирует описание и официальный справочник МКТУ. Обычно это занимает 30–90 секунд; список обновится сам."}</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#0d9f9b]/15"><div className="h-full w-1/2 animate-pulse rounded-full bg-[#0d9f9b]" /></div>
+              </div>
+            </div>
+          </div>}
+          {narrowingClassNumbers.length > 0 && <div className="mt-3 flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950" role="status" aria-live="polite">
+            <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-sky-700" />
+            <div><p className="font-semibold">Сужаем перечни классов: {narrowingClassNumbers.join(", ")}</p><p className="mt-1 text-xs leading-relaxed text-sky-800">Каждый класс обрабатывается отдельно. Можно запустить другой — текущий запрос не остановится, а карточки обновятся автоматически.</p></div>
+          </div>}
           {usedCatalogFallback && <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p><span className="font-semibold">Языковая модель не дала надёжного результата.</span> Эти варианты подобраны по официальному справочнику и встроенным правилам. Обязательно проверьте их перед анализом.</p></div>}
           <div className="mt-5 space-y-3">
             {classes.length === 0 ? (
@@ -1822,30 +1865,14 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
               const itemCount = description ? description.split(";").filter((part) => part.trim()).length : 0;
               const isEditing = editingClassIds.has(item.id);
               const isFullList = description.length > 700 || itemCount > 12;
-              const narrowingPreview = narrowingPreviews[item.id];
-              const isNarrowing = narrowingClassId === item.id;
+              const isNarrowing = narrowingClassIds.has(item.id);
               return (
-              <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-amber-200 bg-amber-50")}>
+              <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-[#0d9f9b]/35 bg-[#eef9f8]")}>
                 <div className="flex flex-col gap-4">
                   <div>
-                    <p className="font-semibold">Что будет защищено в классе {item.class_number}</p>
+                    <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">Что будет защищено в классе {item.class_number}</p><Badge variant="outline" className={cn("bg-white", item.category === "borderline" ? "border-amber-300 text-amber-800" : "border-emerald-200 text-emerald-800")}>{item.category === "borderline" ? "Стоит рассмотреть" : item.category === "secondary" ? "Дополнительный" : "Основной"}</Badge></div>
                     <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Охрана будет действовать только для позиций из подтверждённого перечня.</p>
-                    {narrowingPreview ? <div className="mt-3 rounded-xl border-2 border-[#0d9f9b]/35 bg-white p-4 shadow-sm">
-                      <div className="flex items-start gap-3">
-                        <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#0d9f9b]/10 text-[#0b7774]"><Sparkles className="h-4 w-4" /></span>
-                        <div>
-                          <p className="font-semibold text-[#11113f]">Модель предлагает оставить {narrowingPreview.selected_count} из {narrowingPreview.source_count} позиций</p>
-                          <p className="mt-1 text-xs leading-relaxed text-[#5f6072]">Это предварительный подбор по описанию вашей деятельности. Проверьте его: после применения удалённые позиции не войдут в заявку.</p>
-                        </div>
-                      </div>
-                      {narrowingPreview.rationale && <p className="mt-3 rounded-lg bg-[#edf9f8] px-3 py-2 text-xs leading-relaxed text-[#315f5d]"><span className="font-semibold">Почему выбраны эти позиции:</span> {narrowingPreview.rationale}</p>}
-                      <details open className="mt-3 text-xs text-[#4f5063]"><summary className="cursor-pointer font-semibold text-[#0d8f8b]">Проверить предложенный перечень</summary><div className="mt-2 max-h-52 overflow-y-auto rounded-lg bg-[#f8f7f4] p-3 leading-relaxed">{narrowingPreview.selected_items.map((entry) => <p key={entry} className="border-b border-[#11113f]/5 py-1.5 last:border-0">{entry}</p>)}</div></details>
-                      {narrowingPreview.assumptions.length > 0 && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900"><span className="font-semibold">Что модель предположила:</span> {narrowingPreview.assumptions.join("; ")}</div>}
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <Button type="button" size="sm" className="rounded-full" disabled={isNarrowing} onClick={() => void applyNarrowing(item, narrowingPreview)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {isNarrowing ? "Применяем…" : "Применить сокращение"}</Button>
-                        <Button type="button" size="sm" variant="outline" className="rounded-full" disabled={isNarrowing} onClick={() => setNarrowingPreviews((current) => { const next = { ...current }; delete next[item.id]; return next; })}>Оставить полный перечень</Button>
-                      </div>
-                    </div> : isEditing ? <div className="mt-3">
+                    {isEditing ? <div className="mt-3">
                       <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">Вы редактируете официальный перечень. Всё удалённое не войдёт в заявку и не будет охраняться.</div>
                       <Textarea
                         className="max-h-80 min-h-40 bg-white"
@@ -1858,16 +1885,18 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
                       <p className="text-sm font-semibold text-[#0b7774]">Полный перечень класса · около {itemCount} позиций</p>
                       <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Он будет вынесен в приложение к заявке автоматически.</p>
                       <details className="mt-2 text-xs text-[#4f5063]"><summary className="cursor-pointer font-semibold text-[#0d8f8b]">Посмотреть перечень</summary><div className="mt-2 max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#f8f7f4] p-3 leading-relaxed">{description}</div></details>
-                      <Button type="button" size="sm" variant="outline" className="mt-3 rounded-full" disabled={isNarrowing} onClick={() => void previewNarrowing(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? "Подбираем подходящие…" : "Сузить перечень с моделью"}</Button>
+                      <Button type="button" size="sm" variant="outline" className="mt-3 rounded-full" disabled={isNarrowing || recalculatingClasses} onClick={() => void narrowClass(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? `Сужаем класс ${item.class_number}…` : "Сузить перечень автоматически"}</Button>
+                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#315f5d]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
                     </div> : <div className="mt-3 rounded-xl border border-[#11113f]/10 bg-white p-3">
                       <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#34354b]">{description || "Перечень пока не заполнен"}</p>
-                      <div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={isNarrowing} onClick={() => void previewNarrowing(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? "Подбираем…" : "Подобрать моделью"}</Button><Button type="button" size="sm" variant="ghost" className="rounded-full" onClick={() => setEditingClassIds((current) => new Set(current).add(item.id))}>Уточнить вручную</Button></div>
+                      <div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={isNarrowing || recalculatingClasses} onClick={() => void narrowClass(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? `Сужаем класс ${item.class_number}…` : "Подобрать моделью"}</Button><Button type="button" size="sm" variant="ghost" className="rounded-full" disabled={isNarrowing} onClick={() => setEditingClassIds((current) => new Set(current).add(item.id))}>Уточнить вручную</Button></div>
+                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#315f5d]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
                     </div>}
                     {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}
+                    {isFullList && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950"><strong>До перехода к пошлинам:</strong> полный перечень из {itemCount} позиций добавляет примерно {rubles(Math.max(0, itemCount - 10) * 500)} к экспертизе этого класса. Автоматическое сужение оставит только позиции, подходящие под ваше описание.</div>}
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button disabled={decidingClassId !== null} size="sm" variant={item.approved === true ? "default" : "outline"} className="rounded-full" onClick={() => void decide(item, true)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {decidingClassId === item.id ? "Сохраняем…" : "Подходит"}</Button>
-                    <Button disabled={decidingClassId !== null} size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {decidingClassId === item.id ? "Сохраняем…" : "Не подходит"}</Button>
+                    {item.approved === false ? <Button disabled={decidingClassId !== null} size="sm" variant="outline" className="rounded-full" onClick={() => void decide(item, true)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {decidingClassId === item.id ? "Сохраняем…" : "Вернуть в заявку"}</Button> : <><span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-2 text-xs font-semibold text-emerald-800"><Check className="h-3.5 w-3.5" /> {item.approved === true ? "Сохранён в заявке" : "Будет включён"}</span><Button disabled={decidingClassId !== null} size="sm" variant="ghost" className="rounded-full" onClick={() => void decide(item, false)}>{decidingClassId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {decidingClassId === item.id ? "Сохраняем…" : "Не включать"}</Button></>}
                   </div>
                 </div>
               </div>
@@ -1875,8 +1904,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
           </div>
         </section>
       <div className="mt-7 rounded-[1.2rem] bg-[#11113f] p-5 text-white">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем введённые данные" : running ? phases[phase] : hasPendingClasses ? "Сначала подтвердите классы" : approved === 0 ? "Выберите хотя бы один класс" : !dataConfirmed ? "Подтвердите проверенные сведения" : "Всё готово к анализу"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "После сохранения автоматически откроется следующий экран." : running ? "Вы уже можете следить за проверкой на следующем экране." : hasPendingClasses ? "Для каждого предложенного класса нажмите «Подходит» или «Не подходит»." : !dataConfirmed ? "Подтвердите, что сверили реквизиты, обозначение и перечень товаров или услуг." : "Поиск проводится прежде всего в выбранных классах товаров и услуг."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || hasPendingClasses || approved === 0 || !dataConfirmed} onClick={() => void run()} className="rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d]">{preparing || running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : "Продолжить к анализу"}</Button></div>
-        {!hasPendingClasses && approved > 0 && !dataConfirmed && <button type="button" disabled={confirmingData} onClick={() => void onConfirmData()} className="mt-4 flex w-full items-start gap-3 rounded-xl border border-white/15 bg-white/10 p-4 text-left hover:bg-white/15 disabled:opacity-60"><span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-white/60">{confirmingData ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}</span><span><span className="block text-sm font-semibold">Я проверил сведения и подтверждаю их</span><span className="mt-1 block text-xs leading-relaxed text-white/60">Автоматически заполненные значения сверены с документами, а товары и услуги описаны верно.</span></span></button>}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем решения и запускаем проверку" : running ? phases[phase] : recalculatingClasses || narrowingClassIds.size > 0 ? "Дождитесь завершения подбора" : classes.every((item) => item.approved === false) ? "Выберите хотя бы один класс" : "Один шаг до полного анализа"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "Классы и подтверждение данных сохраняются в заявке." : running ? "Вы уже можете следить за проверкой на следующем экране." : recalculatingClasses || narrowingClassIds.size > 0 ? "Список обновится автоматически. После этого одной кнопкой запустится вся проверка." : hasPendingClasses ? "Все предложенные классы включены по умолчанию. Исключите ненужные или сразу запустите полную проверку." : "Кнопка подтвердит введённые данные и последовательно проверит основания для отказа и похожие знаки."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || recalculatingClasses || narrowingClassIds.size > 0 || classes.every((item) => item.approved === false)} onClick={() => void run()} className="rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d]">{preparing || running || recalculatingClasses || narrowingClassIds.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : recalculatingClasses || narrowingClassIds.size > 0 ? "Подбор ещё идёт…" : "Подтвердить данные и проверить знак"}</Button></div>
         {dataConfirmed && <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#79ded9]"><CheckCircle2 className="h-4 w-4" /> Сведения подтверждены</p>}
       </div>
     </section>
@@ -2563,10 +2591,11 @@ function ClientFeeEstimate({ appId, onDocuments, onReview }: { appId: number; on
       {fees.isLoading && <div className="border-t p-6 text-sm text-[#6d6d7d]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Рассчитываем…</div>}
       {fees.data && !fees.data.can_calculate && <div className="border-t border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">Сначала подтвердите хотя бы один класс товаров или услуг.</div>}
       {fees.data?.can_calculate && <div className="border-t border-[#11113f]/10 p-5 sm:p-6">
-        <div className="grid gap-4 sm:grid-cols-3">
+        {(fees.data.term_surcharge || 0) > 0 && <div className="mb-5 rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950"><p className="flex items-center gap-2 text-lg font-semibold"><AlertCircle className="h-5 w-5" /> В текущей сумме есть доплата за слишком широкий перечень</p><p className="mt-2 text-sm leading-relaxed">Без доплаты за позиции сверх десяти итог составил бы <strong>{rubles((fees.data.total_selected ?? fees.data.total_electronic ?? 0) - (fees.data.term_surcharge || 0))}</strong>. Сейчас дополнительно начислено <strong>{rubles(fees.data.term_surcharge || 0)}</strong>. Перечень можно сузить на предыдущем шаге, но исключённые товары и услуги не будут охраняться.</p><Button type="button" variant="outline" className="mt-3 rounded-full border-amber-400 bg-white" onClick={onReview}>Вернуться и сузить перечень</Button></div>}
+          <div className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">При подаче заявки</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.filing_total)}</p></div>
           <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">После положительного решения</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.registration_total)}</p></div>
-          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">{fees.data.paper_certificate_requested ? "Всего с бумажным свидетельством" : "Всего, электронное свидетельство"}</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_selected ?? fees.data.total_electronic)}</p></div>
+          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">{fees.data.paper_certificate_requested ? "Итого сейчас, с бумажным свидетельством" : "Итого сейчас, электронное свидетельство"}</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_selected ?? fees.data.total_electronic)}</p></div>
         </div>
           <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">подп. {payment.code} приложения № 1 к Положению о пошлинах</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
         {(fees.data.term_surcharge || 0) > 0 && (

@@ -78,7 +78,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 def _make_sync_url(async_url: str) -> str:
     return async_url.replace("sqlite+aiosqlite:///", "sqlite:///").replace(
-        "postgresql+asyncpg://", "postgresql://"
+        "postgresql+asyncpg://", "postgresql+psycopg://"
     )
 
 def _build_sync_engine():

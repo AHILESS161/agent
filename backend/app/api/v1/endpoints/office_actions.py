@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_llm_provider
 from app.core.logging import get_logger
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user
 from app.infrastructure.database.models import (
     AuditLog,
@@ -75,11 +76,7 @@ async def _application(session: AsyncSession, application_id: int) -> TrademarkA
 
 
 def _require_access(user: User, application: TrademarkApplicationDraft) -> None:
-    if user.role is not UserRole.admin and user.id not in {
-        application.created_by_user_id,
-        application.assigned_lawyer_id,
-        application.assigned_manager_id,
-    }:
+    if not has_case_access(application, user):
         raise HTTPException(status_code=403, detail="Нет доступа к заявке")
 
 

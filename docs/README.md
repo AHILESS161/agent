@@ -20,6 +20,7 @@
 | Выбрать следующую задачу | [`backlog.md`](backlog.md) |
 | Увидеть этапы выхода в пилот и production | [`roadmap.md`](roadmap.md) |
 | Запустить проект локально или дать демо-доступ | [`demo-deployment.md`](demo-deployment.md) |
+| Обслуживать действующий стенд registr-ai.ru | [`registr-ai-deployment.md`](registr-ai-deployment.md) |
 | Проверить изменения | [`testing.md`](testing.md) |
 | Провести юридическую приёмку DOCX | [`legal-docx-review-checklist.md`](legal-docx-review-checklist.md) |
 | Оценить извлечение ЕГРЮЛ/ЕГРИП | [`registry-extraction-evaluation.md`](registry-extraction-evaluation.md) |

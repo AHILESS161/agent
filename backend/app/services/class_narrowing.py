@@ -137,7 +137,11 @@ async def narrow_class_items(
             temperature=0.0,
         )
         return _validate(raw, candidates)
-    except InvalidNarrowingResult:
+    except Exception:
+        # Transport errors, malformed JSON and an empty/unusable selection are
+        # equally recoverable here.  The router provider exposes GigaChat as
+        # ``fallback``; a temporary DeepSeek failure must not leave the button
+        # looking successful while the full list stays unchanged.
         fallback = getattr(llm_provider, "fallback", None)
         if fallback is None or not hasattr(fallback, "generate_structured"):
             raise

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.logging import get_logger
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user
 from app.infrastructure.database.models import (
     ApplicationDraft,
@@ -93,11 +94,7 @@ async def _load_draft(session: AsyncSession, draft_id: int) -> ApplicationDraft:
 def _ensure_access(application: TrademarkApplicationDraft, user: User) -> None:
     if user.role is UserRole.admin:
         return
-    if user.id not in {
-        application.created_by_user_id,
-        application.assigned_lawyer_id,
-        application.assigned_manager_id,
-    }:
+    if not has_case_access(application, user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Нет доступа к черновику заявки")
 
 

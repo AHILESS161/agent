@@ -1,0 +1,11 @@
+[Unit]
+Description=Registr consistent encrypted backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/registr
+EnvironmentFile=/etc/registr-backup.env
+ExecStart=/usr/bin/bash /opt/registr/deploy/backup.sh
+UMask=0077

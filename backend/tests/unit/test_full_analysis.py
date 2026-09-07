@@ -462,6 +462,70 @@ class TestOrder:
         )
         assert relative_step["status"] == "ok"
 
+    async def test_one_click_retries_both_external_stages_automatically(
+        self, async_session, application, monkeypatch
+    ):
+        """A partial provider response must not become another client action."""
+        import app.services.full_analysis as full_analysis_module
+
+        async_session.add(
+            NiceClassSuggestion(
+                application_id=application.id, class_number=25, approved=True
+            )
+        )
+        await async_session.flush()
+        absolute_calls = 0
+        relative_calls = 0
+
+        async def absolute(*args, **kwargs):
+            nonlocal absolute_calls
+            absolute_calls += 1
+            assessment = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.absolute_grounds,
+                overall_risk=RiskLevel.low if absolute_calls == 2 else None,
+                summary="Само обозначение проверено." if absolute_calls == 2 else "Ответ неполный.",
+                is_inconclusive=absolute_calls == 1,
+                inconclusive_reason="Временный неполный ответ." if absolute_calls == 1 else None,
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(assessment)
+            await async_session.flush()
+            return assessment
+
+        async def relative(*args, **kwargs):
+            nonlocal relative_calls
+            relative_calls += 1
+            assessment = RiskAssessment(
+                application_id=application.id,
+                analysis_kind=AnalysisKind.relative_grounds,
+                overall_risk=RiskLevel.low if relative_calls == 2 else None,
+                summary="Реестр проверен." if relative_calls == 2 else "Ответ неполный.",
+                is_inconclusive=relative_calls == 1,
+                inconclusive_reason="Реестр временно ответил не полностью." if relative_calls == 1 else None,
+                classes_considered_json=[25],
+                classes_confirmed=True,
+            )
+            async_session.add(assessment)
+            await async_session.flush()
+            return assessment
+
+        monkeypatch.setattr(full_analysis_module, "run_absolute_grounds_analysis", absolute)
+        monkeypatch.setattr(full_analysis_module, "run_conflict_search", relative)
+
+        result = await run_full_analysis(
+            async_session,
+            application,
+            llm_provider=MockLLMProvider(),
+            registry_provider=StubRegistry(),
+        )
+
+        assert absolute_calls == 2
+        assert relative_calls == 2
+        assert result["is_complete"] is True
+        assert [step["attempts"] for step in result["steps"][1:]] == [2, 2]
+
 
 class TestVerdict:
     async def test_verdict_is_always_produced(self, async_session, application):

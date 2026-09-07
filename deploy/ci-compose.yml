@@ -1,0 +1,5 @@
+# Use with docker-compose.prod.yml on an isolated GitHub Actions runner.
+services:
+  web:
+    ports:
+      - "127.0.0.1:18080:8080"

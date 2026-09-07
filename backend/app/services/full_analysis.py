@@ -52,6 +52,11 @@ _RISK_ORDER = [RiskLevel.low, RiskLevel.medium, RiskLevel.high, RiskLevel.critic
 # the client report without changing the recommended next action.
 _ABSOLUTE_GROUNDS_STOP_LEVELS = {RiskLevel.high, RiskLevel.critical}
 
+# A partial technical answer must not turn into another button for the client.
+# One user action gets two end-to-end attempts for each external stage; only
+# after both fail do we honestly return a partial result with a manual retry.
+_AUTOMATIC_STAGE_ATTEMPTS = 2
+
 _VERDICT_BY_RISK: dict[RiskLevel, tuple[str, str]] = {
     RiskLevel.low: (
         "proceed",
@@ -443,6 +448,7 @@ async def run_full_analysis(
 
     # --- 2. Абсолютные основания -----------------------------------------
     await progress("absolute_grounds", 35, "Проверяем само обозначение")
+    absolute_attempts = 0
     absolute = (
         await _latest(session, application.id, AnalysisKind.absolute_grounds)
         if retry_incomplete_only
@@ -457,9 +463,12 @@ async def run_full_analysis(
             classes_confirmed=class_context.is_confirmed,
             input_fingerprint=absolute_input_fingerprint,
         )
-        absolute_attempt = await run_absolute_grounds_analysis(
-            session, application, llm_provider=llm_provider, user_id=user_id
-        )
+        for absolute_attempts in range(1, _AUTOMATIC_STAGE_ATTEMPTS + 1):
+            absolute_attempt = await run_absolute_grounds_analysis(
+                session, application, llm_provider=llm_provider, user_id=user_id
+            )
+            if not absolute_attempt.is_inconclusive:
+                break
         if absolute_attempt.is_inconclusive and previous_absolute is not None:
             refresh_warnings.append(
                 {
@@ -480,6 +489,7 @@ async def run_full_analysis(
             "step": "absolute_grounds",
             "status": absolute_status,
             "detail": absolute.inconclusive_reason or absolute.summary,
+            "attempts": absolute_attempts,
         }
     )
 
@@ -488,6 +498,7 @@ async def run_full_analysis(
     # Пока абсолютные основания не проверены надёжно, реестр не запрашиваем.
     # При high/critical поиск также не нужен: уже найдено самостоятельное
     # препятствие, которое сначала необходимо устранить.
+    relative_attempts = 0
     absolute_stops_pipeline = (
         absolute.is_inconclusive
         or absolute.overall_risk in _ABSOLUTE_GROUNDS_STOP_LEVELS
@@ -532,13 +543,16 @@ async def run_full_analysis(
             )
             if _is_pipeline_skip(previous_relative):
                 previous_relative = None
-            relative_attempt = await run_conflict_search(
-                session,
-                application,
-                registry_provider=registry_provider,
-                user_id=user_id,
-                llm_provider=llm_provider,
-            )
+            for relative_attempts in range(1, _AUTOMATIC_STAGE_ATTEMPTS + 1):
+                relative_attempt = await run_conflict_search(
+                    session,
+                    application,
+                    registry_provider=registry_provider,
+                    user_id=user_id,
+                    llm_provider=llm_provider,
+                )
+                if not relative_attempt.is_inconclusive:
+                    break
             if (
                 previous_relative is not None
                 and relative_attempt_is_transient(relative_attempt, previous_relative)
@@ -563,6 +577,7 @@ async def run_full_analysis(
             "step": "relative_grounds",
             "status": relative_status,
             "detail": relative.inconclusive_reason or relative.summary,
+            "attempts": relative_attempts,
         }
     )
 

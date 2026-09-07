@@ -40,7 +40,10 @@
 интервалом. Временные ответы `429` и `5xx` повторяются до пяти раз с
 экспоненциальной задержкой и учётом `Retry-After`. Обрезанный структурированный
 ответ определяется по `finish_reason` и ошибке JSON, а не принимается за вывод.
-Параметры: `GIGACHAT_MIN_REQUEST_INTERVAL` и `GIGACHAT_MAX_RETRIES`.
+Параметры: `GIGACHAT_MIN_REQUEST_INTERVAL` и `GIGACHAT_MAX_RETRIES`. TLS-проверка
+не отключается: официальный корневой сертификат Минцифры России хранится в
+`backend/certs/russian_trusted_root_ca_pem.crt`, а путь задаётся через
+`GIGACHAT_CA_BUNDLE_FILE`. Файл проверяется стандартным SSL-контекстом в тестах.
 
 При основном `LLM_PROVIDER=routerai|openai|deepseek|local`, включённом
 `LLM_FALLBACK_ENABLED=true` и заданном `GIGACHAT_AUTHORIZATION_KEY` система

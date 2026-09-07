@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
+from app.core.case_access import has_case_access
 from app.core.security import get_current_user
 from app.document_processing.classifier import classify_document
 from app.infrastructure.database.models import (
@@ -33,6 +34,7 @@ from app.infrastructure.database.models import (
 )
 from app.infrastructure.database.session import get_session
 from app.services import file_storage
+from app.services import document_sandbox
 from app.services.document_lifecycle import delete_document_and_release_blob
 from app.services.document_text_extractor import (
     NoTextLayerError,
@@ -65,13 +67,13 @@ async def inspect_mark_image(
 ) -> dict[str, Any]:
     """Проверить файл и вернуть OCR-подсказку без сохранения изображения."""
     del current_user
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     filename = file_storage.normalize_upload_filename(file.filename or "mark.png")
     try:
         _, detected_mime = file_storage.validate_upload(content, filename)
         if detected_mime not in {"image/png", "image/jpeg"}:
             raise file_storage.FileValidationError("Используйте изображение PNG или JPEG")
-        image = process_mark_image(content, filename)
+        image = await document_sandbox.inspect_image(content, filename)
     except (file_storage.FileValidationError, MarkImageError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {
@@ -118,11 +120,7 @@ async def _load_document(session: AsyncSession, document_id: int) -> SourceDocum
 
 
 def _has_application_access(user: User, application: TrademarkApplicationDraft) -> bool:
-    return user.role is UserRole.admin or user.id in {
-        application.created_by_user_id,
-        application.assigned_lawyer_id,
-        application.assigned_manager_id,
-    }
+    return has_case_access(application, user)
 
 
 def _require_application_access(user: User, application: TrademarkApplicationDraft) -> None:
@@ -258,7 +256,7 @@ async def upload_mark_image(
             ),
         )
 
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     filename = file_storage.normalize_upload_filename(file.filename or "mark.png")
     try:
         _, detected_mime = file_storage.validate_upload(content, filename)
@@ -266,7 +264,9 @@ async def upload_mark_image(
             raise file_storage.FileValidationError(
                 "Изображение обозначения должно быть в формате PNG или JPEG"
             )
-        image = process_mark_image(content, filename)
+        image = await document_sandbox.inspect_image(content, filename)
+        from app.services.resource_limits import check_storage_quota
+        await check_storage_quota(session, current_user.id, len(content))
         stored = file_storage.save_upload(content, filename)
     except (file_storage.FileValidationError, MarkImageError) as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
@@ -346,11 +346,13 @@ async def upload_document(
     application = await _load_application(session, application_id)
     _require_write_access(current_user, application)
 
-    content = await file.read()
+    content = await file.read(file_storage.settings.MAX_UPLOAD_MB * 1024 * 1024 + 1)
     filename = file_storage.normalize_upload_filename(file.filename or "upload")
 
     # --- проверка и сохранение оригинала ---
     try:
+        from app.services.resource_limits import check_storage_quota
+        await check_storage_quota(session, current_user.id, len(content))
         stored = file_storage.save_upload(content, filename)
     except file_storage.FileValidationError as exc:
         logger.warning(
@@ -403,7 +405,7 @@ async def upload_document(
 
     # --- извлечение текста ---
     try:
-        pages = extract_pages_from_bytes(content, filename)
+        pages = await document_sandbox.extract_pages(content, filename)
     except (NoTextLayerError, UnsupportedDocumentType) as exc:
         reason = str(exc)
         pages = None
@@ -723,7 +725,7 @@ async def confirm_document_kind(
         application.mark_image_file_id = str(document.id)
         try:
             content = file_storage.read_file(document.stored_path)
-            image = process_mark_image(content, document.original_filename)
+            image = await document_sandbox.inspect_image(content, document.original_filename)
             metadata = dict(document.metadata_json or {})
             metadata.update(image.metadata())
             metadata["ocr_confidence"] = image.ocr_confidence

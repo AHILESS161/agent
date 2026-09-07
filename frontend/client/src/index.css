@@ -16,7 +16,8 @@
 
 /* LEGAL-TECH PALETTE — Deep navy surfaces, teal accent, amber warnings */
 
-:root {
+:root,
+.client-light-scope {
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;

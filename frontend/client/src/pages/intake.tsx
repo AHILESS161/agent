@@ -122,6 +122,7 @@ export default function IntakePage() {
 
   // Обозначение и деятельность.
   const [markName, setMarkName] = useState("");
+  const [showMarkOptions, setShowMarkOptions] = useState(false);
   const [markType, setMarkType] = useState<MarkType>("word");
   const [businessDescription, setBusinessDescription] = useState("");
   const [goodsServices, setGoodsServices] = useState("");
@@ -548,6 +549,8 @@ export default function IntakePage() {
         title="Опишите товарный знак"
         description="Укажите обозначение и коротко расскажите, для каких товаров или услуг оно нужно."
       >
+          {clientPortal && markType === "word" && !showMarkOptions && <button type="button" className="mb-2 inline-flex items-center gap-2 text-sm text-primary underline underline-offset-4" onClick={() => setShowMarkOptions(true)}><ImageIcon className="h-4 w-4" />У меня логотип или другой вид знака</button>}
+          {(!clientPortal || showMarkOptions || markType !== "word") && <>
           <Field
             label={clientPortal ? <span className="inline-flex items-center gap-1">Вид знака <HelpTip text="Словесный знак защищает название. Изобразительный — картинку. Комбинированный — название и изображение вместе." /></span> : "Вид знака"}
             hint={
@@ -572,6 +575,8 @@ export default function IntakePage() {
               </SelectContent>
             </Select>
           </Field>
+
+          </>}
 
           {imageMark && (
             <div className="rounded-2xl border border-primary/25 bg-primary/[0.045] p-5" data-testid="mark-image-field">
@@ -623,7 +628,7 @@ export default function IntakePage() {
             label={
               markType === "figurative"
                 ? "Название обозначения (для дела)"
-                : "Заявляемое обозначение"
+                : clientPortal ? "Название бренда" : "Заявляемое обозначение"
             }
             hint={
               markType === "figurative"
@@ -938,9 +943,10 @@ export default function IntakePage() {
 
 </details>}
 
-      <div className="sticky bottom-0 z-10 flex items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
+      <div className="sticky bottom-0 z-10 flex flex-wrap gap-3 items-center justify-between border-t border-border bg-background/95 py-5 backdrop-blur">
         <div className="flex items-center gap-3">
-          <Button variant="outline" onClick={() => saveDraft(true)} disabled={isSaving}>Сохранить черновик</Button>
+          {!clientPortal && <Button variant="outline" onClick={() => saveDraft(true)} disabled={isSaving}>Сохранить черновик</Button>}
+          {clientPortal && <p className="text-xs text-muted-foreground">Черновик сохраняется автоматически</p>}
           <p className="hidden text-sm text-muted-foreground xl:block">Поля также сохраняются автоматически</p>
         </div>
         <Button size="lg" onClick={() => void submit()} disabled={isSaving} data-testid="button-create-case">
@@ -949,7 +955,7 @@ export default function IntakePage() {
           ) : (
             <CheckCircle2 className="w-4 h-4 mr-2" />
           )}
-          {clientPortal ? "Перейти к подбору товаров и услуг" : "Создать проект"}
+          {clientPortal ? "Продолжить" : "Создать проект"}
         </Button>
       </div>
     </div>

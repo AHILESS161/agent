@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 3000 --host",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "check:comparison": "node scripts/check-comparison.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

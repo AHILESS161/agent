@@ -42,6 +42,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { label: "Инструменты", href: "/services", icon: ShieldCheck, roles: ["admin", "lawyer", "manager", "client"] },
   { label: "Обзор", href: "/dashboard", icon: LayoutGrid, roles: ["admin", "lawyer", "manager", "client"] },
   { label: "Заявители", href: "/clients", icon: Users, roles: ["admin", "lawyer", "manager"] },
   { label: "Товарные знаки", href: "/applications", icon: Tags, roles: ["admin", "lawyer", "manager", "client"] },

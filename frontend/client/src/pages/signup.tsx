@@ -54,9 +54,9 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
     } finally { setBusy(false); }
   }
 
-  return <main className="flex min-h-[100svh] items-center justify-center bg-[#f7f5f1] p-5">
+  return <main className="client-light-scope registr-v3 flex min-h-[100svh] items-center justify-center bg-[#fcfbf8] p-5">
     <section className="w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm">
-      <div className="mb-7 text-3xl text-[#17104f]"><BrandWordmark accentEnd /></div>
+      <div className="mb-7 text-3xl text-[#38322e]"><BrandWordmark accentEnd /></div>
       <h1 className="text-2xl font-semibold">{verify ? "Завершить регистрацию" : "Регистрация клиента"}</h1>
       <p className="mt-3 text-sm text-muted-foreground">{verify
         ? "Укажите имя и придумайте пароль для своего аккаунта."

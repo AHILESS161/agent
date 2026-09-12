@@ -1,0 +1,57 @@
+/* Client-facing design 03. Staff workspace keeps its existing theme. */
+.registr-v3 {
+  --background: 45 40% 98%;
+  --foreground: 24 10% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 24 10% 20%;
+  --border: 40 18% 84%;
+  --card-border: 40 18% 84%;
+  --primary: 26 15% 30%;
+  --primary-foreground: 0 0% 100%;
+  --primary-border: 26 15% 30%;
+  --secondary: 40 29% 94%;
+  --secondary-foreground: 24 10% 20%;
+  --muted: 40 29% 94%;
+  --muted-foreground: 34 7% 41%;
+  --accent: 40 29% 91%;
+  --accent-foreground: 24 10% 20%;
+  --input: 40 18% 74%;
+  --ring: 38 28% 43%;
+  --font-sans: 'Manrope', 'Segoe UI', sans-serif;
+  --font-serif: 'Cormorant Garamond', Georgia, serif;
+  font-family: var(--font-sans);
+  color: hsl(var(--foreground));
+  color-scheme: light;
+}
+.registr-v3 .brand-wordmark__accent { fill: #9b8258; }
+.registr-v3 .brand-wordmark__ring { stroke: #9b8258; }
+.registr-v3 .brand-wordmark__text { font-family: var(--font-serif); font-weight: 600; }
+.registr-serif { font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 500; letter-spacing: -.035em; }
+.registr-hero { padding: 38px 12px 0; text-align: center; }
+.registr-hero h1 { margin: 0; font-size: clamp(3.25rem, 7vw, 6.4rem); line-height: .98; }
+.registr-hero em { color: #9b8258; font-weight: 400; }
+.registr-architecture { max-width: 980px; height: clamp(140px, 24vw, 290px); margin: 26px auto 0; overflow: hidden; mix-blend-mode: multiply; }
+.registr-architecture img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 54%; }
+.registr-v3 [data-testid='intake-page'] > div:first-child h1 { font-family: var(--font-serif); font-weight: 500; }
+.registr-v3 [data-testid='intake-page'] { max-width: 860px; }
+.registr-v3 [data-testid='intake-page'] input,
+.registr-v3 [data-testid='intake-page'] textarea { background: #fff; }
+.registr-v3 [data-testid='intake-page'] button { border-radius: 999px; }
+.registr-v3 .login-panel { background: #e6dccb; }
+.registr-v3 .login-card { box-shadow: 0 18px 60px #584b4112; }
+.registr-v3 .login-card h2 { font-family: var(--font-serif); font-size: 2rem; }
+.registr-v3 .login-card button[type='submit'] { border-radius: 999px; }
+.registr-services [data-state='inactive'][role='tabpanel'] { display: none; }
+.registr-services :is(input, textarea, select) { font-family: inherit; }
+.registr-service-tabs { display: grid; grid-template-columns: 1fr 1fr; width: min(100%, 680px); height: auto; margin: 0 auto; padding: 6px; border: 1px solid #ded9cf; border-radius: 999px; background: #f4f1eb; }
+.registr-service-tabs button { min-height: 52px; padding: 12px 16px; border-radius: 999px; white-space: normal; gap: 10px; }
+.registr-service-tabs button[data-state='active'] { color: #fff; background: #584b41; box-shadow: none; }
+.registr-reply-details { margin-top: 20px; border: 1px solid hsl(var(--border)); border-radius: 16px; padding: 20px; }
+.registr-reply-details > summary { cursor: pointer; font-weight: 600; }
+.registr-reply-details > summary:focus-visible { outline: 2px solid hsl(var(--ring)); outline-offset: 6px; }
+@media (max-width: 640px) {
+  .registr-hero { padding-top: 24px; }
+  .registr-service-tabs { border-radius: 18px; }
+  .registr-service-tabs button { border-radius: 13px; font-size: 12px; }
+  .registr-service-tabs svg { display: none; }
+}

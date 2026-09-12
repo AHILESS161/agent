@@ -1,3 +1,4 @@
+import pediment from "@/assets/pediment.png";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -93,34 +94,19 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="client-light-scope login-shell grid min-h-[100svh] bg-[#f7f5f1] lg:grid-cols-[1.04fr_.96fr]">
+    <main className="client-light-scope registr-v3 login-shell grid min-h-[100svh] bg-[#fcfbf8] lg:grid-cols-[1.04fr_.96fr]">
       <section className="relative hidden overflow-hidden border-r border-black/5 px-[7vw] py-10 lg:flex lg:flex-col lg:justify-center">
-        <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#17104f]">
+        <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#38322e]">
           <BrandWordmark accentEnd />
         </div>
 
-        <div className="max-w-[650px]">
-          <div className="flex items-end gap-4">
-            <h1 className="text-[clamp(66px,7.2vw,116px)] leading-[.82] text-[#17104f]">
-              <BrandWordmark />
-            </h1>
-            <span className="mb-1 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white">
-              <LockKeyhole className="h-5 w-5" />
-            </span>
-          </div>
-
-          <div className="relative mt-6 border-t-[3px] border-primary pt-6">
-            <div className="absolute -right-7 -top-[3px] h-[150px] w-8 rounded-r-[28px] border-y-[3px] border-r-[3px] border-primary" />
-            <h2 className="text-[30px] font-semibold leading-[1.08] text-[#17104f]">
-              Защищаем идеи.<br />Управляем правами
-            </h2>
-            <p className="mt-3 max-w-md text-[18px] leading-snug text-[#5e5e68]">
-              Регистрация товарных знаков —<br />от заявки до свидетельства.
-            </p>
-          </div>
+        <div className="text-center">
+          <h1 className="registr-serif text-[clamp(3.5rem,5.8vw,6.5rem)] leading-[.98]">Ваш бренд.<br /><em className="font-normal text-[#9b8258]">Под вашей защитой.</em></h1>
+          <p className="mx-auto mt-6 max-w-md text-sm leading-7 text-[#746e66]">Проверка обозначения, подготовка заявки и ответы Роспатенту — в одном месте.</p>
+          <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1774" height="887" /></div>
         </div>
 
-        <div className="absolute bottom-9 left-[7vw] flex items-center gap-7 text-sm text-[#4f5058]">
+        <div className="absolute bottom-9 left-[7vw] flex items-center gap-7 text-sm text-[#746e66]">
           <span>Заявители</span><span className="text-primary">/</span>
           <span>Товарные знаки</span><span className="text-primary">/</span>
           <span>Документы</span>
@@ -130,7 +116,7 @@ export default function LoginPage() {
       <section className="login-panel flex items-center justify-center bg-[#08090b] p-4 sm:p-5 xl:p-6">
         <div className="login-card w-full max-w-[580px] rounded-[18px] bg-[#fbfaf8] p-5 shadow-2xl sm:p-6 xl:p-7">
           <div className="mb-4 flex border-b border-border text-center text-sm">
-            <div className="relative flex-1 pb-4 font-medium text-[#17104f] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
+            <div className="relative flex-1 pb-4 font-medium text-[#38322e] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
             <Link href="/signup" className="flex-1 pb-4 text-primary hover:underline">
@@ -138,7 +124,7 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <h2 className="text-2xl font-semibold text-[#17104f]">Войти в систему</h2>
+          <h2 className="text-2xl font-semibold text-[#38322e]">Войти в систему</h2>
           <p className="mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
 
           <form
@@ -212,7 +198,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-4 border-t border-border pt-4">
-            <p className="text-center text-sm font-medium text-[#17104f]">Или выберите тип аккаунта</p>
+            <p className="text-center text-sm font-medium text-[#38322e]">Или выберите тип аккаунта</p>
             <p className="mt-1 text-center text-xs text-muted-foreground">Для быстрого входа в демо-стенд</p>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -234,8 +220,8 @@ export default function LoginPage() {
                     aria-pressed={selected}
                     data-testid={`demo-role-${role.id}`}
                   >
-                    <Icon className={`h-5 w-5 ${selected ? "text-primary" : "text-[#17104f]"}`} />
-                    <span className="mt-2 block text-sm font-semibold text-[#17104f]">{role.label}</span>
+                    <Icon className={`h-5 w-5 ${selected ? "text-primary" : "text-[#38322e]"}`} />
+                    <span className="mt-2 block text-sm font-semibold text-[#38322e]">{role.label}</span>
                     <span className="mt-1 hidden text-[11px] leading-snug text-muted-foreground sm:block">{role.description}</span>
                   </button>
                 );
@@ -244,7 +230,7 @@ export default function LoginPage() {
 
             {demoRole === "lawyer" && (
               <div className="mt-3 rounded-xl border border-primary/25 bg-primary/[0.05] p-3">
-                <p className="mb-2 text-xs font-medium text-[#17104f]">Выберите юриста</p>
+                <p className="mb-2 text-xs font-medium text-[#38322e]">Выберите юриста</p>
                 <div className="grid grid-cols-2 gap-2">
                   {DEMO_LAWYERS.map((lawyer) => (
                     <button
@@ -255,7 +241,7 @@ export default function LoginPage() {
                       className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
                         demoEmail === lawyer.email
                           ? "border-primary bg-primary text-white"
-                          : "border-border bg-white text-[#17104f] hover:border-primary/50"
+                          : "border-border bg-white text-[#38322e] hover:border-primary/50"
                       }`}
                       aria-pressed={demoEmail === lawyer.email}
                       data-testid={`demo-${lawyer.email.split("@")[0]}`}

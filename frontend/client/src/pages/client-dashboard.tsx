@@ -1,3 +1,4 @@
+import pediment from "@/assets/pediment.png";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
@@ -6,7 +7,6 @@ import {
   CircleDot,
   FileSearch,
   Loader2,
-  Plus,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -14,10 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { api, ApiError } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
 import { useCases } from "@/lib/use-cases";
-import { getGreetingName } from "@/lib/utils";
-import type { Application, ApplicationStatus } from "@shared/schema";
+import type { Application } from "@shared/schema";
 
 import { stageFor } from "@/lib/client-progress";
 
@@ -64,19 +62,19 @@ function ApplicationCard({
 
   return (
     <Link href={`/applications/${application.id}?step=${stage.section}`}>
-      <article className="group cursor-pointer rounded-[1.6rem] border border-[#11113f]/10 bg-white p-6 shadow-[0_12px_40px_rgba(21,21,55,0.05)] transition-all hover:-translate-y-0.5 hover:border-[#0d9f9b]/45 hover:shadow-[0_18px_50px_rgba(21,21,55,0.09)]">
+      <article className="group cursor-pointer rounded-[1.6rem] border border-[#38322e]/10 bg-white p-6 shadow-[0_12px_40px_rgba(21,21,55,0.05)] transition-all hover:-translate-y-0.5 hover:border-[#9b8258]/45 hover:shadow-[0_18px_50px_rgba(21,21,55,0.09)]">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#0d9f9b]">
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#9b8258]">
               Заявка №{application.id}
             </p>
-            <h2 className="mt-2 truncate text-2xl font-semibold text-[#11113f]">
+            <h2 className="mt-2 truncate text-2xl font-semibold text-[#38322e]">
               {application.markName}
             </h2>
-            <p className="mt-1 text-sm text-[#6d6d7d]">Обновлено {updated}</p>
+            <p className="mt-1 text-sm text-[#746e66]">Обновлено {updated}</p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f0f8f7] px-3.5 py-2 text-sm font-semibold text-[#087c78]">
+            <span className="inline-flex w-fit items-center gap-2 rounded-full bg-[#f4f1eb] px-3.5 py-2 text-sm font-semibold text-[#786341]">
               {["submitted", "closed"].includes(application.status) ? <CheckCircle2 className="h-4 w-4" /> : <CircleDot className="h-4 w-4" />}
               {stage.label}
             </span>
@@ -105,13 +103,13 @@ function ApplicationCard({
           {[1, 2, 3].map((step) => (
             <span
               key={step}
-              className={`h-1.5 rounded-full ${step <= stage.step ? "bg-[#0d9f9b]" : "bg-[#11113f]/10"}`}
+              className={`h-1.5 rounded-full ${step <= stage.step ? "bg-[#9b8258]" : "bg-[#38322e]/10"}`}
             />
           ))}
         </div>
         <div className="mt-5 flex items-center justify-between text-sm">
-          <span className="text-[#6d6d7d]">Этап {stage.step} из 3</span>
-          <span className="flex items-center gap-1.5 font-semibold text-[#11113f] group-hover:text-[#0d9f9b]">
+          <span className="text-[#746e66]">Этап {stage.step} из 3</span>
+          <span className="flex items-center gap-1.5 font-semibold text-[#38322e] group-hover:text-[#9b8258]">
             {stage.action} <ArrowRight className="h-4 w-4" />
           </span>
         </div>
@@ -121,36 +119,26 @@ function ApplicationCard({
 }
 
 export default function ClientDashboardPage() {
-  const { user } = useAuth();
   const [, setLocation] = useLocation();
   const cases = useCases();
   const applications = cases.data?.applications ?? [];
-  const name = getGreetingName(user?.preferredName, user?.fullName);
 
   return (
     <div className="space-y-10">
-      <section className="relative overflow-hidden rounded-[2rem] bg-[#11113f] px-6 py-10 text-white sm:px-10 lg:px-14 lg:py-14">
-        <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full border border-[#2dbab5]/35" />
-        <div className="absolute -bottom-40 right-24 h-80 w-80 rounded-full border border-white/10" />
-        <div className="relative max-w-3xl">
-          <p className="text-sm font-bold uppercase tracking-[0.16em] text-[#43c7c2]">
-            Личный кабинет
-          </p>
-          <h1 className="mt-4 text-[clamp(1.5rem,4.8vw,3.75rem)] font-semibold leading-tight">
-            {name && <span className="block whitespace-nowrap">{name},</span>}
-            <span className="block">{name ? "защитим ваш бренд" : "Защитим ваш бренд"}</span>
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-relaxed text-white/70 sm:text-lg">
-            Опишите обозначение и сферу деятельности. Подберём классы МКТУ,
-            оценим риск отказа и подготовим документы для подачи заявки в Роспатент.
-          </p>
-          <Button
-            className="mt-8 h-13 rounded-full bg-[#12aaa5] px-7 text-base text-white hover:bg-[#0d918d]"
-            onClick={() => setLocation("/start")}
-          >
-            <Plus className="h-5 w-5" /> Начать проверку
-          </Button>
-        </div>
+      <section className="registr-hero">
+        <h1 className="registr-serif">Ваш бренд.<br /><em>Под вашей защитой.</em></h1>
+        <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[#746e66]">Начните с названия и описания бизнеса. Подберём классы МКТУ, проверим обозначение и поможем подготовить заявку.</p>
+        <Button className="mt-7 min-h-12 rounded-full px-7" onClick={() => setLocation("/start")}>Проверить мой бренд<ArrowRight className="h-4 w-4" /></Button>
+        <p className="mt-3 text-xs text-[#746e66]">Два поля для начала. Реквизиты — после проверки.</p>
+        <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1774" height="887" fetchPriority="high" /></div>
+        <div className="flex items-center gap-6 border-b border-[#ded9cf] py-5 text-[11px] uppercase tracking-[.12em] text-[#746e66]"><span className="h-px flex-1 bg-[#ded9cf]" /><span>От идеи — к защищённому имени</span><span className="h-px flex-1 bg-[#ded9cf]" /></div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2" aria-label="Инструменты">
+        {[
+          { href: "/services?tool=reply", title: "Ответ Роспатенту", text: "Загрузите уведомление и подготовьте черновик ответа на основе материалов заявки.", icon: FileSearch },
+          { href: "/services?tool=compare", title: "Сравнение товарных знаков", text: "Сопоставьте два названия: совпадения, различия и общие слова.", icon: ShieldCheck },
+        ].map((item) => <Link key={item.href} href={item.href} className="group rounded-2xl border border-[#ded9cf] bg-white p-6 transition-colors hover:border-[#9b8258]"><div className="flex items-center justify-between"><item.icon className="h-6 w-6 text-[#9b8258]" /><ArrowRight className="h-4 w-4 text-[#9b8258] transition-transform group-hover:translate-x-1" /></div><h2 className="registr-serif mt-5 text-3xl">{item.title}</h2><p className="mt-2 max-w-lg text-sm leading-6 text-[#746e66]">{item.text}</p></Link>)}
       </section>
 
       <section className="grid gap-4 sm:grid-cols-3">
@@ -159,10 +147,10 @@ export default function ClientDashboardPage() {
           { icon: Sparkles, title: "Результат проверки", text: "Классы МКТУ и схожие знаки — без юридического языка" },
           { icon: ShieldCheck, title: "Подготовка к подаче", text: "Состав документов и итоговая стоимость" },
         ].map((item) => (
-          <div key={item.title} className="rounded-[1.35rem] border border-[#11113f]/10 bg-white p-5">
-            <item.icon className="h-6 w-6 text-[#0d9f9b]" />
-            <h2 className="mt-4 font-semibold text-[#11113f]">{item.title}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-[#6d6d7d]">{item.text}</p>
+          <div key={item.title} className="rounded-[1.35rem] border border-[#38322e]/10 bg-white p-5">
+            <item.icon className="h-6 w-6 text-[#9b8258]" />
+            <h2 className="mt-4 font-semibold text-[#38322e]">{item.title}</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-[#746e66]">{item.text}</p>
           </div>
         ))}
       </section>
@@ -170,13 +158,13 @@ export default function ClientDashboardPage() {
       <section>
         <div className="mb-5 flex items-end justify-between gap-4">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Ваши проекты</p>
-            <h2 className="mt-2 text-3xl font-semibold text-[#11113f]">Мои заявки</h2>
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#9b8258]">Ваши проекты</p>
+            <h2 className="mt-2 text-3xl font-semibold text-[#38322e]">Мои заявки</h2>
           </div>
         </div>
 
         {cases.isLoading ? (
-          <div className="flex min-h-48 items-center justify-center text-[#6d6d7d]">
+          <div className="flex min-h-48 items-center justify-center text-[#746e66]">
             <Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем заявки…
           </div>
         ) : cases.error ? (
@@ -186,15 +174,15 @@ export default function ClientDashboardPage() {
             <Button variant="outline" className="mt-4 rounded-full" onClick={cases.reload}>Повторить</Button>
           </div>
         ) : applications.length === 0 ? (
-          <div className="rounded-[1.6rem] border-2 border-dashed border-[#0d9f9b]/30 bg-white/70 px-6 py-14 text-center">
-            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#e8f7f6] text-[#0d9f9b]">
+          <div className="rounded-[1.6rem] border-2 border-dashed border-[#9b8258]/30 bg-white/70 px-6 py-14 text-center">
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#f0e9dc] text-[#9b8258]">
               <Sparkles className="h-6 w-6" />
             </span>
             <h3 className="mt-5 text-2xl font-semibold">Заявок пока нет</h3>
-            <p className="mx-auto mt-2 max-w-lg text-[#6d6d7d]">
+            <p className="mx-auto mt-2 max-w-lg text-[#746e66]">
               Начните с названия бренда и короткого описания бизнеса. Черновик можно дополнить позже.
             </p>
-            <p className="mt-5 text-sm font-semibold text-[#0d9f9b]">Начните проверку кнопкой в верхнем блоке.</p>
+            <p className="mt-5 text-sm font-semibold text-[#9b8258]">Начните проверку кнопкой в верхнем блоке.</p>
           </div>
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">

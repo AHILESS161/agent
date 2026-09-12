@@ -29,32 +29,34 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
 
   const links = [
     { href: "/dashboard", label: "Мои заявки" },
+    { href: "/services", label: "Инструменты" },
     { href: "/how-it-works", label: "Как это работает" },
   ];
 
   return (
-    <div className="client-light-scope min-h-screen bg-[#f6f5f1] text-[#11113f]">
-      <header className="sticky top-0 z-30 border-b border-[#11113f]/10 bg-[#fbfaf7]/95 backdrop-blur">
-        <div className="mx-auto flex h-20 max-w-[92rem] items-center gap-6 px-5 sm:px-8 lg:px-12">
-          <Link href="/dashboard">
-            <div className="cursor-pointer text-[1.8rem] leading-none text-[#11113f]">
+    <div className="client-light-scope registr-v3 min-h-screen bg-[#cebb9e] p-0 sm:p-5 lg:p-8">
+      <div className="mx-auto min-h-screen max-w-[1512px] bg-[#fcfbf8] pb-1 sm:rounded-3xl">
+      <header className="sticky top-0 z-30 bg-[#fcfbf8]/95 p-3 backdrop-blur sm:rounded-t-3xl sm:p-5 lg:px-8">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-3xl border border-[#ece8e0] bg-white px-4 py-3 md:rounded-full lg:px-6">
+          <Link href="/dashboard" aria-label="Регистр — мои заявки">
+            <div className="cursor-pointer text-[1.8rem] leading-none text-[#38322e]">
               <BrandWordmark accentEnd />
             </div>
           </Link>
 
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="order-last flex w-full flex-wrap items-center justify-center gap-1 border-t border-[#ece8e0] pt-3 md:order-none md:w-auto md:border-0 md:pt-0" aria-label="Главное меню">
             {links.map((item) => {
               const active =
                 location === item.href ||
                 (item.href === "/dashboard" && location.startsWith("/applications/"));
               return (
-                <Link key={item.href} href={item.href}>
+                <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
                   <span
                     className={cn(
-                      "cursor-pointer rounded-full px-4 py-2 text-sm font-semibold transition-colors",
+                      "block cursor-pointer rounded-full px-3 py-2 text-xs font-medium transition-colors lg:px-4 lg:text-sm",
                       active
-                        ? "bg-[#11113f] text-white"
-                        : "text-[#55556f] hover:bg-white hover:text-[#11113f]",
+                        ? "bg-[#584b41] text-white"
+                        : "text-[#746e66] hover:bg-[#f4f1eb] hover:text-[#38322e]",
                     )}
                   >
                     {item.label}
@@ -68,7 +70,7 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
             <Button
               variant="ghost"
               size="icon"
-              className="relative rounded-full text-[#11113f]"
+              className="relative rounded-full text-[#584b41]"
               onClick={() => setLocation("/notifications")}
               aria-label="Уведомления"
             >
@@ -80,16 +82,16 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-11 gap-2 rounded-full px-1.5 sm:px-2">
-                  <Avatar className="h-9 w-9 border border-[#11113f]/15 bg-white">
-                    <AvatarFallback className="bg-white text-xs font-semibold text-[#11113f]">
+                <Button variant="ghost" className="h-11 gap-2 rounded-full px-1.5 sm:px-2" aria-label="Меню профиля">
+                  <Avatar className="h-9 w-9 border border-[#ded9cf] bg-white">
+                    <AvatarFallback className="bg-[#f4f1eb] text-xs font-semibold text-[#584b41]">
                       {initials}
                     </AvatarFallback>
                   </Avatar>
-                  <ChevronDown className="hidden h-4 w-4 text-[#6d6d7d] sm:block" />
+                  <ChevronDown className="hidden h-4 w-4 text-[#746e66] sm:block" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuContent align="end" className="client-light-scope registr-v3 w-64">
                 <DropdownMenuLabel>
                   <p className="font-semibold">{user?.fullName}</p>
                   <p className="mt-1 text-xs font-normal text-muted-foreground">{user?.email}</p>
@@ -107,17 +109,18 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
         </div>
       </header>
 
-      <main className="mx-auto max-w-[92rem] px-5 py-8 sm:px-8 lg:px-12 lg:py-12" data-testid="client-main">
+      <main className="mx-auto max-w-[92rem] px-5 py-6 sm:px-8 lg:px-14 lg:py-10" data-testid="client-main">
         {children}
       </main>
 
-      <footer className="mt-12 border-t border-[#11113f]/10 bg-[#fbfaf7]">
-        <div className="mx-auto flex max-w-[92rem] flex-col gap-2 px-5 py-7 text-sm text-[#6d6d7d] sm:flex-row sm:items-center sm:justify-between sm:px-8 lg:px-12">
+      <footer className="mx-5 mt-12 border-t border-[#ded9cf] sm:mx-8">
+        <div className="mx-auto flex max-w-[92rem] flex-col gap-2 py-7 text-xs leading-6 text-[#746e66] sm:flex-row sm:items-center sm:justify-between">
           <span>Регистр — регистрация товарного знака по понятным шагам</span>
           <span>Результат проверки носит предварительный характер</span>
         </div>
       </footer>
       <ClientAssistant />
+      </div>
     </div>
   );
 }

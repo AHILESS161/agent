@@ -32,11 +32,14 @@ import ClientDashboardPage from "@/pages/client-dashboard";
 import ClientApplicationPage from "@/pages/client-application";
 import ClientHowItWorksPage from "@/pages/client-how-it-works";
 
+import ServicesPage from "@/pages/services";
+
 function ClientRoutes() {
   return (
     <ClientPortalLayout>
       <Switch>
         <Route path="/dashboard" component={ClientDashboardPage} />
+        <Route path="/services" component={ServicesPage} />
         <Route path="/start" component={IntakePage} />
         <Route path="/how-it-works" component={ClientHowItWorksPage} />
         <Route path="/intake">
@@ -71,6 +74,7 @@ function AuthenticatedRoutes() {
     <AppLayout>
       <Switch>
         <Route path="/dashboard" component={DashboardPage} />
+        <Route path="/services" component={ServicesPage} />
         <Route path="/intake" component={IntakePage} />
         <Route path="/profile" component={ProfilePage} />
         <Route path="/applications/new">

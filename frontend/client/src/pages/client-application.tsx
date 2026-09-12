@@ -346,7 +346,7 @@ export default function ClientApplicationPage() {
   }, [section]);
 
   if (current.isLoading) {
-    return <div className="flex min-h-[55vh] items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем заявку…</div>;
+    return <div className="flex min-h-[55vh] items-center justify-center text-[#746e66]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем заявку…</div>;
   }
 
   if (current.error || !current.data) {
@@ -354,7 +354,7 @@ export default function ClientApplicationPage() {
       <div className="mx-auto max-w-xl rounded-[1.5rem] border border-red-200 bg-white p-8 text-center">
         <AlertCircle className="mx-auto h-8 w-8 text-red-500" />
         <h1 className="mt-4 text-2xl font-semibold">Заявка не открылась</h1>
-        <p className="mt-2 text-[#6d6d7d]">{current.error || "Заявка не найдена"}</p>
+        <p className="mt-2 text-[#746e66]">{current.error || "Заявка не найдена"}</p>
         <Button variant="outline" className="mt-5 rounded-full" onClick={() => setLocation("/dashboard")}>К моим заявкам</Button>
       </div>
     );
@@ -364,22 +364,22 @@ export default function ClientApplicationPage() {
 
   return (
     <div className="min-w-0 space-y-7">
-      <button type="button" onClick={() => setLocation("/dashboard")} className="flex items-center gap-2 text-sm font-semibold text-[#6d6d7d] hover:text-[#11113f]">
+      <button type="button" onClick={() => setLocation("/dashboard")} className="flex items-center gap-2 text-sm font-semibold text-[#746e66] hover:text-[#38322e]">
         <ArrowLeft className="h-4 w-4" /> Все заявки
       </button>
 
-      <section className="rounded-[1.8rem] bg-[#11113f] px-6 py-7 text-white sm:px-9">
+      <section className="rounded-[1.8rem] bg-[#38322e] px-6 py-7 text-white sm:px-9">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#43c7c2]">Заявка №{application.id}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#d7c4a4]">Заявка №{application.id}</p>
             <h1 className="mt-2 text-3xl font-semibold sm:text-4xl">{application.markName}</h1>
             <p className="mt-2 text-sm text-white/60">Можно вернуться позже — введённые данные сохраняются</p>
           </div>
           <div className="flex w-fit flex-col items-start gap-2 sm:items-end">
             <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-sm font-semibold">
-              <span className="h-2 w-2 rounded-full bg-[#43c7c2]" /> {stageFor(application).label}
+              <span className="h-2 w-2 rounded-full bg-[#d7c4a4]" /> {stageFor(application).label}
             </span>
-            {canPrepareApplication && <button type="button" onClick={() => goToSection("applicant")} className="text-sm font-semibold text-[#43c7c2] underline decoration-[#43c7c2]/40 underline-offset-4 transition-colors hover:text-white">
+            {canPrepareApplication && <button type="button" onClick={() => goToSection("applicant")} className="text-sm font-semibold text-[#d7c4a4] underline decoration-[#d7c4a4]/40 underline-offset-4 transition-colors hover:text-white">
               Перейти к подготовке к подаче →
             </button>}
           </div>
@@ -389,7 +389,7 @@ export default function ClientApplicationPage() {
       <div className="grid min-w-0 gap-5 xl:grid-cols-[15.5rem_minmax(0,1fr)] xl:items-start xl:gap-7">
         <nav
           aria-label="Этапы оформления заявки"
-          className="sticky top-[5.25rem] z-20 -mx-1 flex gap-2 overflow-x-auto rounded-[1.3rem] border border-[#11113f]/10 bg-white/95 p-2 shadow-[0_10px_30px_rgba(21,21,55,0.08)] backdrop-blur xl:top-24 xl:mx-0 xl:grid xl:grid-cols-1 xl:gap-1 xl:overflow-visible xl:p-3"
+          className="sticky top-[5.25rem] z-20 -mx-1 flex gap-2 overflow-x-auto rounded-[1.3rem] border border-[#38322e]/10 bg-white/95 p-2 shadow-[0_10px_30px_rgba(21,21,55,0.08)] backdrop-blur xl:top-24 xl:mx-0 xl:grid xl:grid-cols-1 xl:gap-1 xl:overflow-visible xl:p-3"
         >
           {JOURNEY_STEPS.map((item, index) => {
             const active = journeySection(section) === item.id;
@@ -402,21 +402,21 @@ export default function ClientApplicationPage() {
                 onClick={() => goToSection(item.id === "documents" ? "applicant" : item.id)}
                 className={cn(
                   "flex min-h-14 min-w-[10.5rem] shrink-0 items-center gap-3 rounded-xl px-3 text-left text-sm font-semibold transition-[background-color,color,transform,box-shadow] duration-300 ease-out active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 xl:min-w-0 xl:w-full",
-                  active ? "bg-[#e9f7f6] text-[#087c78] shadow-[inset_0_0_0_1px_rgba(13,159,155,0.16)]" : "text-[#66667a] hover:bg-[#f6f5f1] hover:text-[#11113f]",
+                  active ? "bg-[#f4f1eb] text-[#786341] shadow-[inset_0_0_0_1px_rgba(13,159,155,0.16)]" : "text-[#746e66] hover:bg-[#fcfbf8] hover:text-[#38322e]",
                 )}
               >
-                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#0d9f9b] bg-[#0d9f9b] text-white" : "border-[#11113f]/15")}>{index + 1}</span>
+                <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full border text-xs transition-[background-color,border-color,color,transform] duration-300", active ? "client-step-active border-[#9b8258] bg-[#9b8258] text-white" : "border-[#38322e]/15")}>{index + 1}</span>
                 <span className="leading-snug">{item.label}<span className="mt-1 block text-xs font-normal opacity-75">{item.id === "documents" && !canPrepareApplication ? "После результата проверки" : item.hint}</span></span>
               </button>
             );
           })}
         </nav>
 
-        <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#11113f]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
+        <div ref={stageRef} className="min-w-0 scroll-mt-40 overflow-hidden rounded-[1.8rem] border border-[#38322e]/10 bg-white p-5 shadow-[0_14px_45px_rgba(21,21,55,0.05)] sm:p-8 xl:scroll-mt-24 xl:p-10">
           <div key={section} className={cn("client-stage-enter", transitionDirection === "backward" && "client-stage-enter-backward")}>
             {preparingApplication && !canPrepareApplication ? (
               <ClientPanel title={filingRisk.isLoading ? "Загружаем результат проверки" : "Сначала запустите проверку знака"} description={filingRisk.error || "Подготовка заявки станет доступна после первого результата проверки, даже если для окончательной оценки риска потребуется дополнительная проверка."}>
-                {filingRisk.isLoading ? <Loader2 className="h-6 w-6 animate-spin text-[#0d9f9b]" /> : <div className="flex flex-wrap gap-3">
+                {filingRisk.isLoading ? <Loader2 className="h-6 w-6 animate-spin text-[#9b8258]" /> : <div className="flex flex-wrap gap-3">
                   <Button onClick={() => goToSection("analysis")}>К результату проверки</Button>
                   {filingRisk.error && <Button variant="outline" onClick={filingRisk.reload}>Повторить загрузку</Button>}
                 </div>}
@@ -447,9 +447,9 @@ export default function ClientApplicationPage() {
 function ClientPanel({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Товарный знак</p>
-      <h2 className="mt-2 text-3xl font-semibold text-[#11113f]">{title}</h2>
-      <p className="mt-3 max-w-3xl leading-relaxed text-[#6d6d7d]">{description}</p>
+      <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#9b8258]">Товарный знак</p>
+      <h2 className="mt-2 text-3xl font-semibold text-[#38322e]">{title}</h2>
+      <p className="mt-3 max-w-3xl leading-relaxed text-[#746e66]">{description}</p>
       <div className="mt-8 min-w-0">{children}</div>
     </div>
   );
@@ -1253,7 +1253,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         {autosaveStatus !== "idle" && (
           <span className={cn(
             "inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold",
-            autosaveStatus === "error" ? "bg-red-50 text-red-700" : "bg-[#eef9f8] text-[#087c78]",
+            autosaveStatus === "error" ? "bg-red-50 text-red-700" : "bg-[#f4f1eb] text-[#786341]",
           )}>
             {autosaveStatus === "saving" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : autosaveStatus === "saved" ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
             {autosaveStatus === "dirty" ? "Есть несохранённые изменения" : autosaveStatus === "saving" ? "Сохраняем изменения…" : autosaveStatus === "saved" ? "Все изменения сохранены" : "Не удалось сохранить автоматически"}
@@ -1268,8 +1268,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           <div className="flex items-start gap-3">
             {incompleteReviewItems.length ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-700" /> : <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" />}
             <div>
-              <p className="font-semibold text-[#11113f]">{incompleteReviewItems.length ? `Перед анализом осталось: ${incompleteReviewItems.length}` : "Основные сведения заполнены"}</p>
-              <p className="mt-1 text-sm leading-relaxed text-[#5f6072]">{incompleteReviewItems.length ? "Нажмите на пункт — экран прокрутится к нужному разделу." : "Теперь проверьте предложенные классы товаров и услуг."}</p>
+              <p className="font-semibold text-[#38322e]">{incompleteReviewItems.length ? `Перед анализом осталось: ${incompleteReviewItems.length}` : "Основные сведения заполнены"}</p>
+              <p className="mt-1 text-sm leading-relaxed text-[#746e66]">{incompleteReviewItems.length ? "Нажмите на пункт — экран прокрутится к нужному разделу." : "Теперь проверьте предложенные классы товаров и услуг."}</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {incompleteReviewItems.map((item) => <button key={item.label} type="button" onClick={() => scrollTo(item.target)} className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-900 hover:border-amber-500">{item.label}</button>)}
                 {incompleteReviewItems.length === 0 && <button type="button" onClick={() => scrollTo("class-confirmation")} className="rounded-full bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800">Перейти к классам</button>}
@@ -1278,16 +1278,16 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           </div>
         </section>
       )}
-      {mode !== "review" && <section className="mb-8 rounded-[1.3rem] border-2 border-[#0d9f9b]/25 bg-[#eef9f8] p-5 sm:p-6">
+      {mode !== "review" && <section className="mb-8 rounded-[1.3rem] border-2 border-[#9b8258]/25 bg-[#f4f1eb] p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="max-w-2xl">
             <div className="flex items-center gap-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#0d9f9b]">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#9b8258]">
                 <FileText className="h-5 w-5" />
               </span>
               <div>
-                <h3 className="text-xl font-semibold text-[#11113f]">Загрузите документы заявителя</h3>
-                <p className="mt-1 text-sm leading-relaxed text-[#5f6072]">
+                <h3 className="text-xl font-semibold text-[#38322e]">Загрузите документы заявителя</h3>
+                <p className="mt-1 text-sm leading-relaxed text-[#746e66]">
                   Выписка ЕГРЮЛ или ЕГРИП заполнит реквизиты организации или ИП. Из паспорта физлица система предложит только ФИО и адрес — остальные паспортные данные в заявление не переносятся.
                 </p>
               </div>
@@ -1297,7 +1297,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             type="button"
             disabled={applicantDocumentUploading}
             onClick={() => applicantDocumentInput.current?.click()}
-            className="shrink-0 rounded-full bg-[#0d9f9b] px-5 hover:bg-[#078984]"
+            className="shrink-0 rounded-full bg-[#9b8258] px-5 hover:bg-[#786341]"
             data-testid="button-upload-applicant-document"
           >
             {applicantDocumentUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -1316,10 +1316,10 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
         {applicantDocuments.length > 0 && (
           <div className="mt-5 space-y-2">
             {applicantDocuments.map((document) => (
-              <div key={document.id} className="flex flex-col gap-2 rounded-xl border border-[#11113f]/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+              <div key={document.id} className="flex flex-col gap-2 rounded-xl border border-[#38322e]/10 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[#11113f]">{document.original_filename}</p>
-                  <p className="mt-0.5 text-xs text-[#6d6d7d]">
+                  <p className="truncate text-sm font-semibold text-[#38322e]">{document.original_filename}</p>
+                  <p className="mt-0.5 text-xs text-[#746e66]">
                     {DOCUMENT_KIND_LABELS[document.document_kind] || "Документ"} · {document.processing_status === "failed" ? "нужно проверить файл" : "файл обработан"}
                   </p>
                   {document.document_kind === "passport" && <p className="mt-1 text-xs font-medium text-sky-800">Чувствительный документ: хранится только для сверки и не войдёт в ZIP.</p>}
@@ -1330,8 +1330,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           </div>
         )}
 
-        <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-[#5f6072]">
-          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#0d9f9b]" />
+        <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-[#746e66]">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-[#9b8258]" />
           После загрузки проверьте обновившиеся поля ниже. На следующий шаг попадут именно значения, которые вы сохраните здесь.
         </p>
       </section>}
@@ -1342,14 +1342,14 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           </MarkedField>
           <MarkedField label="Обозначение" source={sourceFor("mark_name", Boolean(form.markName))}><Input value={form.markName} onChange={(e) => set("markName", e.target.value)} /></MarkedField>
           {imageMark && (
-            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
+            <div className="rounded-2xl border border-[#9b8258]/25 bg-[#f4f1eb] p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <Label className="inline-flex items-center gap-1 text-sm font-semibold">
                     Изображение обозначения
                     <HelpTip text="Загрузите именно тот вариант логотипа или рисунка, который планируете регистрировать. Для комбинированного знака защищается сочетание изображения и слов." />
                   </Label>
-                  <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">PNG или JPEG. Мы проверим файл, покажем его и попробуем прочитать слова.</p>
+                  <p className="mt-1 text-xs leading-relaxed text-[#746e66]">PNG или JPEG. Мы проверим файл, покажем его и попробуем прочитать слова.</p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2">
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-800">Обязательно</span>
@@ -1359,20 +1359,20 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
 
               {markImage && previewUrl ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-[150px_1fr]">
-                  <div className="flex min-h-36 items-center justify-center rounded-xl border border-[#11113f]/10 bg-white p-3">
+                  <div className="flex min-h-36 items-center justify-center rounded-xl border border-[#38322e]/10 bg-white p-3">
                     <img src={previewUrl} alt="Загруженное обозначение" className="max-h-32 max-w-full object-contain" />
                   </div>
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-[#11113f]">{markImage.filename}</p>
-                    <p className="mt-1 text-xs text-[#6d6d7d]">{markImage.width} × {markImage.height} px · {markImage.format} · {(markImage.file_size / 1024).toFixed(0)} КБ</p>
+                    <p className="truncate font-semibold text-[#38322e]">{markImage.filename}</p>
+                    <p className="mt-1 text-xs text-[#746e66]">{markImage.width} × {markImage.height} px · {markImage.format} · {(markImage.file_size / 1024).toFixed(0)} КБ</p>
                     {markImage.dominant_colors.length > 0 && (
-                      <div className="mt-3 flex items-center gap-2 text-xs text-[#6d6d7d]">
+                      <div className="mt-3 flex items-center gap-2 text-xs text-[#746e66]">
                         Основные цвета
                         {markImage.dominant_colors.map((color) => <span key={color} title={color} className="h-5 w-5 rounded-full border border-black/10" style={{ backgroundColor: color }} />)}
                       </div>
                     )}
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f8f7f4]">
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#38322e]/15 bg-white px-4 py-2 text-xs font-semibold hover:bg-[#f8f7f4]">
                         <Upload className="h-4 w-4" /> Заменить
                         <input type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
                       </label>
@@ -1381,10 +1381,10 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                   </div>
                 </div>
               ) : (
-                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center hover:border-[#0d9f9b]">
-                  {imageUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <ImageIcon className="h-7 w-7 text-[#0d9f9b]" />}
-                  <span className="mt-2 text-sm font-semibold text-[#11113f]">{imageUploading ? "Обрабатываем изображение…" : "Выбрать изображение"}</span>
-                  <span className="mt-1 text-xs text-[#6d6d7d]">до 25 МБ</span>
+                <label className="mt-4 flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#9b8258]/45 bg-white px-5 text-center hover:border-[#9b8258]">
+                  {imageUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#9b8258]" /> : <ImageIcon className="h-7 w-7 text-[#9b8258]" />}
+                  <span className="mt-2 text-sm font-semibold text-[#38322e]">{imageUploading ? "Обрабатываем изображение…" : "Выбрать изображение"}</span>
+                  <span className="mt-1 text-xs text-[#746e66]">до 25 МБ</span>
                   <input disabled={imageUploading} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => void uploadMarkImage(event.target.files?.[0])} />
                 </label>
               )}
@@ -1393,7 +1393,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                 <div className="mt-4">
                   <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Слова на логотипе <HelpTip text="Мы используем подтверждённые слова для поиска похожих названий. Исправьте ошибки распознавания и укажите все читаемые словесные элементы." /></Label><SourceBadge source={sourceFor("mark_text", Boolean(form.markText))} /></div>
                   <Input className="mt-2 bg-white" value={form.markText} onChange={(event) => set("markText", event.target.value)} placeholder="Например: Регистр" />
-                  <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">{markImage?.recognized_text ? "Текст предложен OCR — обязательно сверьте его с картинкой." : "Если на изображении есть слова, введите их вручную."}</p>
+                  <p className="mt-2 text-xs leading-relaxed text-[#746e66]">{markImage?.recognized_text ? "Текст предложен OCR — обязательно сверьте его с картинкой." : "Если на изображении есть слова, введите их вручную."}</p>
                 </div>
               )}
 
@@ -1403,17 +1403,17 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             </div>
           )}
           {soundMark && (
-            <div className="rounded-2xl border border-[#0d9f9b]/25 bg-[#eef9f8] p-4">
+            <div className="rounded-2xl border border-[#9b8258]/25 bg-[#f4f1eb] p-4">
               <div className="flex flex-wrap items-center justify-between gap-2"><Label className="inline-flex items-center gap-1 text-sm font-semibold">Аудиозапись обозначения <HelpTip text="Загрузите запись именно того звука, который хотите зарегистрировать. Рекомендуемый Роспатентом формат — MP3; поддерживается и WAV." /></Label><SourceBadge source={sourceFor("mark_audio", Boolean(markAudio))} /></div>
-              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">MP3 или WAV, до 25 МБ. После загрузки отдельно проверьте описание звучания.</p>
+              <p className="mt-1 text-xs leading-relaxed text-[#746e66]">MP3 или WAV, до 25 МБ. После загрузки отдельно проверьте описание звучания.</p>
               {markAudio ? (
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-white p-4">
-                  <div><p className="font-semibold text-[#11113f]">{markAudio.original_filename}</p><p className="mt-1 text-xs text-[#6d6d7d]">Аудиозапись сохранена · {(markAudio.file_size / 1024 / 1024).toFixed(1)} МБ</p></div>
-                  <label className="cursor-pointer rounded-full border border-[#11113f]/15 px-4 py-2 text-xs font-semibold">Заменить<input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} /></label>
+                  <div><p className="font-semibold text-[#38322e]">{markAudio.original_filename}</p><p className="mt-1 text-xs text-[#746e66]">Аудиозапись сохранена · {(markAudio.file_size / 1024 / 1024).toFixed(1)} МБ</p></div>
+                  <label className="cursor-pointer rounded-full border border-[#38322e]/15 px-4 py-2 text-xs font-semibold">Заменить<input type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} /></label>
                 </div>
               ) : (
-                <label className="mt-4 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#0d9f9b]/45 bg-white px-5 text-center">
-                  {audioUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#0d9f9b]" /> : <Upload className="h-7 w-7 text-[#0d9f9b]" />}
+                <label className="mt-4 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[#9b8258]/45 bg-white px-5 text-center">
+                  {audioUploading ? <Loader2 className="h-7 w-7 animate-spin text-[#9b8258]" /> : <Upload className="h-7 w-7 text-[#9b8258]" />}
                   <span className="mt-2 text-sm font-semibold">{audioUploading ? "Загружаем…" : "Выбрать MP3 или WAV"}</span>
                   <input disabled={audioUploading} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="sr-only" onChange={(event) => void uploadMarkAudio(event.target.files?.[0])} />
                 </label>
@@ -1432,9 +1432,9 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               placeholder="Например: ремонт квартир, пошив одежды или доставка еды"
             />
           </MarkedField>
-          <details className="rounded-xl border border-[#11113f]/10 bg-white p-4">
-            <summary className="cursor-pointer font-semibold text-[#11113f]">Описание и цвета для заявления</summary>
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-xs leading-relaxed text-[#6d6d7d]">Система подготовит описание, основные цвета, написание латиницей и перевод. Проверьте результат перед сохранением.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Подготовить сведения</Button></div>
+          <details className="rounded-xl border border-[#38322e]/10 bg-white p-4">
+            <summary className="cursor-pointer font-semibold text-[#38322e]">Описание и цвета для заявления</summary>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="max-w-2xl text-xs leading-relaxed text-[#746e66]">Система подготовит описание, основные цвета, написание латиницей и перевод. Проверьте результат перед сохранением.</p><Button type="button" variant="outline" size="sm" disabled={autoFilling} onClick={() => void generateAllDetails()}>{autoFilling ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Подготовить сведения</Button></div>
             <div className="mt-4 space-y-4">
               <MarkedField label="Описание обозначения" source={sourceFor("mark_description", Boolean(form.description))}><Textarea rows={6} value={form.description} onChange={(e) => set("description", e.target.value)} placeholder="Нажмите «Подготовить сведения»" /></MarkedField>
               <MarkedField label="Основные цвета обозначения" source={sourceFor("colors_claimed", Boolean(form.colors))}><Input value={form.colors} onChange={(e) => set("colors", e.target.value)} placeholder="Определятся по изображению" /></MarkedField>
@@ -1469,32 +1469,32 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
             <MarkedField label="E-mail для переписки" source={sourceFor("applicant_email", Boolean(form.email))}><Input type="email" value={form.email} onChange={(e) => set("email", e.target.value)} /></MarkedField>
             <MarkedField label="Телефон для переписки" source={sourceFor("applicant_phone", Boolean(form.phone))}><Input value={form.phone} onChange={(e) => set("phone", e.target.value)} /></MarkedField>
           </div>
-          <p className="text-xs leading-relaxed text-[#6d6d7d]">Адрес, телефон и e-mail будут использованы в черновике как контакты для переписки с Роспатентом.</p>
+          <p className="text-xs leading-relaxed text-[#746e66]">Адрес, телефон и e-mail будут использованы в черновике как контакты для переписки с Роспатентом.</p>
           {user?.role === "client" && (
             <div className={cn(
               "flex flex-col gap-4 rounded-2xl border-2 p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5",
               profileMatchesForm
-                ? "border-[#0d9f9b]/45 bg-gradient-to-r from-[#e5f8f6] to-[#f2fbfa]"
+                ? "border-[#9b8258]/45 bg-gradient-to-r from-[#f0e9dc] to-[#f7f5f0]"
                 : "border-amber-300 bg-amber-50",
             )}>
               <div className="flex items-start gap-3">
                 <span className={cn(
                   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-                  profileMatchesForm ? "bg-[#0d9f9b] text-white" : "bg-amber-200 text-amber-900",
+                  profileMatchesForm ? "bg-[#9b8258] text-white" : "bg-amber-200 text-amber-900",
                 )}>
                   <CheckCircle2 className="h-5 w-5" />
                 </span>
                 <div>
-                <p className="text-sm font-semibold text-[#11113f]">
+                <p className="text-sm font-semibold text-[#38322e]">
                   {profileMatchesForm ? "Данные сохранены для следующих заявок" : "Запомнить данные для следующих заявок?"}
                 </p>
-                <p className="mt-1 text-xs leading-relaxed text-[#5f6072]">
+                <p className="mt-1 text-xs leading-relaxed text-[#746e66]">
                   Сохраним только реквизиты заявителя и контакты. Данные товарного знака останутся только в этой заявке.
                 </p>
                 </div>
               </div>
               {profileMatchesForm ? (
-                <span className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full bg-[#087c78] px-5 py-2.5 text-sm font-bold text-white shadow-sm">
+                <span className="inline-flex w-fit shrink-0 items-center gap-2 rounded-full bg-[#786341] px-5 py-2.5 text-sm font-bold text-white shadow-sm">
                   <CheckCircle2 className="h-4 w-4" />
                   Сохранено в профиле
                 </span>
@@ -1503,7 +1503,7 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                   type="button"
                   disabled={savingProfile}
                   onClick={() => void saveApplicantToProfile()}
-                  className="shrink-0 rounded-full bg-[#0d9f9b] px-5 text-white hover:bg-[#087c78]"
+                  className="shrink-0 rounded-full bg-[#9b8258] px-5 text-white hover:bg-[#786341]"
                   data-testid="save-applicant-to-profile"
                 >
                   {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
@@ -1519,20 +1519,20 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
               <MarkedField label="Способ подачи" source={sourceFor("filing_method", Boolean(form.filingMethod))}>
                 <Select value={form.filingMethod} onValueChange={(value) => set("filingMethod", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="electronic">Электронно через официальный сервис</SelectItem><SelectItem value="paper">На бумаге</SelectItem></SelectContent></Select>
               </MarkedField>
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4">
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#38322e]/10 bg-white p-4">
                 <Checkbox
                   checked={form.requestPaperCertificate}
                   onCheckedChange={(checked) => setForm((current) => ({ ...current, requestPaperCertificate: checked === true }))}
                 />
                 <span>
-                  <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#11113f]">Получить свидетельство на бумаге <SourceBadge source={sourceFor("paper_certificate", true)} /></span>
-                  <span className="mt-1 block text-xs leading-relaxed text-[#6d6d7d]">Необязательно. Электронное свидетельство выдаётся в любом случае; бумажный экземпляр увеличит пошлину на 3 000 ₽.</span>
+                  <span className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#38322e]">Получить свидетельство на бумаге <SourceBadge source={sourceFor("paper_certificate", true)} /></span>
+                  <span className="mt-1 block text-xs leading-relaxed text-[#746e66]">Необязательно. Электронное свидетельство выдаётся в любом случае; бумажный экземпляр увеличит пошлину на 3 000 ₽.</span>
                 </span>
               </label>
               <MarkedField label="ФИО подписанта" source={sourceFor("signatory_name", Boolean(form.signatoryName))}><Input value={form.signatoryName} onChange={(event) => set("signatoryName", event.target.value)} placeholder="Например: Иванов Иван Иванович" /></MarkedField>
               {isApplicable("signatory_position", client?.type === "company") && <MarkedField label="Должность" source={sourceFor("signatory_position", Boolean(form.signatoryPosition))}><Input value={form.signatoryPosition} onChange={(event) => set("signatoryPosition", event.target.value)} placeholder="Например: генеральный директор" /></MarkedField>}
               <MarkedField label="Дата подписания" source={sourceFor("signature_date", Boolean(form.signatureDate))}><Input type="date" value={form.signatureDate} onChange={(event) => set("signatureDate", event.target.value)} /></MarkedField>
-              <div className="rounded-lg bg-[#eef9f8] p-3 text-xs leading-relaxed text-[#315c5a]">{form.filingMethod === "electronic" ? "Рисовать подпись здесь не нужно. При отправке заявление подписывается электронной подписью в официальном сервисе Роспатента." : "Скачайте и распечатайте заявление, затем поставьте собственноручную подпись в оставленном поле. Картинка или нарисованная мышкой подпись её не заменяет."}</div>
+              <div className="rounded-lg bg-[#f4f1eb] p-3 text-xs leading-relaxed text-[#655846]">{form.filingMethod === "electronic" ? "Рисовать подпись здесь не нужно. При отправке заявление подписывается электронной подписью в официальном сервисе Роспатента." : "Скачайте и распечатайте заявление, затем поставьте собственноручную подпись в оставленном поле. Картинка или нарисованная мышкой подпись её не заменяет."}</div>
             </div>
         </FormGroup>
 
@@ -1544,27 +1544,27 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                 onClick={() => setUsesRepresentative(false)}
                 className={cn(
                   "rounded-xl border p-4 text-left transition-colors",
-                  !usesRepresentative ? "border-[#0d9f9b] bg-[#eef9f8]" : "border-[#11113f]/10 bg-white hover:border-[#0d9f9b]/40",
+                  !usesRepresentative ? "border-[#9b8258] bg-[#f4f1eb]" : "border-[#38322e]/10 bg-white hover:border-[#9b8258]/40",
                 )}
               >
-                <span className="font-semibold text-[#11113f]">Подаю самостоятельно</span>
-                <span className="mt-1 block text-xs leading-relaxed text-[#6d6d7d]">Роспатент будет переписываться с заявителем.</span>
+                <span className="font-semibold text-[#38322e]">Подаю самостоятельно</span>
+                <span className="mt-1 block text-xs leading-relaxed text-[#746e66]">Роспатент будет переписываться с заявителем.</span>
               </button>
               <button
                 type="button"
                 onClick={() => setUsesRepresentative(true)}
                 className={cn(
                   "rounded-xl border p-4 text-left transition-colors",
-                  usesRepresentative ? "border-[#0d9f9b] bg-[#eef9f8]" : "border-[#11113f]/10 bg-white hover:border-[#0d9f9b]/40",
+                  usesRepresentative ? "border-[#9b8258] bg-[#f4f1eb]" : "border-[#38322e]/10 bg-white hover:border-[#9b8258]/40",
                 )}
               >
-                <span className="font-semibold text-[#11113f]">Через представителя</span>
-                <span className="mt-1 block text-xs leading-relaxed text-[#6d6d7d]">Он будет указан в заявлении и сможет вести переписку.</span>
+                <span className="font-semibold text-[#38322e]">Через представителя</span>
+                <span className="mt-1 block text-xs leading-relaxed text-[#746e66]">Он будет указан в заявлении и сможет вести переписку.</span>
               </button>
             </div>
 
             {usesRepresentative && (
-              <div className="space-y-4 rounded-2xl border border-[#0d9f9b]/25 bg-[#f8fcfb] p-4 sm:p-5">
+              <div className="space-y-4 rounded-2xl border border-[#9b8258]/25 bg-[#fcfbf8] p-4 sm:p-5">
                 <MarkedField label="ФИО представителя" mode="manual">
                   <Input value={representative.fullName} onChange={(event) => setRepresentative((old) => ({ ...old, fullName: event.target.value }))} placeholder="Иванов Иван Иванович" />
                 </MarkedField>
@@ -1583,14 +1583,14 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                   </MarkedField>
                 </div>
 
-                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4">
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#38322e]/10 bg-white p-4">
                   <Checkbox
                     checked={representative.isPatentAttorney}
                     onCheckedChange={(checked) => setRepresentative((old) => ({ ...old, isPatentAttorney: checked === true }))}
                   />
                   <span>
-                    <span className="text-sm font-semibold text-[#11113f]">Это патентный поверенный</span>
-                    <span className="mt-1 block text-xs leading-relaxed text-[#6d6d7d]">Отметьте только если специалист зарегистрирован в государственном реестре патентных поверенных.</span>
+                    <span className="text-sm font-semibold text-[#38322e]">Это патентный поверенный</span>
+                    <span className="mt-1 block text-xs leading-relaxed text-[#746e66]">Отметьте только если специалист зарегистрирован в государственном реестре патентных поверенных.</span>
                   </span>
                 </label>
                 {representative.isPatentAttorney && <MarkedField label="Регистрационный номер патентного поверенного" mode="manual"><Input value={representative.registrationNumber} onChange={(event) => setRepresentative((old) => ({ ...old, registrationNumber: event.target.value }))} placeholder="Номер из реестра" /></MarkedField>}
@@ -1613,8 +1613,8 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
                     </MarkedField>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <p className="text-sm font-semibold text-[#11113f]">Файл доверенности</p>
-                        <p className="mt-1 text-xs text-[#6d6d7d]">{powerOfAttorneyDocument ? powerOfAttorneyDocument.original_filename : "Приложите документ — он войдёт в итоговый ZIP."}</p>
+                        <p className="text-sm font-semibold text-[#38322e]">Файл доверенности</p>
+                        <p className="mt-1 text-xs text-[#746e66]">{powerOfAttorneyDocument ? powerOfAttorneyDocument.original_filename : "Приложите документ — он войдёт в итоговый ZIP."}</p>
                       </div>
                       <Button type="button" variant="outline" disabled={powerOfAttorneyUploading} onClick={() => powerOfAttorneyInput.current?.click()} className="rounded-full bg-white">
                         {powerOfAttorneyUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
@@ -1640,16 +1640,16 @@ function ClientDataForm({ mode, application, client, appId, onSaved, onNext, onA
           onDataChange={() => setDataConfirmed(false)}
         />
       )}
-      {mode === "upload" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Перейти к проверке данных <ChevronRight className="h-4 w-4" /></Button></div>}
-      {mode === "filing" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#0d9f9b] px-7 hover:bg-[#078984]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Подтвердить сведения и перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button></div>}
+      {mode === "upload" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#9b8258] px-7 hover:bg-[#786341]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Перейти к проверке данных <ChevronRight className="h-4 w-4" /></Button></div>}
+      {mode === "filing" && <div className="mt-8 flex justify-end"><Button disabled={saving} onClick={() => void save()} className="rounded-full bg-[#9b8258] px-7 hover:bg-[#786341]">{saving && <Loader2 className="h-4 w-4 animate-spin" />} Подтвердить сведения и перейти к пошлинам <ChevronRight className="h-4 w-4" /></Button></div>}
     </ClientPanel>
   );
 }
 
 function FormGroup({ id, step, title, hint, children }: { id?: string; step?: number; title: React.ReactNode; hint: string; children: React.ReactNode }) {
   return <section id={id} className="scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-    {step && <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">{step}</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Данные о знаке</p></div>}
-    <h3 className="text-xl font-semibold">{title}</h3><p className="mt-1 text-sm text-[#6d6d7d]">{hint}</p><div className="mt-6 space-y-5">{children}</div>
+    {step && <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38322e] text-sm font-bold text-white">{step}</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#9b8258]">Данные о знаке</p></div>}
+    <h3 className="text-xl font-semibold">{title}</h3><p className="mt-1 text-sm text-[#746e66]">{hint}</p><div className="mt-6 space-y-5">{children}</div>
   </section>;
 }
 
@@ -1657,7 +1657,7 @@ function SourceBadge({ source }: { source: FieldSourceDto }) {
   const colors: Record<FieldSourceKind, string> = {
     document: "bg-emerald-100 text-emerald-800",
     system: "bg-sky-100 text-sky-800",
-    user: source.filled ? "bg-[#ececf5] text-[#34345f]" : "bg-amber-100 text-amber-800",
+    user: source.filled ? "bg-[#f0e9dc] text-[#51483f]" : "bg-amber-100 text-amber-800",
     rospatent: "bg-violet-100 text-violet-800",
     profile: "bg-teal-100 text-teal-800",
   };
@@ -1845,8 +1845,8 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
   };
 
   if (loading) return <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-    <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Товары и услуги · перед проверкой</p></div>
-    <div className="flex min-h-40 items-center justify-center rounded-[1.2rem] border border-[#11113f]/10 bg-white text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем предложенные классы…</div>
+    <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38322e] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#9b8258]">Товары и услуги · перед проверкой</p></div>
+    <div className="flex min-h-40 items-center justify-center rounded-[1.2rem] border border-[#38322e]/10 bg-white text-[#746e66]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем предложенные классы…</div>
   </section>;
 
   const included = classes.filter((item) => item.approved === true).length;
@@ -1858,10 +1858,10 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
 
   return (
     <section id="class-confirmation" className="mt-6 scroll-mt-28 rounded-[1.3rem] bg-[#f8f7f4] p-5 sm:p-6">
-      <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#11113f] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#0d9f9b]">Товары и услуги · перед проверкой</p></div>
-      <h3 className="mt-2 text-xl font-semibold text-[#11113f]">Проверьте классы товаров и услуг</h3>
-      <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Класс показывает, для каких именно товаров или услуг будет защищён знак. Отметьте каждый предложенный вариант.</p>
-        <section className="mt-5 rounded-[1.3rem] border border-[#0d9f9b]/20 bg-white p-4 sm:p-5">
+      <div className="mb-4 flex items-center gap-3"><span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#38322e] text-sm font-bold text-white">2</span><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#9b8258]">Товары и услуги · перед проверкой</p></div>
+      <h3 className="mt-2 text-xl font-semibold text-[#38322e]">Проверьте классы товаров и услуг</h3>
+      <p className="mt-2 text-sm leading-relaxed text-[#746e66]">Класс показывает, для каких именно товаров или услуг будет защищён знак. Отметьте каждый предложенный вариант.</p>
+        <section className="mt-5 rounded-[1.3rem] border border-[#9b8258]/20 bg-white p-4 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h4 className="inline-flex items-center gap-1 font-semibold">Предложенные классы <HelpTip text="МКТУ — международный справочник из 45 классов. Классы 1–34 относятся к товарам, 35–45 — к услугам. Правовая охрана действует в отношении товаров и услуг, перечисленных в заявке, поэтому важно правильно выбрать направления работы." /></h4>
             <div className="flex flex-wrap items-center gap-2">
@@ -1880,18 +1880,18 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
               </Button>
             </div>
           </div>
-          <p className="mt-2 text-sm leading-relaxed text-[#6d6d7d]">Система группирует вашу деятельность по международному справочнику МКТУ. Подтвердите только те направления, которыми вы действительно занимаетесь или планируете заниматься.</p>
-          <p className="mt-2 rounded-lg bg-[#eef9f8] px-3 py-2 text-xs leading-relaxed text-[#315c5a]">Предложены конкретные товары и услуги по вашему описанию. Подтвердите нужные направления. Полный класс можно выбрать отдельно после проверки его состава и стоимости.</p>
-          <p className="mt-2 rounded-lg bg-[#f8f7f4] px-3 py-2 text-xs leading-relaxed text-[#5f6072]">
+          <p className="mt-2 text-sm leading-relaxed text-[#746e66]">Система группирует вашу деятельность по международному справочнику МКТУ. Подтвердите только те направления, которыми вы действительно занимаетесь или планируете заниматься.</p>
+          <p className="mt-2 rounded-lg bg-[#f4f1eb] px-3 py-2 text-xs leading-relaxed text-[#655846]">Предложены конкретные товары и услуги по вашему описанию. Подтвердите нужные направления. Полный класс можно выбрать отдельно после проверки его состава и стоимости.</p>
+          <p className="mt-2 rounded-lg bg-[#f8f7f4] px-3 py-2 text-xs leading-relaxed text-[#746e66]">
             Изменили документы, описание бизнеса или перечень товаров? Нажмите «Подобрать заново». Прежние классы будут удалены, а список сформируется заново по актуальным данным.
           </p>
-          {classRecalculationStage && <div className="mt-3 overflow-hidden rounded-xl border border-[#0d9f9b]/35 bg-[#eef9f8] p-4" role="status" aria-live="polite">
+          {classRecalculationStage && <div className="mt-3 overflow-hidden rounded-xl border border-[#9b8258]/35 bg-[#f4f1eb] p-4" role="status" aria-live="polite">
             <div className="flex items-start gap-3">
-              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#0d8f8b]" />
+              <Loader2 className="mt-0.5 h-5 w-5 shrink-0 animate-spin text-[#786341]" />
               <div className="min-w-0 flex-1">
-                <p className="font-semibold text-[#11113f]">{classRecalculationStage === "saving" ? "Сохраняем актуальные данные…" : "Подбираем классы заново…"}</p>
-                <p className="mt-1 text-xs leading-relaxed text-[#526866]">{classRecalculationStage === "saving" ? "После сохранения модель автоматически начнёт новый подбор." : "Модель анализирует описание и официальный справочник МКТУ. Обычно это занимает 30–90 секунд; список обновится сам."}</p>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#0d9f9b]/15"><div className="h-full w-1/2 animate-pulse rounded-full bg-[#0d9f9b]" /></div>
+                <p className="font-semibold text-[#38322e]">{classRecalculationStage === "saving" ? "Сохраняем актуальные данные…" : "Подбираем классы заново…"}</p>
+                <p className="mt-1 text-xs leading-relaxed text-[#655846]">{classRecalculationStage === "saving" ? "После сохранения модель автоматически начнёт новый подбор." : "Модель анализирует описание и официальный справочник МКТУ. Обычно это занимает 30–90 секунд; список обновится сам."}</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#9b8258]/15"><div className="h-full w-1/2 animate-pulse rounded-full bg-[#9b8258]" /></div>
               </div>
             </div>
           </div>}
@@ -1902,7 +1902,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
           {usedCatalogFallback && <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm leading-relaxed text-amber-900"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p><span className="font-semibold">Языковая модель не дала надёжного результата.</span> Эти варианты подобраны по официальному справочнику и встроенным правилам. Обязательно проверьте их перед анализом.</p></div>}
           <div className="mt-5 space-y-3">
             {classes.length === 0 ? (
-              <div className="rounded-xl bg-[#f8f7f4] p-4 text-sm text-[#6d6d7d]">Предложений пока нет. Нажмите «Подобрать заново» — система предложит классы по вашему описанию услуг.</div>
+              <div className="rounded-xl bg-[#f8f7f4] p-4 text-sm text-[#746e66]">Предложений пока нет. Нажмите «Подобрать заново» — система предложит классы по вашему описанию услуг.</div>
             ) : classes.map((item) => {
               const description = item.class_description || "";
               const itemCount = description ? description.split(";").filter((part) => part.trim()).length : 0;
@@ -1910,11 +1910,11 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
               const isFullList = description.length > 700 || itemCount > 12;
               const isNarrowing = narrowingClassIds.has(item.id);
               return (
-              <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#11113f]/10 bg-[#f8f7f4] opacity-70" : "border-[#0d9f9b]/35 bg-[#eef9f8]")}>
+              <div key={item.id} className={cn("rounded-xl border p-4", item.approved === true ? "border-emerald-300 bg-emerald-50" : item.approved === false ? "border-[#38322e]/10 bg-[#f8f7f4] opacity-70" : "border-[#9b8258]/35 bg-[#f4f1eb]")}>
                 <div className="flex flex-col gap-4">
                   <div>
                     <div className="flex flex-wrap items-center gap-2"><p className="font-semibold">Что будет защищено в классе {item.class_number}</p><Badge variant="outline" className={cn("bg-white", item.category === "borderline" ? "border-amber-300 text-amber-800" : "border-emerald-200 text-emerald-800")}>{item.category === "borderline" ? "Стоит рассмотреть" : item.category === "secondary" ? "Дополнительный" : "Основной"}</Badge></div>
-                    <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Охрана будет действовать только для позиций из подтверждённого перечня.</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#746e66]">Охрана будет действовать только для позиций из подтверждённого перечня.</p>
                     {isEditing ? <div className="mt-3">
                       <div className="mb-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">Вы редактируете официальный перечень. Всё удалённое не войдёт в заявку и не будет охраняться.</div>
                       <Textarea
@@ -1924,16 +1924,16 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
                         placeholder="Например: установка, обслуживание и ремонт компьютеров"
                       />
                       <Button type="button" size="sm" variant="ghost" className="mt-2 rounded-full" onClick={() => setEditingClassIds((current) => { const next = new Set(current); next.delete(item.id); return next; })}>Отменить редактирование</Button>
-                    </div> : isFullList ? <div className="mt-3 rounded-xl border border-[#0d9f9b]/20 bg-white p-3">
-                      <p className="text-sm font-semibold text-[#0b7774]">Полный перечень класса · около {itemCount} позиций</p>
-                      <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Он будет вынесен в приложение к заявке автоматически.</p>
-                      <details className="mt-2 text-xs text-[#4f5063]"><summary className="cursor-pointer font-semibold text-[#0d8f8b]">Посмотреть перечень</summary><div className="mt-2 max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#f8f7f4] p-3 leading-relaxed">{description}</div></details>
+                    </div> : isFullList ? <div className="mt-3 rounded-xl border border-[#9b8258]/20 bg-white p-3">
+                      <p className="text-sm font-semibold text-[#786341]">Полный перечень класса · около {itemCount} позиций</p>
+                      <p className="mt-1 text-xs leading-relaxed text-[#746e66]">Он будет вынесен в приложение к заявке автоматически.</p>
+                      <details className="mt-2 text-xs text-[#655846]"><summary className="cursor-pointer font-semibold text-[#786341]">Посмотреть перечень</summary><div className="mt-2 max-h-52 overflow-y-auto whitespace-pre-wrap rounded-lg bg-[#f8f7f4] p-3 leading-relaxed">{description}</div></details>
                       <Button type="button" size="sm" variant="outline" className="mt-3 rounded-full" disabled={isNarrowing || recalculatingClasses} onClick={() => void narrowClass(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? `Сужаем класс ${item.class_number}…` : "Сузить перечень автоматически"}</Button>
-                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#315f5d]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
-                    </div> : <div className="mt-3 rounded-xl border border-[#11113f]/10 bg-white p-3">
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#34354b]">{description || "Перечень пока не заполнен"}</p>
+                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#655846]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
+                    </div> : <div className="mt-3 rounded-xl border border-[#38322e]/10 bg-white p-3">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#51483f]">{description || "Перечень пока не заполнен"}</p>
                       <div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="outline" className="rounded-full" disabled={isNarrowing || recalculatingClasses} onClick={() => void narrowClass(item)}>{isNarrowing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} {isNarrowing ? `Сужаем класс ${item.class_number}…` : "Подобрать моделью"}</Button><Button type="button" size="sm" variant="ghost" className="rounded-full" disabled={isNarrowing} onClick={() => setEditingClassIds((current) => new Set(current).add(item.id))}>Уточнить вручную</Button></div>
-                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#315f5d]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
+                      {isNarrowing && <p className="mt-2 text-xs leading-relaxed text-[#655846]">Сопоставляем ваше описание с официальными позициями. Карточка обновится сама; можно продолжать работу с другими классами.</p>}
                     </div>}
                     <Button type="button" size="sm" variant="ghost" onClick={() => void previewFullClass(item)}>Рассмотреть весь класс</Button>
                     {fullClassPreview?.id === item.id && <div className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm">
@@ -1942,7 +1942,7 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
                       <details className="mt-2"><summary className="cursor-pointer">Прочитать полный перечень</summary><p className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap">{fullClassPreview.text}</p></details>
                       <div className="mt-3 flex flex-wrap gap-2"><Button type="button" disabled={decidingClassId !== null} onClick={() => void includeFullClass(item)}>Выбрать весь класс</Button><Button type="button" variant="ghost" onClick={() => setFullClassPreview(null)}>Оставить конкретные товары</Button></div>
                     </div>}
-                    {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#55556f]"><span className="font-semibold text-[#11113f]">Почему предложен:</span> {item.rationale}</p>}
+                    {item.rationale && <p className="mt-2 rounded-lg bg-white/70 px-3 py-2 text-xs leading-relaxed text-[#746e66]"><span className="font-semibold text-[#38322e]">Почему предложен:</span> {item.rationale}</p>}
                     {isFullList && <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-950"><strong>До перехода к пошлинам:</strong> полный перечень из {itemCount} позиций добавляет примерно {rubles(Math.max(0, itemCount - 10) * 500)} к экспертизе этого класса. Автоматическое сужение оставит только позиции, подходящие под ваше описание.</div>}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -1955,9 +1955,9 @@ function ClientCheck({ appId, onAnalysis, beforeAction, dataConfirmed, confirmin
             );})}
           </div>
         </section>
-      <div className="mt-7 rounded-[1.2rem] bg-[#11113f] p-5 text-white">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем решения и запускаем проверку" : running ? phases[phase] : recalculatingClasses || narrowingClassIds.size > 0 ? "Дождитесь завершения подбора" : !classes.some((item) => item.approved === true) ? "Выберите хотя бы один класс" : "Один шаг до полного анализа"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "Классы и подтверждение данных сохраняются в заявке." : running ? "Вы уже можете следить за проверкой на следующем экране." : recalculatingClasses || narrowingClassIds.size > 0 ? "Список обновится автоматически. После этого одной кнопкой запустится вся проверка." : hasPendingClasses ? "Подтвердите нужные классы кнопкой «Включить». Неподтверждённые направления в проверку не попадут." : "Кнопка подтвердит введённые данные и последовательно проверит основания для отказа и похожие знаки."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#43c7c2]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || recalculatingClasses || narrowingClassIds.size > 0 || !classes.some((item) => item.approved === true)} onClick={() => void run()} className="rounded-full bg-[#12aaa5] px-6 hover:bg-[#0d918d]">{preparing || running || recalculatingClasses || narrowingClassIds.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : recalculatingClasses || narrowingClassIds.size > 0 ? "Подбор ещё идёт…" : "Подтвердить данные и проверить знак"}</Button></div>
-        {dataConfirmed && <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#79ded9]"><CheckCircle2 className="h-4 w-4" /> Сведения подтверждены</p>}
+      <div className="mt-7 rounded-[1.2rem] bg-[#38322e] p-5 text-white">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6"><div><p className="font-semibold">{preparing ? "Сохраняем решения и запускаем проверку" : running ? phases[phase] : recalculatingClasses || narrowingClassIds.size > 0 ? "Дождитесь завершения подбора" : !classes.some((item) => item.approved === true) ? "Выберите хотя бы один класс" : "Один шаг до полного анализа"}</p><p className="mt-1 text-sm text-white/65">{preparing ? "Классы и подтверждение данных сохраняются в заявке." : running ? "Вы уже можете следить за проверкой на следующем экране." : recalculatingClasses || narrowingClassIds.size > 0 ? "Список обновится автоматически. После этого одной кнопкой запустится вся проверка." : hasPendingClasses ? "Подтвердите нужные классы кнопкой «Включить». Неподтверждённые направления в проверку не попадут." : "Кнопка подтвердит введённые данные и последовательно проверит основания для отказа и похожие знаки."}</p>{(preparing || running) && <div className="mt-3 flex gap-1.5">{phases.map((_, index) => <span key={index} className={cn("h-1.5 w-10 rounded-full", !preparing && index <= phase ? "bg-[#d7c4a4]" : "bg-white/15")} />)}</div>}</div><Button disabled={preparing || running || recalculatingClasses || narrowingClassIds.size > 0 || !classes.some((item) => item.approved === true)} onClick={() => void run()} className="rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]">{preparing || running || recalculatingClasses || narrowingClassIds.size > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} {preparing ? "Сохраняем…" : running ? "Запускаем анализ…" : recalculatingClasses || narrowingClassIds.size > 0 ? "Подбор ещё идёт…" : "Подтвердить данные и проверить знак"}</Button></div>
+        {dataConfirmed && <p className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#d7c4a4]"><CheckCircle2 className="h-4 w-4" /> Сведения подтверждены</p>}
       </div>
     </section>
   );
@@ -2116,16 +2116,16 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
 
   if (analysisPending || activeJob) return (
     <ClientPanel title="Проверяем товарный знак" description="Можно ничего не нажимать — экран обновится автоматически. Проверка продолжится, даже если вы перейдёте в другой раздел.">
-      <div className="rounded-[1.3rem] border border-[#0d9f9b]/25 bg-[#eef9f8] p-6 sm:p-8">
+      <div className="rounded-[1.3rem] border border-[#9b8258]/25 bg-[#f4f1eb] p-6 sm:p-8">
         <div className="flex items-start gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#0d9f9b]"><Loader2 className="h-6 w-6 animate-spin" /></span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#9b8258]"><Loader2 className="h-6 w-6 animate-spin" /></span>
           <div>
-            <h3 className="text-xl font-semibold text-[#11113f]">{analysisJob?.message || "Запускаем анализ"}</h3>
-            <p className="mt-2 leading-relaxed text-[#5f6072]">Сначала система проверит выбранные классы, затем само обозначение и похожие товарные знаки. В конце появится вывод простыми словами.</p>
+            <h3 className="text-xl font-semibold text-[#38322e]">{analysisJob?.message || "Запускаем анализ"}</h3>
+            <p className="mt-2 leading-relaxed text-[#746e66]">Сначала система проверит выбранные классы, затем само обозначение и похожие товарные знаки. В конце появится вывод простыми словами.</p>
             <div className="mt-5 h-2.5 w-full max-w-xl overflow-hidden rounded-full bg-white" aria-label={`Анализ выполнен на ${analysisJob?.progress || 5}%`}>
-              <div className="h-full rounded-full bg-[#0d9f9b] transition-[width] duration-700 ease-out" style={{ width: `${Math.max(5, analysisJob?.progress || 0)}%` }} />
+              <div className="h-full rounded-full bg-[#9b8258] transition-[width] duration-700 ease-out" style={{ width: `${Math.max(5, analysisJob?.progress || 0)}%` }} />
             </div>
-            <p className="mt-2 text-sm font-semibold text-[#087c78]">{Math.max(5, analysisJob?.progress || 0)}%</p>
+            <p className="mt-2 text-sm font-semibold text-[#786341]">{Math.max(5, analysisJob?.progress || 0)}%</p>
           </div>
         </div>
 
@@ -2133,10 +2133,10 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
     </ClientPanel>
   );
 
-  if (loading) return <div className="flex min-h-48 items-center justify-center text-[#6d6d7d]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем результат…</div>;
+  if (loading) return <div className="flex min-h-48 items-center justify-center text-[#746e66]"><Loader2 className="mr-2 h-5 w-5 animate-spin" /> Загружаем результат…</div>;
   if (loadError) return <ClientPanel title="Результат не удалось загрузить" description={loadError}><Button onClick={() => void load()} className="rounded-full">Обновить результат</Button></ClientPanel>;
 
-  if (!presentation) return <ClientPanel title="Результата пока нет" description="Запустите проверку на предыдущем шаге. Система подберёт классы, найдёт сходные товарные знаки и подготовит понятную рекомендацию."><Button onClick={rerun} disabled={running} className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]">{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Запустить проверку</Button></ClientPanel>;
+  if (!presentation) return <ClientPanel title="Результата пока нет" description="Запустите проверку на предыдущем шаге. Система подберёт классы, найдёт сходные товарные знаки и подготовит понятную рекомендацию."><Button onClick={rerun} disabled={running} className="rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]">{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />} Запустить проверку</Button></ClientPanel>;
 
   const ResultIcon = presentation.icon;
   const visibleRiskFindings = adverseFindings.slice(0, 3);
@@ -2245,18 +2245,18 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
   return (
     <ClientPanel title="Результат проверки" description="Коротко: что получилось хорошо, что может помешать регистрации и что делать дальше.">
       <section className={cn("min-w-0 overflow-hidden rounded-[1.5rem] border p-6 sm:p-8", presentation.tone)}>
-        <div className="flex min-w-0 items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white"><ResultIcon className={cn("h-6 w-6", presentation.color)} /></span><div className="min-w-0"><p className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.15em] text-[#6d6d7d]">Предварительный вывод <HelpTip text="Это автоматическая предварительная оценка. Окончательное решение принимает Роспатент." /></p><h3 className={cn("mt-1 break-words text-3xl font-semibold", presentation.color)}>{presentation.title}</h3><p className="mt-3 max-w-3xl break-words text-lg leading-relaxed text-[#11113f]">{running ? "Обновляем проверку по подтверждённым данным…" : clientSummary}</p></div></div>
+        <div className="flex min-w-0 items-start gap-4"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white"><ResultIcon className={cn("h-6 w-6", presentation.color)} /></span><div className="min-w-0"><p className="inline-flex items-center gap-1 text-xs font-bold uppercase tracking-[0.15em] text-[#746e66]">Предварительный вывод <HelpTip text="Это автоматическая предварительная оценка. Окончательное решение принимает Роспатент." /></p><h3 className={cn("mt-1 break-words text-3xl font-semibold", presentation.color)}>{presentation.title}</h3><p className="mt-3 max-w-3xl break-words text-lg leading-relaxed text-[#38322e]">{running ? "Обновляем проверку по подтверждённым данным…" : clientSummary}</p></div></div>
       </section>
       <div className="mt-6 grid min-w-0 grid-cols-1 gap-5 lg:grid-cols-2 min-[1700px]:grid-cols-3">
-        <section className={cn("min-w-0 overflow-hidden rounded-[1.3rem] border p-5 [overflow-wrap:anywhere] sm:p-6", registrySearchSkipped || !registrySearchComplete ? "border-amber-200 bg-amber-50/60" : registryResultIsPrevious ? "border-[#0d9f9b]/25 bg-[#eef9f8]" : "border-emerald-200 bg-emerald-50/60")}>
-          <h3 className={cn("flex min-w-0 items-start gap-2 text-xl font-semibold", registrySearchSkipped || !registrySearchComplete ? "text-amber-900" : registryResultIsPrevious ? "text-[#087c78]" : "text-emerald-900")}>
+        <section className={cn("min-w-0 overflow-hidden rounded-[1.3rem] border p-5 [overflow-wrap:anywhere] sm:p-6", registrySearchSkipped || !registrySearchComplete ? "border-amber-200 bg-amber-50/60" : registryResultIsPrevious ? "border-[#9b8258]/25 bg-[#f4f1eb]" : "border-emerald-200 bg-emerald-50/60")}>
+          <h3 className={cn("flex min-w-0 items-start gap-2 text-xl font-semibold", registrySearchSkipped || !registrySearchComplete ? "text-amber-900" : registryResultIsPrevious ? "text-[#786341]" : "text-emerald-900")}>
             {registrySearchSkipped ? <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0" /> : registrySearchComplete ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" />}
             {registrySearchSkipped ? "Поиск похожих знаков ещё не выполнялся" : registrySearchComplete ? "Похожие знаки проверены" : "Поиск похожих знаков не завершён"}
           </h3>
           <div className={cn("mt-4 space-y-3 text-sm leading-relaxed", registrySearchSkipped || !registrySearchComplete ? "text-amber-950/80" : "text-emerald-950/80")}>
             <p>{registryAdvice}</p>
             {registryResultIsPrevious && (
-              <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#5f6072]">
+              <p className="rounded-lg bg-white/70 px-3 py-2 text-xs font-normal text-[#746e66]">
                 {registryResponseInconsistent
                   ? registryRefreshWarning
                   : registryCoverageLimited
@@ -2279,27 +2279,27 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
                       : "Абсолютное основание для отказа"
                     : "Риск из-за более раннего товарного знака"}
                 </p>
-                <p className="text-sm font-medium leading-relaxed text-[#33334f]">{clientFinding(item)}</p>
-                {item.legal_basis && <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">Норма закона: {item.legal_basis}</p>}
+                <p className="text-sm font-medium leading-relaxed text-[#51483f]">{clientFinding(item)}</p>
+                {item.legal_basis && <p className="mt-2 text-xs leading-relaxed text-[#746e66]">Норма закона: {item.legal_basis}</p>}
               </div>
             ))}
-            {fallbackRisks.map((item, index) => <p key={index} className="text-sm leading-relaxed text-[#55556f]">{item.split(/(?<=[.!?])\s/)[0]}</p>)}
+            {fallbackRisks.map((item, index) => <p key={index} className="text-sm leading-relaxed text-[#746e66]">{item.split(/(?<=[.!?])\s/)[0]}</p>)}
             {!hasVisibleRisks && incomplete && <p className="text-sm leading-relaxed text-amber-900">{unfinishedLegalCheck}</p>}
             {!incomplete && !hasVisibleRisks && <p className="text-sm font-semibold text-emerald-900">Серьёзных препятствий не найдено.</p>}
           </div>
         </section>
 
-        <section className="min-w-0 overflow-hidden rounded-[1.3rem] border border-[#11113f]/10 bg-white p-5 [overflow-wrap:anywhere] sm:p-6 lg:col-span-2 min-[1700px]:col-span-1">
+        <section className="min-w-0 overflow-hidden rounded-[1.3rem] border border-[#38322e]/10 bg-white p-5 [overflow-wrap:anywhere] sm:p-6 lg:col-span-2 min-[1700px]:col-span-1">
           <h3 className="text-xl font-semibold">Рекомендация</h3>
           <ol className="mt-4 space-y-3">
-            {nextSteps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-relaxed text-[#55556f]"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#e8f7f6] text-xs font-bold text-[#087c78]">{index + 1}</span>{step}</li>)}
+            {nextSteps.map((step, index) => <li key={step} className="flex gap-3 text-sm leading-relaxed text-[#746e66]"><span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f0e9dc] text-xs font-bold text-[#786341]">{index + 1}</span>{step}</li>)}
           </ol>
         </section>
       </div>
 
       {rankedRegistryFindings.length > 0 && (
-        <details className="mt-6 rounded-[1.3rem] border border-[#11113f]/10 bg-white p-5 sm:p-6">
-          <summary className="cursor-pointer list-none font-semibold text-[#11113f]">Какие совпадения проверены <span className="ml-2 text-sm font-normal text-[#6d6d7d]">Показать наиболее близкие</span></summary>
+        <details className="mt-6 rounded-[1.3rem] border border-[#38322e]/10 bg-white p-5 sm:p-6">
+          <summary className="cursor-pointer list-none font-semibold text-[#38322e]">Какие совпадения проверены <span className="ml-2 text-sm font-normal text-[#746e66]">Показать наиболее близкие</span></summary>
           <div className="mt-4 grid gap-3 lg:grid-cols-3">
             {rankedRegistryFindings.slice(0, 3).map((item) => {
               const record = item.verification?.registry_record;
@@ -2307,9 +2307,9 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
               const status = record?.status === "pending" ? "заявка рассматривается" : record?.status === "expired" ? "регистрация прекращена" : "зарегистрирован";
               return (
                 <article key={item.id} className="rounded-xl bg-[#f8f7f4] p-4">
-                  <p className="font-semibold text-[#11113f]">«{record?.mark_text || "Обозначение без названия"}»</p>
-                  <p className="mt-1 text-xs text-[#6d6d7d]">{status}{overlap.length ? ` · пересекается класс ${overlap.join(", ")}` : " · вне выбранного класса"}</p>
-                  <p className="mt-3 text-sm leading-relaxed text-[#55556f]">Словесная часть и общий смысл отличаются. По предварительной оценке знак не создаёт очевидной вероятности смешения, но учтён в итоговом выводе.</p>
+                  <p className="font-semibold text-[#38322e]">«{record?.mark_text || "Обозначение без названия"}»</p>
+                  <p className="mt-1 text-xs text-[#746e66]">{status}{overlap.length ? ` · пересекается класс ${overlap.join(", ")}` : " · вне выбранного класса"}</p>
+                  <p className="mt-3 text-sm leading-relaxed text-[#746e66]">Словесная часть и общий смысл отличаются. По предварительной оценке знак не создаёт очевидной вероятности смешения, но учтён в итоговом выводе.</p>
                 </article>
               );
             })}
@@ -2318,15 +2318,15 @@ function ClientResult({ application, appId, analysisPending, onAnalysisComplete,
       )}
 
       <div className="mt-7 flex flex-col gap-3 rounded-[1.2rem] bg-[#f8f7f4] p-5">
-        <p className="max-w-2xl text-sm leading-relaxed text-[#6d6d7d]">Это предварительная проверка по доступным данным. Окончательное решение о регистрации принимает Роспатент.</p>
+        <p className="max-w-2xl text-sm leading-relaxed text-[#746e66]">Это предварительная проверка по доступным данным. Окончательное решение о регистрации принимает Роспатент.</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" className="rounded-full bg-white" onClick={onReview}>Изменить классы</Button>
           <Button variant="outline" className="rounded-full bg-white" onClick={onEditData}>Изменить данные</Button>
           {retryAvailable && (
-            <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Обновляем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : registryResultIsPrevious ? "Обновить поиск знаков" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
+            <Button className="rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]" onClick={rerun} disabled={running}>{running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} {running ? "Обновляем проверку…" : absoluteCheckIncomplete ? "Проверить само обозначение" : registryResultIsPrevious ? "Обновить поиск знаков" : !registrySearchComplete ? "Повторить поиск знаков" : "Повторить проверку"}</Button>
           )}
           {hasAnalysisResult(report) && (
-            <Button className={cn("h-auto min-h-10 whitespace-normal rounded-full px-6 py-2", retryAvailable ? "border border-[#0d9f9b] bg-white text-[#087c78] hover:bg-[#eaf8f7]" : "bg-[#0d9f9b] text-white hover:bg-[#078984]")} onClick={onApplication}>Перейти к подготовке к подаче <ChevronRight className="h-4 w-4 shrink-0" /></Button>
+            <Button className={cn("h-auto min-h-10 whitespace-normal rounded-full px-6 py-2", retryAvailable ? "border border-[#9b8258] bg-white text-[#786341] hover:bg-[#f4f1eb]" : "bg-[#9b8258] text-white hover:bg-[#786341]")} onClick={onApplication}>Перейти к подготовке к подаче <ChevronRight className="h-4 w-4 shrink-0" /></Button>
           )}
         </div>
       </div>
@@ -2499,44 +2499,44 @@ function ClientDraftPreview({
   }, [openRequest]);
 
   return (
-    <section id="client-draft" className="mt-6 scroll-mt-6 overflow-hidden rounded-[1.4rem] border-2 border-[#0d9f9b]/35 bg-[#f0f8f7]">
+    <section id="client-draft" className="mt-6 scroll-mt-6 overflow-hidden rounded-[1.4rem] border-2 border-[#9b8258]/35 bg-[#f4f1eb]">
       <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-4">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#087c78]"><FileSignature className="h-6 w-6" /></span>
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-[#786341]"><FileSignature className="h-6 w-6" /></span>
           <div>
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#087c78]">Перед скачиванием ZIP</p>
-            <h3 className="mt-1 text-2xl font-semibold text-[#11113f]">Предпросмотр заявления в Роспатент</h3>
-            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#55556f]">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#786341]">Перед скачиванием ZIP</p>
+            <h3 className="mt-1 text-2xl font-semibold text-[#38322e]">Предпросмотр заявления в Роспатент</h3>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#746e66]">
               Здесь видно, какие сведения уже попадут в заявление и какие поля ещё нужно заполнить до формирования файла.
             </p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <Button variant="outline" className="rounded-full border-[#0d9f9b]/40 bg-white" onClick={() => setOpen((value) => !value)} disabled={draft.isLoading}>
+          <Button variant="outline" className="rounded-full border-[#9b8258]/40 bg-white" onClick={() => setOpen((value) => !value)} disabled={draft.isLoading}>
             {draft.isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
             {open ? "Скрыть черновик" : "Открыть черновик"}
           </Button>
-          <Button className="rounded-full bg-[#0d9f9b] hover:bg-[#078984]" onClick={() => void download()} disabled={downloading}>
+          <Button className="rounded-full bg-[#9b8258] hover:bg-[#786341]" onClick={() => void download()} disabled={downloading}>
             {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Скачать DOCX
           </Button>
         </div>
       </div>
 
       {open && draft.data && (
-        <div className="border-t border-[#0d9f9b]/20 bg-white p-5 sm:p-6">
+        <div className="border-t border-[#9b8258]/20 bg-white p-5 sm:p-6">
           {markImageUrl && (
-            <div className="mb-5 rounded-xl border border-[#11113f]/10 bg-[#f8f7f4] p-4">
-              <p className="text-sm font-semibold text-[#11113f]">Изображение, которое попадёт в заявление</p>
-              <div className="mt-3 flex min-h-44 items-center justify-center rounded-lg border border-[#11113f]/10 bg-white p-4">
+            <div className="mb-5 rounded-xl border border-[#38322e]/10 bg-[#f8f7f4] p-4">
+              <p className="text-sm font-semibold text-[#38322e]">Изображение, которое попадёт в заявление</p>
+              <div className="mt-3 flex min-h-44 items-center justify-center rounded-lg border border-[#38322e]/10 bg-white p-4">
                 <img src={markImageUrl} alt="Заявляемое обозначение" className="max-h-72 max-w-full object-contain" />
               </div>
-              <p className="mt-2 text-xs text-[#6d6d7d]">Показывается только само изображение обозначения — без повторного текстового дубля.</p>
+              <p className="mt-2 text-xs text-[#746e66]">Показывается только само изображение обозначения — без повторного текстового дубля.</p>
             </div>
           )}
           <div className="mb-5 flex flex-col gap-3 rounded-xl bg-[#f8f7f4] p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-semibold text-[#11113f]">Обязательных полей заполнено: {draft.data.required_done} из {draft.data.required_count}</p>
-              <p className="mt-1 text-sm text-[#6d6d7d]">{draft.data.can_generate ? "Данных достаточно для формирования чернового файла." : `Нужно дополнить: ${draft.data.blocking.join(", ") || "обязательные сведения"}.`}</p>
+              <p className="font-semibold text-[#38322e]">Обязательных полей заполнено: {draft.data.required_done} из {draft.data.required_count}</p>
+              <p className="mt-1 text-sm text-[#746e66]">{draft.data.can_generate ? "Данных достаточно для формирования чернового файла." : `Нужно дополнить: ${draft.data.blocking.join(", ") || "обязательные сведения"}.`}</p>
             </div>
             {!draft.data.can_generate && <Button variant="outline" className="rounded-full bg-white" onClick={onEditData}><PencilLine className="h-4 w-4" /> Дополнить данные</Button>}
           </div>
@@ -2545,21 +2545,21 @@ function ClientDraftPreview({
             {draft.data.sections.map((section) => {
               const fields = section.fields.filter((field) => field.value || field.required || canEditInline(field) || field.fill === "classes");
               if (!fields.length) return null;
-              return <div key={section.id}><h4 className="mb-3 font-semibold text-[#11113f]">{section.title}</h4><div className="grid gap-3 sm:grid-cols-2">{fields.map((field, index) => {
+              return <div key={section.id}><h4 className="mb-3 font-semibold text-[#38322e]">{section.title}</h4><div className="grid gap-3 sm:grid-cols-2">{fields.map((field, index) => {
                 const key = `${section.id}-${field.source || field.field_path || index}`;
                 const isEditing = editingField === key;
                 const isSaving = savingField === key;
                 const isClasses = field.fill === "classes";
-                return <div key={key} className={cn("rounded-xl border p-4 transition-colors", field.needs_attention ? "border-amber-300 bg-amber-50" : isEditing ? "border-[#0d9f9b]/45 bg-[#f4fbfa]" : "border-[#11113f]/10 bg-white")}>
-                  <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><p className="text-sm font-semibold text-[#11113f]">{field.label}</p>{field.inid && <span className="rounded border border-[#11113f]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#77778a]">{field.inid}</span>}</div>{field.needs_attention ? <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">Нужно заполнить</span> : <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />}</div>
+                return <div key={key} className={cn("rounded-xl border p-4 transition-colors", field.needs_attention ? "border-amber-300 bg-amber-50" : isEditing ? "border-[#9b8258]/45 bg-[#f7f5f0]" : "border-[#38322e]/10 bg-white")}>
+                  <div className="flex items-start justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><p className="text-sm font-semibold text-[#38322e]">{field.label}</p>{field.inid && <span className="rounded border border-[#38322e]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#746e66]">{field.inid}</span>}</div>{field.needs_attention ? <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-800">Нужно заполнить</span> : <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />}</div>
                   {isEditing ? <div className="mt-3">
                     {field.source === "application.mark.kind" ? <Select value={editingValue} onValueChange={setEditingValue}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent>{Object.entries(MARK_TYPE_LABELS).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select> : field.source === "application.certificate.paper" ? <Select value={editingValue} onValueChange={setEditingValue}><SelectTrigger className="bg-white"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="false">Только электронное свидетельство</SelectItem><SelectItem value="true">Нужно бумажное свидетельство</SelectItem></SelectContent></Select> : field.source === "application.signatory.date" ? <Input type="date" className="bg-white" value={editingValue} onChange={(event) => setEditingValue(event.target.value)} /> : field.multiline || (field.value?.length || 0) > 120 ? <Textarea autoFocus rows={4} className="bg-white" value={editingValue} onChange={(event) => setEditingValue(event.target.value)} /> : <Input autoFocus className="bg-white" value={editingValue} onChange={(event) => setEditingValue(event.target.value)} />}
-                    {field.hint && <p className="mt-2 text-xs leading-relaxed text-[#6d6d7d]">{field.hint}</p>}
+                    {field.hint && <p className="mt-2 text-xs leading-relaxed text-[#746e66]">{field.hint}</p>}
                     <div className="mt-3 flex flex-wrap gap-2"><Button size="sm" className="rounded-full" disabled={isSaving || !editingValue.trim()} onClick={() => void saveField(key, field)}>{isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {isSaving ? "Сохраняем…" : "Сохранить"}</Button><Button size="sm" variant="ghost" className="rounded-full" disabled={isSaving} onClick={() => setEditingField(null)}>Отмена</Button></div>
                   </div> : <>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#55556f]">{field.value || "Пока не заполнено"}</p>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">{field.value ? <p className="text-[11px] text-[#77778a]">{field.origin ? `Источник: ${field.origin}` : "Взято из данных заявки"}</p> : <span />}
-                      {canEditInline(field) ? <Button size="sm" variant="ghost" className="h-8 rounded-full px-3 text-xs text-[#087c78]" onClick={() => startFieldEdit(key, field)}><PencilLine className="h-3.5 w-3.5" /> {field.value ? "Изменить" : "Заполнить"}</Button> : isClasses && onEditClasses ? <Button size="sm" variant="ghost" className="h-8 rounded-full px-3 text-xs text-[#087c78]" onClick={onEditClasses}><PencilLine className="h-3.5 w-3.5" /> Изменить перечень</Button> : null}
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#746e66]">{field.value || "Пока не заполнено"}</p>
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2">{field.value ? <p className="text-[11px] text-[#746e66]">{field.origin ? `Источник: ${field.origin}` : "Взято из данных заявки"}</p> : <span />}
+                      {canEditInline(field) ? <Button size="sm" variant="ghost" className="h-8 rounded-full px-3 text-xs text-[#786341]" onClick={() => startFieldEdit(key, field)}><PencilLine className="h-3.5 w-3.5" /> {field.value ? "Изменить" : "Заполнить"}</Button> : isClasses && onEditClasses ? <Button size="sm" variant="ghost" className="h-8 rounded-full px-3 text-xs text-[#786341]" onClick={onEditClasses}><PencilLine className="h-3.5 w-3.5" /> Изменить перечень</Button> : null}
                     </div>
                   </>}
                 </div>;
@@ -2611,21 +2611,21 @@ function ClientFeeEstimate({ appId, onDocuments, onReview }: { appId: number; on
     } catch { /* Приватный режим может запрещать локальное хранилище. */ }
   }, [appId, benefitOpen, benefit]);
   return (
-    <section className="mt-6 overflow-hidden rounded-[1.4rem] border border-[#11113f]/10 bg-white">
+    <section className="mt-6 overflow-hidden rounded-[1.4rem] border border-[#38322e]/10 bg-white">
       <div className="flex items-start gap-4 p-6">
-        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e8f7f6] text-[#087c78]"><ReceiptText className="h-6 w-6" /></span>
-        <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#087c78]">Стоимость подачи</p><h3 className="mt-1 text-2xl font-semibold text-[#11113f]">Расчёт пошлин Роспатента</h3><p className="mt-2 text-sm leading-relaxed text-[#55556f]">Сумма рассчитана по выбранным классам. Платежи вносятся в два этапа.</p></div>
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#f0e9dc] text-[#786341]"><ReceiptText className="h-6 w-6" /></span>
+        <div><p className="text-xs font-bold uppercase tracking-[0.14em] text-[#786341]">Стоимость подачи</p><h3 className="mt-1 text-2xl font-semibold text-[#38322e]">Расчёт пошлин Роспатента</h3><p className="mt-2 text-sm leading-relaxed text-[#746e66]">Сумма рассчитана по выбранным классам. Платежи вносятся в два этапа.</p></div>
       </div>
-      {fees.isLoading && <div className="border-t p-6 text-sm text-[#6d6d7d]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Рассчитываем…</div>}
+      {fees.isLoading && <div className="border-t p-6 text-sm text-[#746e66]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Рассчитываем…</div>}
       {fees.data && !fees.data.can_calculate && <div className="border-t border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">Сначала подтвердите хотя бы один класс товаров или услуг.</div>}
-      {fees.data?.can_calculate && <div className="border-t border-[#11113f]/10 p-5 sm:p-6">
+      {fees.data?.can_calculate && <div className="border-t border-[#38322e]/10 p-5 sm:p-6">
         {(fees.data.term_surcharge || 0) > 0 && <div className="mb-5 rounded-xl border-2 border-amber-400 bg-amber-50 p-4 text-amber-950"><p className="flex items-center gap-2 text-lg font-semibold"><AlertCircle className="h-5 w-5" /> В текущей сумме есть доплата за слишком широкий перечень</p><p className="mt-2 text-sm leading-relaxed">Без доплаты за позиции сверх десяти итог составил бы <strong>{rubles((fees.data.total_selected ?? fees.data.total_electronic ?? 0) - (fees.data.term_surcharge || 0))}</strong>. Сейчас дополнительно начислено <strong>{rubles(fees.data.term_surcharge || 0)}</strong>. Перечень можно сузить на предыдущем шаге, но исключённые товары и услуги не будут охраняться.</p><Button type="button" variant="outline" className="mt-3 rounded-full border-amber-400 bg-white" onClick={onReview}>Вернуться и сузить перечень</Button></div>}
           <div className="grid gap-4 sm:grid-cols-3">
-          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">При подаче заявки</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.filing_total)}</p></div>
-          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#6d6d7d]">После положительного решения</p><p className="mt-1 text-2xl font-semibold text-[#11113f]">{rubles(fees.data.registration_total)}</p></div>
-          <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">{fees.data.paper_certificate_requested ? "Итого сейчас, с бумажным свидетельством" : "Итого сейчас, электронное свидетельство"}</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_selected ?? fees.data.total_electronic)}</p></div>
+          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#746e66]">При подаче заявки</p><p className="mt-1 text-2xl font-semibold text-[#38322e]">{rubles(fees.data.filing_total)}</p></div>
+          <div className="rounded-xl bg-[#f8f7f4] p-4"><p className="text-xs text-[#746e66]">После положительного решения</p><p className="mt-1 text-2xl font-semibold text-[#38322e]">{rubles(fees.data.registration_total)}</p></div>
+          <div className="rounded-xl bg-[#38322e] p-4 text-white"><p className="text-xs text-white/65">{fees.data.paper_certificate_requested ? "Итого сейчас, с бумажным свидетельством" : "Итого сейчас, электронное свидетельство"}</p><p className="mt-1 text-2xl font-semibold">{rubles(fees.data.total_selected ?? fees.data.total_electronic)}</p></div>
         </div>
-          <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#11113f]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#77778a]">подп. {payment.code} приложения № 1 к Положению о пошлинах</span><p className="mt-1 text-xs text-[#77778a]">{payment.when}</p></div><span className="font-semibold text-[#11113f]">{rubles(payment.amount)}</span></div>)}</div>
+          <div className="mt-5 space-y-2">{fees.data.payments.map((payment) => <div key={payment.code} className="flex flex-col justify-between gap-1 border-b border-[#38322e]/8 py-3 text-sm sm:flex-row sm:items-center"><div><span className="font-semibold">{payment.title}</span><span className="ml-2 text-xs text-[#746e66]">подп. {payment.code} приложения № 1 к Положению о пошлинах</span><p className="mt-1 text-xs text-[#746e66]">{payment.when}</p></div><span className="font-semibold text-[#38322e]">{rubles(payment.amount)}</span></div>)}</div>
         {(fees.data.term_surcharge || 0) > 0 && (
           <div className="mt-5 rounded-xl border-2 border-amber-300 bg-amber-50 p-4 sm:p-5">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -2637,12 +2637,12 @@ function ClientFeeEstimate({ appId, onDocuments, onReview }: { appId: number; on
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {(fees.data.classes || []).filter((item) => item.extra_terms_over_10 > 0).map((item) => (
-                <div key={item.class_number} className="rounded-lg bg-white p-3 text-sm text-[#44445d]">
-                  <p className="font-semibold text-[#11113f]">Класс {item.class_number}: {item.term_count} наименований</p>
+                <div key={item.class_number} className="rounded-lg bg-white p-3 text-sm text-[#51483f]">
+                  <p className="font-semibold text-[#38322e]">Класс {item.class_number}: {item.term_count} наименований</p>
                   <p className="mt-1 text-xs leading-relaxed">Доплата: {item.extra_terms_over_10} × 500 ₽ = {rubles(item.extra_terms_over_10 * 500)}</p>
                 </div>
               ))}
-              <div className="rounded-lg bg-[#11113f] p-3 text-white">
+              <div className="rounded-lg bg-[#38322e] p-3 text-white">
                 <p className="text-xs text-white/65">Доплата за расширенный перечень</p>
                 <p className="mt-1 text-xl font-semibold">{rubles(fees.data.term_surcharge || 0)}</p>
               </div>
@@ -2650,19 +2650,19 @@ function ClientFeeEstimate({ appId, onDocuments, onReview }: { appId: number; on
             <p className="mt-3 text-xs leading-relaxed text-amber-950/80"><strong>Важно:</strong> удаляйте только товары и услуги, которыми вы действительно не занимаетесь и не планируете заниматься. Меньший перечень снижает пошлину, но знак не будет защищён для исключённых позиций.</p>
           </div>
         )}
-        <p className="mt-4 text-sm text-[#55556f]">Расчёт для {fees.data.class_count} кл. МКТУ. {fees.data.paper_certificate_requested ? `Вы выбрали бумажное свидетельство: в итог включено ${rubles(fees.data.paper_certificate_extra)}.` : `Бумажное свидетельство не выбрано; при необходимости его можно заказать за ${rubles(fees.data.paper_certificate_extra)}.`}</p>
-        <div className="mt-5 rounded-xl border border-[#11113f]/10 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-[#11113f]">Какие льготы возможны?</p><p className="mt-1 text-xs text-[#6d6d7d]">Для обычной заявки на товарный знак льгот немного. Проверьте, относится ли заявитель к одной из специальных категорий.</p></div><Button type="button" variant="outline" onClick={() => setBenefitOpen((value) => !value)}>{benefitOpen ? "Скрыть" : "Проверить моё основание"}</Button></div>
+        <p className="mt-4 text-sm text-[#746e66]">Расчёт для {fees.data.class_count} кл. МКТУ. {fees.data.paper_certificate_requested ? `Вы выбрали бумажное свидетельство: в итог включено ${rubles(fees.data.paper_certificate_extra)}.` : `Бумажное свидетельство не выбрано; при необходимости его можно заказать за ${rubles(fees.data.paper_certificate_extra)}.`}</p>
+        <div className="mt-5 rounded-xl border border-[#38322e]/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-semibold text-[#38322e]">Какие льготы возможны?</p><p className="mt-1 text-xs text-[#746e66]">Для обычной заявки на товарный знак льгот немного. Проверьте, относится ли заявитель к одной из специальных категорий.</p></div><Button type="button" variant="outline" onClick={() => setBenefitOpen((value) => !value)}>{benefitOpen ? "Скрыть" : "Проверить моё основание"}</Button></div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#44445d]"><p className="font-semibold text-[#11113f]">Освобождение от части пошлин</p><p className="mt-1">Может применяться к федеральным и региональным органам власти, а также к «Росатому» и «Роскосмосу» при управлении правами Российской Федерации.</p></div>
-            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#44445d]"><p className="font-semibold text-[#11113f]">Кому общая льгота не предоставляется</p><p className="mt-1">Статус физлица, самозанятого, ИП, субъекта МСП, пенсионера, студента, инвалида или ветерана сам по себе не уменьшает пошлины за регистрацию товарного знака.</p></div>
+            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#51483f]"><p className="font-semibold text-[#38322e]">Освобождение от части пошлин</p><p className="mt-1">Может применяться к федеральным и региональным органам власти, а также к «Росатому» и «Роскосмосу» при управлении правами Российской Федерации.</p></div>
+            <div className="rounded-lg bg-[#f8f7f4] p-3 text-xs leading-relaxed text-[#51483f]"><p className="font-semibold text-[#38322e]">Кому общая льгота не предоставляется</p><p className="mt-1">Статус физлица, самозанятого, ИП, субъекта МСП, пенсионера, студента, инвалида или ветерана сам по себе не уменьшает пошлины за регистрацию товарного знака.</p></div>
           </div>
-          {benefitOpen && <div className="mt-4 space-y-3"><Select value={benefit} onValueChange={setBenefit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="regular">Обычный заявитель: физлицо, самозанятый, ИП или организация</SelectItem><SelectItem value="authority">Федеральный или региональный орган власти</SelectItem><SelectItem value="corporation">«Росатом» или «Роскосмос» при управлении правами РФ</SelectItem><SelectItem value="unsure">Не уверен — нужна проверка</SelectItem></SelectContent></Select><div className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{benefit === "authority" || benefit === "corporation" ? "Возможно освобождение от пошлины за экспертизу обозначения. Потребуется ходатайство и подтверждение статуса или полномочий заявителя. Расчёт не будет уменьшен, пока основание не подтверждено." : benefit === "unsure" ? "Не оплачивайте меньшую сумму самостоятельно. Передайте специалисту сведения о заявителе и документ, на котором, по вашему мнению, основана льгота." : "Для этой категории общей льготы на регистрацию товарного знака нет. Рассчитывайте полную сумму, указанную выше."}</div><p className="flex items-center gap-2 text-xs font-medium text-[#087c78]"><CheckCircle2 className="h-4 w-4" /> Выбор сохранён в черновике на этом устройстве.</p></div>}
+          {benefitOpen && <div className="mt-4 space-y-3"><Select value={benefit} onValueChange={setBenefit}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="regular">Обычный заявитель: физлицо, самозанятый, ИП или организация</SelectItem><SelectItem value="authority">Федеральный или региональный орган власти</SelectItem><SelectItem value="corporation">«Росатом» или «Роскосмос» при управлении правами РФ</SelectItem><SelectItem value="unsure">Не уверен — нужна проверка</SelectItem></SelectContent></Select><div className="rounded-lg bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">{benefit === "authority" || benefit === "corporation" ? "Возможно освобождение от пошлины за экспертизу обозначения. Потребуется ходатайство и подтверждение статуса или полномочий заявителя. Расчёт не будет уменьшен, пока основание не подтверждено." : benefit === "unsure" ? "Не оплачивайте меньшую сумму самостоятельно. Передайте специалисту сведения о заявителе и документ, на котором, по вашему мнению, основана льгота." : "Для этой категории общей льготы на регистрацию товарного знака нет. Рассчитывайте полную сумму, указанную выше."}</div><p className="flex items-center gap-2 text-xs font-medium text-[#786341]"><CheckCircle2 className="h-4 w-4" /> Выбор сохранён в черновике на этом устройстве.</p></div>}
         </div>
         <div className="mt-4 rounded-xl bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">{fees.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-          <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#087c78] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
-          <Button className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" onClick={onDocuments}>Перейти к документам <ChevronRight className="h-4 w-4" /></Button>
+          <a href={fees.data.source_url} target="_blank" rel="noreferrer" className="text-xs font-semibold text-[#786341] underline underline-offset-4">Официальная таблица пошлин Роспатента ↗</a>
+          <Button className="rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]" onClick={onDocuments}>Перейти к документам <ChevronRight className="h-4 w-4" /></Button>
         </div>
       </div>}
       {fees.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось рассчитать пошлины: {fees.error}</div>}
@@ -2884,8 +2884,8 @@ function ClientFilingPackage({
               "text-xs font-bold uppercase tracking-[0.14em]",
               pack.data?.ready ? "text-emerald-700" : "text-amber-700",
             )}>Финальный этап</p>
-            <h3 className="mt-1 text-2xl font-semibold text-[#11113f]">{pack.data?.ready ? "Можно скачать документы" : "Подготовка документов"}</h3>
-            <p className="mt-2 max-w-2xl text-sm text-[#55556f]">В одном ZIP: заявление, нужные приложения и простая инструкция по подаче.</p>
+            <h3 className="mt-1 text-2xl font-semibold text-[#38322e]">{pack.data?.ready ? "Можно скачать документы" : "Подготовка документов"}</h3>
+            <p className="mt-2 max-w-2xl text-sm text-[#746e66]">В одном ZIP: заявление, нужные приложения и простая инструкция по подаче.</p>
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -2893,7 +2893,7 @@ function ClientFilingPackage({
             <RefreshCw className={cn("h-4 w-4", pack.isLoading && "animate-spin")} /> Проверить
           </Button>
           <Button
-            className="rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]"
+            className="rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]"
             disabled={!pack.data?.ready || downloading}
             onClick={() => void download()}
           >
@@ -2903,16 +2903,16 @@ function ClientFilingPackage({
         </div>
       </div>
 
-      {pack.isLoading && <div className="border-t border-black/10 bg-white/60 p-6 text-sm text-[#6d6d7d]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Проверяем комплектность документов…</div>}
+      {pack.isLoading && <div className="border-t border-black/10 bg-white/60 p-6 text-sm text-[#746e66]"><Loader2 className="mr-2 inline h-4 w-4 animate-spin" /> Проверяем комплектность документов…</div>}
       {pack.error && <div className="border-t border-red-200 bg-red-50 p-5 text-sm text-red-800">Не удалось проверить пакет: {pack.error}</div>}
 
       {pack.data && (
         <div className="border-t border-black/10 bg-white p-5 sm:p-6">
           {pack.data.ready ? (
             <div className="mb-6 grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl bg-[#f4f8f7] p-4"><p className="text-xs text-[#6d6d7d]">Для подачи</p><p className="mt-1 text-2xl font-semibold">{pack.data.filing_document_count} файла</p></div>
-              <div className="rounded-xl bg-[#f4f8f7] p-4"><p className="text-xs text-[#6d6d7d]">Инструкции и расчёты</p><p className="mt-1 text-2xl font-semibold">{pack.data.reference_document_count} файла</p></div>
-              <div className="rounded-xl bg-[#11113f] p-4 text-white"><p className="text-xs text-white/65">К оплате при подаче</p><p className="mt-1 text-2xl font-semibold">{rubles(pack.data.filing_fee)}</p></div>
+              <div className="rounded-xl bg-[#f7f5f0] p-4"><p className="text-xs text-[#746e66]">Для подачи</p><p className="mt-1 text-2xl font-semibold">{pack.data.filing_document_count} файла</p></div>
+              <div className="rounded-xl bg-[#f7f5f0] p-4"><p className="text-xs text-[#746e66]">Инструкции и расчёты</p><p className="mt-1 text-2xl font-semibold">{pack.data.reference_document_count} файла</p></div>
+              <div className="rounded-xl bg-[#38322e] p-4 text-white"><p className="text-xs text-white/65">К оплате при подаче</p><p className="mt-1 text-2xl font-semibold">{rubles(pack.data.filing_fee)}</p></div>
             </div>
           ) : (
             <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -2921,15 +2921,15 @@ function ClientFilingPackage({
                 {pack.data.blockers.map((item, index) => (
                   <div key={`${item.code}-${index}`} className="flex items-start gap-3 rounded-lg bg-white px-4 py-3 text-sm">
                     <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-                    <div><p className="font-semibold text-[#11113f]">{item.title}</p><p className="mt-0.5 text-[#6d6d7d]">{item.action}</p></div>
+                    <div><p className="font-semibold text-[#38322e]">{item.title}</p><p className="mt-0.5 text-[#746e66]">{item.action}</p></div>
                   </div>
                 ))}
               </div>
               {hasInlineTextFields && (
                 <div className="mt-5 rounded-xl border border-amber-200 bg-white p-4 sm:p-5">
                   <div>
-                    <p className="font-semibold text-[#11113f]">Дополните сведения здесь</p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">После сохранения экран сам повторно проверит пакет. Возвращаться к началу заявки не нужно.</p>
+                    <p className="font-semibold text-[#38322e]">Дополните сведения здесь</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#746e66]">После сохранения экран сам повторно проверит пакет. Возвращаться к началу заявки не нужно.</p>
                   </div>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
                     {hasGenericRequiredFields && <MarkedField label="Наименование или ФИО заявителя" mode="manual"><Input value={completion.applicantName} onChange={(event) => setCompletion((old) => ({ ...old, applicantName: event.target.value }))} /></MarkedField>}
@@ -2946,7 +2946,7 @@ function ClientFilingPackage({
                     {blockerCodes.has("signatory_position") && <MarkedField label="Должность подписанта" mode="manual"><Input value={completion.signatoryPosition} onChange={(event) => setCompletion((old) => ({ ...old, signatoryPosition: event.target.value }))} /></MarkedField>}
                     {blockerCodes.has("signature_date") && <MarkedField label="Дата подписания" mode="manual"><Input type="date" value={completion.signatureDate} onChange={(event) => setCompletion((old) => ({ ...old, signatureDate: event.target.value }))} /></MarkedField>}
                   </div>
-                  <Button className="mt-4 rounded-full bg-[#0d9f9b] px-6 hover:bg-[#078984]" disabled={savingMissing} onClick={() => void saveMissingFields()}>{savingMissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savingMissing ? "Сохраняем…" : "Сохранить и проверить пакет"}</Button>
+                  <Button className="mt-4 rounded-full bg-[#9b8258] px-6 hover:bg-[#786341]" disabled={savingMissing} onClick={() => void saveMissingFields()}>{savingMissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} {savingMissing ? "Сохраняем…" : "Сохранить и проверить пакет"}</Button>
                 </div>
               )}
 
@@ -2954,8 +2954,8 @@ function ClientFilingPackage({
                 <div className="mt-4 space-y-2">
                   {uploadBlockers.map((item) => (
                     <div key={item.code} className="flex flex-col gap-3 rounded-xl border border-amber-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div><p className="font-semibold text-[#11113f]">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.action}</p></div>
-                      <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-[#11113f]/15 bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f8f7f4]">
+                      <div><p className="font-semibold text-[#38322e]">{item.title}</p><p className="mt-1 text-xs text-[#746e66]">{item.action}</p></div>
+                      <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-full border border-[#38322e]/15 bg-white px-4 py-2 text-sm font-semibold hover:bg-[#f8f7f4]">
                         {uploadingMissing === item.code ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} {uploadingMissing === item.code ? "Загружаем…" : "Добавить файл"}
                         <input type="file" className="sr-only" disabled={uploadingMissing !== null} accept={item.code === "mark_image" ? "image/png,image/jpeg" : item.code === "mark_audio" ? "audio/mpeg,audio/wav" : ".pdf,.docx,.txt,.png,.jpg,.jpeg"} onChange={(event) => void uploadMissingFile(item.code, event.target.files?.[0])} />
                       </label>
@@ -2965,42 +2965,42 @@ function ClientFilingPackage({
               )}
 
               {checkBlockers.length > 0 && (
-                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div><p className="font-semibold text-[#11113f]">Нужно завершить проверку</p><p className="mt-1 text-xs text-[#6d6d7d]">Классы и юридический анализ подтверждаются на предыдущем экране — загружать материалы заново не потребуется.</p></div>
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#38322e]/10 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-semibold text-[#38322e]">Нужно завершить проверку</p><p className="mt-1 text-xs text-[#746e66]">Классы и юридический анализ подтверждаются на предыдущем экране — загружать материалы заново не потребуется.</p></div>
                   <Button variant="outline" className="shrink-0 rounded-full bg-white" onClick={() => onGoToSection("review")}><ChevronRight className="h-4 w-4" /> Перейти к проверке</Button>
                 </div>
               )}
 
               {feeBlockers.length > 0 && (
-                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#11113f]/10 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div><p className="font-semibold text-[#11113f]">Нужно проверить пошлины</p><p className="mt-1 text-xs text-[#6d6d7d]">Откройте расчёт, проверьте выбранные классы и вернитесь к документам.</p></div>
+                <div className="mt-4 flex flex-col gap-3 rounded-xl border border-[#38322e]/10 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div><p className="font-semibold text-[#38322e]">Нужно проверить пошлины</p><p className="mt-1 text-xs text-[#746e66]">Откройте расчёт, проверьте выбранные классы и вернитесь к документам.</p></div>
                   <Button variant="outline" className="shrink-0 rounded-full bg-white" onClick={() => onGoToSection("fees")}><ChevronRight className="h-4 w-4" /> Перейти к пошлинам</Button>
                 </div>
               )}
             </div>
           )}
 
-          <details className="rounded-xl border border-[#11113f]/10 p-4">
-            <summary className="cursor-pointer font-semibold text-[#11113f]">Что войдёт в ZIP</summary>
+          <details className="rounded-xl border border-[#38322e]/10 p-4">
+            <summary className="cursor-pointer font-semibold text-[#38322e]">Что войдёт в ZIP</summary>
           <div className="mt-5 grid gap-5 lg:grid-cols-2">
             <div>
-              <h4 className="font-semibold text-[#11113f]">01 — Для подачи в Роспатент</h4>
-              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Только эти применимые файлы переносятся в официальный сервис.</p>
+              <h4 className="font-semibold text-[#38322e]">01 — Для подачи в Роспатент</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#746e66]">Только эти применимые файлы переносятся в официальный сервис.</p>
               <div className="mt-3 space-y-2">
                 {pack.data.documents.filter((item) => item.folder === "01_ДЛЯ_ПОДАЧИ").map((item) => (
-                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#11113f]/10 p-3">
-                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.purpose}</p>
+                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#38322e]/10 p-3">
+                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#746e66]">{item.purpose}</p>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <h4 className="font-semibold text-[#11113f]">02 — Для вас</h4>
-              <p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Эти материалы объясняют порядок действий и не прикладываются к заявке.</p>
+              <h4 className="font-semibold text-[#38322e]">02 — Для вас</h4>
+              <p className="mt-1 text-xs leading-relaxed text-[#746e66]">Эти материалы объясняют порядок действий и не прикладываются к заявке.</p>
               <div className="mt-3 space-y-2">
                 {pack.data.documents.filter((item) => item.folder === "02_ДЛЯ_ВАС").map((item) => (
-                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#11113f]/10 p-3">
-                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#6d6d7d]">{item.purpose}</p>
+                  <div key={`${item.folder}-${item.filename}`} className="rounded-xl border border-[#38322e]/10 p-3">
+                    <p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-xs text-[#746e66]">{item.purpose}</p>
                   </div>
                 ))}
               </div>
@@ -3014,18 +3014,18 @@ function ClientFilingPackage({
               <div className="mt-3 space-y-2">
                 {(pack.data.excluded_documents || []).map((item) => (
                   <div key={item.filename} className="rounded-lg bg-white px-4 py-3 text-sm">
-                    <p className="font-semibold text-[#11113f]">{item.title}: {item.filename}</p>
-                    <p className="mt-1 text-xs leading-relaxed text-[#5f6072]">{item.reason}</p>
+                    <p className="font-semibold text-[#38322e]">{item.title}: {item.filename}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-[#746e66]">{item.reason}</p>
                   </div>
                 ))}
               </div>
             </div>
           )}
 
-          {pack.data.warnings.length > 0 && <details className="mt-5 rounded-xl bg-[#f8f7f4] p-4 text-xs text-[#55556f]"><summary className="cursor-pointer font-semibold text-[#11113f]">Важные примечания ({pack.data.warnings.length})</summary><div className="mt-3 space-y-2 leading-relaxed">{pack.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div></details>}
+          {pack.data.warnings.length > 0 && <details className="mt-5 rounded-xl bg-[#f8f7f4] p-4 text-xs text-[#746e66]"><summary className="cursor-pointer font-semibold text-[#38322e]">Важные примечания ({pack.data.warnings.length})</summary><div className="mt-3 space-y-2 leading-relaxed">{pack.data.warnings.map((warning) => <p key={warning}>• {warning}</p>)}</div></details>}
 
-          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-[#11113f]/10 bg-[#f8f7f4] p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><p className="font-semibold text-[#11113f]">Если после подачи придёт уведомление Роспатента</p><p className="mt-1 text-xs leading-relaxed text-[#6d6d7d]">Загрузите его в отдельном разделе — черновик ответа и приложенные доказательства сохранятся в этой заявке.</p></div>
+          <div className="mt-5 flex flex-col gap-3 rounded-xl border border-[#38322e]/10 bg-[#f8f7f4] p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><p className="font-semibold text-[#38322e]">Если после подачи придёт уведомление Роспатента</p><p className="mt-1 text-xs leading-relaxed text-[#746e66]">Загрузите его в отдельном разделе — черновик ответа и приложенные доказательства сохранятся в этой заявке.</p></div>
             <Button variant="outline" className="shrink-0 rounded-full bg-white" onClick={() => onGoToSection("response")}><MessageSquareText className="h-4 w-4" /> Перейти к ответу</Button>
           </div>
         </div>

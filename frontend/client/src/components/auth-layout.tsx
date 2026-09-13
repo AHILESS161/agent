@@ -8,15 +8,15 @@ import { Button } from "@/components/ui/button";
 export function AuthLayout({ children, view }: { children: ReactNode; view: "login" | "signup" }) {
   return <main className={`client-light-scope registr-v3 registr-auth-shell registr-auth-${view}`}>
     <section className="registr-auth-intro" aria-label="Регистр">
-      <Link href="/?section=top" className="registr-auth-logo" aria-label="Регистр — главная"><BrandWordmark /></Link>
+      <Link href="/" className="registr-auth-logo" aria-label="Регистр — вход"><BrandWordmark /></Link>
       <div className="registr-auth-content">
         <div className="registr-auth-message">
           <h1 className="registr-serif">Защищаем идеи - <em>управляем правами</em></h1>
           <p>Регистрация товарных знаков - от заявки до свидетельства</p>
         </div>
         <div className="registr-auth-visual">
-          <div className="registr-auth-art" aria-hidden="true"><img src={gods} alt="" width="1897" height="829" /></div>
-          <Button asChild variant="outline" className="registr-auth-about"><Link href="/?section=top">О Регистре<ArrowUpRight aria-hidden="true" /></Link></Button>
+          <div className="registr-auth-art"><img src={gods} alt="Фемида, Плутос и Тюхе в пространстве золотых цифровых орбит" width="1897" height="829" /></div>
+          <Button asChild variant="outline" className="registr-auth-about"><Link href="/about?section=top">О Регистре<ArrowUpRight aria-hidden="true" /></Link></Button>
         </div>
       </div>
     </section>

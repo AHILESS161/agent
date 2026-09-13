@@ -4,22 +4,21 @@ import { useAuth } from "@/lib/auth";
 import { BrandWordmark } from "@/components/brand-wordmark";
 
 export function HomeSectionLink({ section, children, className }: { section: string; children: ReactNode; className?: string }) {
-  return <Link href={`/?section=${section}`} className={className}>{children}</Link>;
+  return <Link href={`/about?section=${section}`} className={className}>{children}</Link>;
 }
 
-export function PublicHeader({ principles = false }: { principles?: boolean }) {
+export function PublicHeader() {
   const { user } = useAuth();
 
   return (
     <header className="header">
       <HomeSectionLink section="top" className="wordmark"><BrandWordmark /></HomeSectionLink>
       <nav aria-label="Основная навигация">
-        <Link href="/principles" aria-current={principles ? "page" : undefined}>Принципы сервиса</Link>
         <HomeSectionLink section="approach">Как это работает</HomeSectionLink>
         <HomeSectionLink section="result">Результат</HomeSectionLink>
         <HomeSectionLink section="questions">Вопросы</HomeSectionLink>
       </nav>
-      <Link className="button button-small button-dark" href={user ? "/dashboard" : "/login"}>Личный кабинет <span aria-hidden="true">↗</span></Link>
+      <Link className="button button-small button-dark" href={user ? "/dashboard" : "/login"}>{user ? "Личный кабинет" : "Вход / Регистрация"} <span aria-hidden="true">↗</span></Link>
     </header>
   );
 }

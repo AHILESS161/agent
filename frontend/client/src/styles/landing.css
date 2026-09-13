@@ -73,3 +73,81 @@
   .landing-v3 .header .button-small span { display:none; }
   .landing-v3 .header nav { gap:14px; font-size:12px; }
 }
+
+/* Compact service principles live inside the public About page. */
+.landing-v3 .about-principles {
+  padding-top:70px;
+  padding-bottom:78px;
+  border-top:1px solid var(--line);
+  background-color:#f8f5ef;
+  background-image:
+    radial-gradient(circle at 7% 22%, #b9975e8c 0 1px, transparent 1.8px),
+    radial-gradient(circle at 14% 76%, #d0b78080 0 1.5px, transparent 2.2px),
+    radial-gradient(circle at 28% 12%, #b9975e70 0 1px, transparent 1.8px),
+    radial-gradient(circle at 72% 18%, #d0b78080 0 1px, transparent 1.8px),
+    radial-gradient(circle at 87% 69%, #b9975e8c 0 1.5px, transparent 2.2px),
+    radial-gradient(circle at 96% 34%, #d0b78070 0 1px, transparent 1.8px);
+  text-align:center;
+}
+.landing-v3 .about-principles-heading { max-width:700px; margin:0 auto 42px; }
+.landing-v3 .about-principles-grid {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:clamp(24px,4vw,58px);
+  max-width:1050px;
+  margin:0 auto;
+}
+.landing-v3 .about-principle { min-width:0; }
+.landing-v3 .about-principle-portrait {
+  position:relative;
+  width:min(100%,210px);
+  aspect-ratio:1;
+  margin:0 auto 22px;
+  overflow:hidden;
+  border:1px solid #d8c7aa;
+  border-radius:50%;
+  background:#fff;
+  box-shadow:0 14px 38px #594a3418,inset 0 0 0 8px #f8f5ef;
+}
+.landing-v3 .about-principle-portrait::after {
+  content:"";
+  position:absolute;
+  inset:9%;
+  border:1px solid #c6a66f90;
+  border-radius:50%;
+  pointer-events:none;
+}
+.landing-v3 .about-principle-portrait img {
+  position:absolute;
+  top:7%;
+  left:50%;
+  width:225%;
+  max-width:none;
+  height:auto;
+  mix-blend-mode:multiply;
+  transform:translateX(-50%);
+}
+.landing-v3 .about-principle-name {
+  font-size:11px;
+  letter-spacing:.16em;
+  text-transform:uppercase;
+  color:var(--gold);
+}
+.landing-v3 .about-principle h3 {
+  margin-top:8px;
+  font-family:'Cormorant Garamond',Georgia,serif;
+  font-size:clamp(28px,2.6vw,38px);
+  font-weight:500;
+}
+.landing-v3 .about-principle > p:last-child {
+  max-width:280px;
+  margin:12px auto 0;
+  font-size:14px;
+  line-height:1.75;
+  color:var(--muted);
+}
+@media(max-width:760px) {
+  .landing-v3 .about-principles-grid { grid-template-columns:1fr; gap:38px; }
+  .landing-v3 .about-principle-portrait { width:180px; }
+  .landing-v3 .about-principles-heading { margin-bottom:34px; }
+}

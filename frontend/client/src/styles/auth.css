@@ -5,7 +5,30 @@ body:has(.registr-auth-shell) { display: flex; flex-direction: column; height: 1
 body:has(.registr-auth-shell) > :not(#root) { flex-shrink: 0; }
 #root:has(.registr-auth-shell) { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
 .registr-auth-shell { display: grid; grid-template-columns: 1.04fr .96fr; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #fcfbf8; }
-.registr-auth-intro { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: clamp(16px, 3dvh, 32px); padding: clamp(20px, 4dvh, 40px) clamp(28px, 6vw, 108px); border-right: 1px solid #ded9cf; }
+.registr-auth-intro { position: relative; display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: clamp(16px, 3dvh, 32px); overflow: hidden; padding: clamp(20px, 4dvh, 40px) clamp(28px, 6vw, 108px); border-right: 1px solid #ded9cf; }
+.registr-auth-intro::before,
+.registr-client-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(circle at 8% 18%, #b9975e 0 1px, transparent 1.8px),
+    radial-gradient(circle at 18% 72%, #b9975e99 0 1.5px, transparent 2.2px),
+    radial-gradient(circle at 31% 36%, #d0b780b3 0 1px, transparent 1.8px),
+    radial-gradient(circle at 47% 82%, #b9975e80 0 1px, transparent 1.8px),
+    radial-gradient(circle at 62% 24%, #b9975eb3 0 1.5px, transparent 2.2px),
+    radial-gradient(circle at 76% 68%, #d0b78099 0 1px, transparent 1.8px),
+    radial-gradient(circle at 89% 39%, #b9975e80 0 1.5px, transparent 2.2px),
+    radial-gradient(circle at 95% 88%, #d0b78099 0 1px, transparent 1.8px);
+  opacity: .62;
+}
+.registr-auth-intro > * { position: relative; z-index: 1; }
+.registr-client-frame { position: relative; isolation: isolate; overflow: hidden; }
+.registr-client-frame::before { z-index: 0; opacity: .38; }
+.registr-client-frame > header,
+.registr-client-frame > main,
+.registr-client-frame > footer { position: relative; z-index: 1; }
 .registr-auth-logo { display: inline-flex; align-self: flex-start; flex-shrink: 0; font-size: clamp(24px, 2.2vw, 32px); color: #38322e; border-radius: 4px; }
 .registr-auth-logo:focus-visible { outline: 2px solid #9b8258; outline-offset: 6px; }
 .registr-auth-content { display: flex; flex-direction: column; justify-content: center; flex: 1; min-height: 0; gap: clamp(14px, 3dvh, 28px); text-align: center; }
@@ -46,6 +69,10 @@ body:has(.registr-auth-shell) > :not(#root) { flex-shrink: 0; }
   .registr-auth-about svg { width: 14px; height: 14px; }
   .registr-auth-panel { align-items: flex-start; padding: 12px 16px 16px; }
   .registr-auth-card { padding: 18px; border-radius: 16px; }
+}
+@media (max-width: 640px) {
+  .registr-auth-intro::before,
+  .registr-client-frame::before { opacity: .28; }
 }
 @media (max-height: 720px) {
   .registr-auth-intro { gap: 10px; padding-top: 14px; padding-bottom: 14px; }

@@ -40,7 +40,7 @@ export default function ServicesPage() {
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-muted-foreground">
             {tool === "compare"
-              ? "Сопоставьте два обозначения и получите наглядный разбор совпадений и различий."
+              ? "Выберите название для регистрации товарного знака: сравним два варианта с учётом вашего бизнеса."
               : "Выберите заявку — её сведения и документы помогут подготовить ответ на уведомление Роспатента."}
           </p>
         </> : <>
@@ -49,7 +49,7 @@ export default function ServicesPage() {
           Следующий шаг —<br /><em className="font-normal text-[#9b8258]">с ясной позицией.</em>
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-muted-foreground">
-          Подготовьте ответ на уведомление Роспатента или сопоставьте два обозначения.
+          Подготовьте ответ на уведомление Роспатента или выберите более сильное название для регистрации.
           Начните с того, что нужно сейчас.
         </p>
         </>}
@@ -58,7 +58,7 @@ export default function ServicesPage() {
       <Tabs value={tool} onValueChange={(value) => updateRoute(value === "compare" ? "compare" : "reply")}>
         {!client && <TabsList className="registr-service-tabs" aria-label="Выберите инструмент">
           <TabsTrigger value="reply"><FileText className="h-4 w-4" />Ответ Роспатенту</TabsTrigger>
-          <TabsTrigger value="compare"><Scale className="h-4 w-4" />Сравнение ТЗ</TabsTrigger>
+          <TabsTrigger value="compare"><Scale className="h-4 w-4" />Сравнение обозначений</TabsTrigger>
         </TabsList>}
         <TabsContent value="reply" forceMount hidden={tool !== "reply"} className="mt-8 space-y-6" {...(client ? { role: "region", "aria-label": "Ответ Роспатенту", "aria-labelledby": undefined } : {})}>
           <section className="rounded-2xl border border-border bg-card p-5 sm:p-7">

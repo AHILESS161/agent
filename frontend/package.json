@@ -11,7 +11,8 @@
     "check": "tsc --noEmit",
     "check:comparison": "node scripts/check-comparison.mjs",
     "check:brand-start": "node scripts/check-brand-start.mjs",
-    "check:client-navigation": "node scripts/check-client-navigation.mjs"
+    "check:client-navigation": "node scripts/check-client-navigation.mjs",
+    "check:mark-choice": "node scripts/check-mark-choice.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

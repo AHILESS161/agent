@@ -50,6 +50,7 @@ jobs:
       - run: npm run check:comparison
       - run: npm run check:brand-start
       - run: npm run check:client-navigation
+      - run: npm run check:mark-choice
       - run: npm run build
 
   production-images:

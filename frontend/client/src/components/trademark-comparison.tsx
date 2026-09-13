@@ -1,174 +1,140 @@
 import { useId, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Copy, Download, ScanText } from "lucide-react";
+import { ArrowRight, Copy, Download, Loader2, Scale } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { api, ApiError } from "@/lib/api";
 import {
-  compareMarks,
-  comparisonReport,
-  markLength,
-  MARK_CHARACTER_LIMIT,
-  type ComparedPart,
-  type MarkComparison,
-} from "@/lib/compare-marks";
+  CHOICE_NAME_LIMIT, CHOICE_GOODS_LIMIT, ChoiceInputError,
+  categoryLabels, choiceHeading, choiceIsStale, choiceLength, choiceServiceError,
+  descriptionRiskLabels, distinctivenessLabels, markChoiceReport, markChoiceSchema,
+  validateChoiceInput, type ChoiceCandidate, type ChoiceInput, type MarkChoice,
+} from "@/lib/mark-choice";
 
-interface ComparisonSnapshot {
-  first: string;
-  second: string;
-  goods: string;
-  result: MarkComparison;
-}
+interface ChoiceSnapshot { input: ChoiceInput; result: MarkChoice }
 
-function MarkParts({ parts }: { parts: ComparedPart[] }) {
-  return (
-    <span className="whitespace-pre-wrap break-words">
-      {parts.map((part, index) => (
-        <span key={index} className={part.same ? "" : "rounded-sm bg-[#e8d8b6] text-[#483b29] underline decoration-[#9b8258] underline-offset-4"}>
-          {part.text}
-        </span>
-      ))}
-    </span>
-  );
+function CandidateCard({ candidate, preferred }: { candidate: ChoiceCandidate; preferred: boolean }) {
+  return <article className={`min-w-0 rounded-2xl border p-5 sm:p-6 ${preferred ? "border-[#9b8258] bg-[#f4f1eb]" : "border-[#ded9cf] bg-white"}`}>
+    <p className="text-xs font-medium text-[#746e66]">{categoryLabels[candidate.category]}</p>
+    <h4 className="mt-2 break-words font-serif text-3xl leading-tight">{candidate.designation}</h4>
+    <dl className="mt-5 divide-y divide-[#ded9cf] text-sm">
+      <div className="flex flex-wrap justify-between gap-2 py-3"><dt className="text-[#746e66]">Различительная способность</dt><dd className="font-semibold">{distinctivenessLabels[candidate.distinctiveness]}</dd></div>
+      <div className="flex flex-wrap justify-between gap-2 py-3"><dt className="text-[#746e66]">Риск описательности</dt><dd className="font-semibold">{descriptionRiskLabels[candidate.description_risk]}</dd></div>
+    </dl>
+    <p className="mt-4 text-sm leading-6">{candidate.goods_relation}</p>
+    <p className="mt-3 text-sm leading-6 text-[#746e66]">{candidate.reasoning}</p>
+    {candidate.strengths.length > 0 && <div className="mt-5"><p className="text-sm font-semibold">Сильные стороны</p><ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-[#746e66]">{candidate.strengths.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+    {candidate.risks.length > 0 && <div className="mt-5"><p className="text-sm font-semibold">На что обратить внимание</p><ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-[#746e66]">{candidate.risks.map((item, index) => <li key={index}>{item}</li>)}</ul></div>}
+  </article>;
 }
 
 export function TrademarkComparison() {
   const id = useId();
   const firstRef = useRef<HTMLInputElement>(null);
   const secondRef = useRef<HTMLInputElement>(null);
+  const goodsRef = useRef<HTMLTextAreaElement>(null);
   const [first, setFirst] = useState("");
   const [second, setSecond] = useState("");
   const [goods, setGoods] = useState("");
-  const [snapshot, setSnapshot] = useState<ComparisonSnapshot | null>(null);
+  const [snapshot, setSnapshot] = useState<ChoiceSnapshot | null>(null);
+  const [busy, setBusy] = useState(false);
+  const submitting = useRef(false);
   const [error, setError] = useState("");
+  const [invalidField, setInvalidField] = useState<keyof ChoiceInput | null>(null);
   const [status, setStatus] = useState("");
+  const input = { first, second, goods };
   const result = snapshot?.result;
-  const savedGoods = snapshot?.goods.trim() ?? "";
-  const stale = !!snapshot && (snapshot.first !== first || snapshot.second !== second || snapshot.goods !== goods);
-  const firstLength = markLength(first);
-  const secondLength = markLength(second);
-  const invalidFirst = firstLength > MARK_CHARACTER_LIMIT || (!!error && !firstLength);
-  const invalidSecond = secondLength > MARK_CHARACTER_LIMIT || (!!error && !secondLength);
+  const stale = !!snapshot && choiceIsStale(input, snapshot.input);
 
   function updateField(setter: (value: string) => void, value: string) {
-    setter(value);
-    setError("");
-    setStatus("");
+    setter(value); setError(""); setInvalidField(null); setStatus("");
   }
-
-  function compare(event: FormEvent<HTMLFormElement>) {
+  function example() {
+    setFirst("Яблоневый сад"); setSecond("Я-ко"); setGoods("Магазин фруктов");
+    setError(""); setInvalidField(null); setStatus(""); setSnapshot(null);
+    firstRef.current?.focus();
+  }
+  async function compare(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setStatus("");
+    if (submitting.current) return;
+    setError(""); setStatus(""); setInvalidField(null);
+    let request: ChoiceInput;
+    try { request = validateChoiceInput(input); }
+    catch (cause) {
+      if (cause instanceof ChoiceInputError) {
+        setInvalidField(cause.field); setError(cause.message);
+        ({ first: firstRef, second: secondRef, goods: goodsRef })[cause.field].current?.focus();
+      }
+      return;
+    }
+    submitting.current = true; setBusy(true);
     try {
-      const next = compareMarks(first, second);
-      setSnapshot({ first, second, goods, result: next });
-      setError("");
-      setStatus("Сравнение готово. Внешние пробелы не учитываются.");
+      const response = markChoiceSchema.parse(await api.post<unknown>("/tools/compare-marks", request));
+      if (response.first.designation !== request.first || response.second.designation !== request.second) throw new Error("Unexpected designations");
+      setSnapshot({ input: request, result: response });
+      setStatus(response.mode === "demo" ? "Демонстрационный пример готов." : "Сравнение готово.");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Не удалось сравнить обозначения.");
-      (!firstLength || firstLength > MARK_CHARACTER_LIMIT ? firstRef : secondRef).current?.focus();
-    }
+      setError(cause instanceof ApiError ? choiceServiceError(cause.status, cause.detail, cause.message) : "Не удалось получить надёжный результат. Попробуйте ещё раз позже.");
+    } finally { submitting.current = false; setBusy(false); }
   }
-
   async function copy() {
-    if (!snapshot || stale) return;
+    if (!snapshot || stale || busy) return;
     try {
-      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(comparisonReport(snapshot.result, snapshot.goods));
+      await navigator.clipboard.writeText(markChoiceReport(snapshot.result, snapshot.input));
       setStatus("Результат скопирован.");
-    } catch {
-      setStatus("Не удалось скопировать. Скачайте результат в TXT.");
-    }
+    } catch { setStatus("Не удалось скопировать. Скачайте результат в TXT."); }
   }
-
   function download() {
-    if (!snapshot || stale) return;
-    const blob = new Blob(["\ufeff", comparisonReport(snapshot.result, snapshot.goods)], { type: "text/plain;charset=utf-8" });
+    if (!snapshot || stale || busy) return;
+    const blob = new Blob(["\ufeff", markChoiceReport(snapshot.result, snapshot.input)], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = "registr-sravnenie-znakov.txt";
-    document.body.append(link);
-    link.click();
-    link.remove();
+    link.href = url; link.download = "registr-vybor-oboznacheniya.txt";
+    document.body.append(link); link.click(); link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 1500);
     setStatus("Файл TXT подготовлен.");
   }
 
-  return (
-    <div className="space-y-6 text-[#38322e]">
-      <div className="max-w-2xl space-y-2">
-        <h2 className="font-serif text-3xl sm:text-4xl">Сравнение товарных знаков</h2>
-        <p className="text-sm leading-relaxed text-[#746e66]">Введите два названия, чтобы увидеть совпадения и различия в тексте. Это первый шаг к сравнению обозначений.</p>
+  return <div className="space-y-7 text-[#38322e]">
+    <form onSubmit={compare} noValidate aria-label="Выбор названия для регистрации" aria-busy={busy} className="grid gap-5 rounded-3xl border border-[#ded9cf] bg-white p-5 sm:grid-cols-2 sm:p-7">
+      {[
+        { field: "first" as const, label: "Первое обозначение", value: first, setter: setFirst, ref: firstRef, placeholder: "Например, Яблоневый сад" },
+        { field: "second" as const, label: "Второе обозначение", value: second, setter: setSecond, ref: secondRef, placeholder: "Например, Я-ко" },
+      ].map(item => <div key={item.field} className="min-w-0 space-y-2">
+        <Label htmlFor={`${id}-${item.field}`}>{item.label}</Label>
+        <Input id={`${id}-${item.field}`} ref={item.ref} value={item.value} onChange={event => updateField(item.setter, event.target.value)} placeholder={item.placeholder} required disabled={busy} maxLength={CHOICE_NAME_LIMIT * 2} autoComplete="off" aria-invalid={invalidField === item.field || choiceLength(item.value) > CHOICE_NAME_LIMIT} aria-describedby={`${id}-${item.field}-hint${invalidField === item.field ? ` ${id}-error` : ""}`} className="h-12 rounded-xl border-[#ded9cf] bg-[#fcfbf8] text-base" />
+        <p id={`${id}-${item.field}-hint`} className="text-xs text-[#746e66]">{choiceLength(item.value)} / {CHOICE_NAME_LIMIT} символов</p>
+      </div>)}
+      <div className="space-y-2 sm:col-span-2">
+        <Label htmlFor={`${id}-goods`}>Для каких товаров или услуг выбираете название?</Label>
+        <Textarea id={`${id}-goods`} ref={goodsRef} value={goods} onChange={event => updateField(setGoods, event.target.value)} required disabled={busy} maxLength={CHOICE_GOODS_LIMIT} placeholder="Например, магазин фруктов" aria-invalid={invalidField === "goods"} aria-describedby={`${id}-goods-hint${invalidField === "goods" ? ` ${id}-error` : ""}`} className="min-h-24 rounded-xl border-[#ded9cf] bg-[#fcfbf8] text-base" />
+        <p id={`${id}-goods-hint`} className="text-xs leading-5 text-[#746e66]">Достаточно коротко описать бизнес. Одно и то же слово может подходить для одной сферы и описывать товары в другой.</p>
       </div>
-      <div className="grid items-start gap-6 lg:grid-cols-2">
-        <form onSubmit={compare} noValidate className="space-y-6 rounded-3xl border border-[#ded9cf] bg-[#fcfbf8] p-5 sm:p-7" aria-label="Сравнение обозначений">
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-first`} className="text-[#38322e]">Первое обозначение</Label>
-            <Input id={`${id}-first`} ref={firstRef} value={first} required autoComplete="off" placeholder="Например, ЛУННЫЙ САД" onChange={event => updateField(setFirst, event.target.value)} aria-invalid={invalidFirst} aria-describedby={`${id}-first-hint${error ? ` ${id}-error` : ""}`} className="h-12 rounded-xl border-[#ded9cf] bg-white text-[#38322e] placeholder:text-[#8c867e] focus-visible:ring-[#9b8258]" />
-            <p id={`${id}-first-hint`} className={`text-xs ${invalidFirst ? "text-red-700" : "text-[#746e66]"}`}>{firstLength} / {MARK_CHARACTER_LIMIT} символов</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor={`${id}-second`} className="text-[#38322e]">Второе обозначение</Label>
-            <Input id={`${id}-second`} ref={secondRef} value={second} required autoComplete="off" placeholder="Например, ЛУННЫЙ ЦВЕТ" onChange={event => updateField(setSecond, event.target.value)} aria-invalid={invalidSecond} aria-describedby={`${id}-second-hint${error ? ` ${id}-error` : ""}`} className="h-12 rounded-xl border-[#ded9cf] bg-white text-[#38322e] placeholder:text-[#8c867e] focus-visible:ring-[#9b8258]" />
-            <p id={`${id}-second-hint`} className={`text-xs ${invalidSecond ? "text-red-700" : "text-[#746e66]"}`}>{secondLength} / {MARK_CHARACTER_LIMIT} символов</p>
-          </div>
-          <details className="rounded-xl border border-[#ded9cf] bg-white px-4 py-3">
-            <summary className="cursor-pointer text-sm text-[#584b41] focus-visible:outline-[#9b8258]">Добавить товары и услуги <span className="text-xs text-[#746e66]">· необязательно</span></summary>
-            <div className="mt-4 space-y-2">
-              <Label htmlFor={`${id}-goods`} className="text-[#38322e]">Описание для заметки</Label>
-              <Textarea id={`${id}-goods`} value={goods} maxLength={3000} onChange={event => updateField(setGoods, event.target.value)} placeholder="Например, цветы и доставка букетов" aria-describedby={`${id}-goods-hint`} className="min-h-24 rounded-xl border-[#ded9cf] bg-[#fcfbf8] text-[#38322e] placeholder:text-[#8c867e] focus-visible:ring-[#9b8258]" />
-              <p id={`${id}-goods-hint`} className="text-xs leading-relaxed text-[#746e66]">Сохраним в результате как вашу заметку. Однородность товаров и услуг здесь не оценивается.</p>
-            </div>
-          </details>
-          {error && <p id={`${id}-error`} role="alert" className="text-sm text-red-700">{error}</p>}
-          <Button type="submit" className="w-full rounded-full border-[#584b41] bg-[#584b41] text-white hover:bg-[#483d34] sm:w-auto">{stale ? "Обновить сравнение" : "Сравнить обозначения"}<ArrowRight aria-hidden="true" /></Button>
-        </form>
+      {error && <p id={`${id}-error`} role="alert" className="text-sm text-red-700 sm:col-span-2">{error}</p>}
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <Button type="submit" disabled={busy} className="min-h-12 rounded-full bg-[#584b41] px-6 text-white hover:bg-[#483d34]">{busy ? <><Loader2 className="animate-spin" aria-hidden="true" />Оцениваем названия…</> : <>{stale ? "Обновить сравнение" : "Сравнить для регистрации"}<ArrowRight aria-hidden="true" /></>}</Button>
+        <Button type="button" variant="ghost" disabled={busy} onClick={example} className="rounded-full text-[#746e66]">Попробовать пример</Button>
+      </div>
+      {busy && <p role="status" className="text-sm leading-6 text-[#746e66] sm:col-span-2">Проверяем смысл названий, связь с вашим бизнесом и риск описательности. Обычно это занимает до минуты.</p>}
+    </form>
 
-        <section aria-labelledby={`${id}-result-title`} className="min-w-0 rounded-3xl border border-[#ded9cf] bg-white p-5 sm:p-7">
-          <h3 id={`${id}-result-title`} className="font-serif text-2xl">Результат сравнения</h3>
-          {!result ? (
-            <div className="py-10 text-sm leading-relaxed text-[#746e66]">
-              <ScanText className="mb-5 h-9 w-9 text-[#9b8258]" aria-hidden="true" />
-              <p>Здесь появятся обозначения с выделенными различиями, совпадающие слова и текстовый отчёт.</p>
-              <p className="mt-3">Для начала нужны только два названия.</p>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-5">
-              {stale && <p role="status" className="rounded-xl bg-[#f4eddf] p-3 text-sm text-[#665233]">Данные изменились. Обновите сравнение перед копированием или скачиванием.</p>}
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[{ name: "Первое обозначение", parts: result.leftParts }, { name: "Второе обозначение", parts: result.rightParts }].map(mark => (
-                  <div key={mark.name} className="min-w-0 rounded-xl bg-[#f4f1eb] p-4">
-                    <p className="mb-3 text-xs text-[#746e66]">{mark.name}</p>
-                    <p className="font-serif text-2xl leading-relaxed"><MarkParts parts={mark.parts} /></p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-[#746e66]">Цветом и подчёркиванием выделены отличающиеся символы с учётом регистра.</p>
-              <dl className="divide-y divide-[#e8e3da] text-sm">
-                {[
-                  ["Точное совпадение", result.exact ? "Совпадают" : "Различаются"],
-                  ["Без учёта регистра и пробелов", result.normalized ? "Совпадают" : "Различаются"],
-                  ["Количество символов", `Первое: ${result.lengths[0]} · Второе: ${result.lengths[1]}`],
-                  ["Совпадающие слова", result.commonWords.join(", ") || "Нет"],
-                ].map(([label, value]) => (
-                  <div key={label} className="grid gap-1 py-3 sm:grid-cols-2 sm:gap-4">
-                    <dt className="text-[#746e66]">{label}</dt><dd className="min-w-0 break-words font-medium sm:text-right">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-              {result.mixedScript && <p className="rounded-xl bg-[#f4f1eb] p-3 text-xs leading-relaxed text-[#746e66]">В обозначениях есть кириллица и латиница. Внешне похожие буквы разных алфавитов считаются разными символами.</p>}
-              {savedGoods && <div className="text-sm"><p className="mb-1 text-[#746e66]">Товары и услуги · ваша заметка, без оценки</p><p className="whitespace-pre-wrap break-words">{savedGoods}</p></div>}
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={copy} disabled={stale} className="rounded-full border-[#ded9cf] text-[#584b41]"><Copy aria-hidden="true" />Копировать</Button>
-                <Button type="button" variant="outline" onClick={download} disabled={stale} className="rounded-full border-[#ded9cf] text-[#584b41]"><Download aria-hidden="true" />Скачать TXT</Button>
-              </div>
-            </div>
-          )}
-          <p role="status" className="mt-4 min-h-5 text-xs leading-relaxed text-[#746e66]">{status}</p>
-        </section>
-      </div>
-      <p className="max-w-4xl text-xs leading-relaxed text-[#746e66]">Инструмент сопоставляет только текст. Фонетический, смысловой и графический анализ, сходство до степени смешения, однородность товаров и вероятность регистрации здесь не оцениваются.</p>
-    </div>
-  );
+    {!result ? <div className="flex items-start gap-4 rounded-2xl bg-[#f4f1eb] p-5 text-sm leading-6 text-[#746e66]"><Scale className="mt-1 h-6 w-6 shrink-0 text-[#9b8258]" aria-hidden="true" /><p>Получите предварительный выбор с объяснением: какое название обладает большей различительной способностью и что стоит проверить перед подачей.</p></div>
+      : <section aria-labelledby={`${id}-result-title`} className="space-y-5">
+        {stale && <p role="status" className="rounded-xl bg-[#f4eddf] p-4 text-sm text-[#665233]">Названия или сфера изменились. Ниже показана прежняя оценка — обновите сравнение.</p>}
+        <div className="rounded-3xl border border-[#ded9cf] bg-[#f4f1eb] p-5 sm:p-7">
+          <p className="text-xs font-semibold uppercase tracking-[.12em] text-[#746e66]">{result.mode === "demo" ? "Демонстрационный пример" : "Предварительный выбор"}</p>
+          <h3 id={`${id}-result-title`} className="mt-3 break-words font-serif text-3xl leading-tight sm:text-4xl">{choiceHeading(result)}</h3>
+          <p className="mt-4 text-sm leading-7">{result.summary}</p>
+          <p className="mt-4 text-xs leading-5 text-[#746e66]">Сфера: {snapshot?.input.goods}</p>
+          {result.mode === "demo" && <p className="mt-3 text-xs leading-5 text-[#746e66]">Это подготовленный пример. В рабочем режиме сервис анализирует введённые варианты с помощью подключённой модели.</p>}
+        </div>
+        <div className="grid items-start gap-5 lg:grid-cols-2"><CandidateCard candidate={result.first} preferred={result.recommended === "first"} /><CandidateCard candidate={result.second} preferred={result.recommended === "second"} /></div>
+        <div className="rounded-2xl border border-[#ded9cf] bg-white p-5 sm:p-6"><h4 className="font-serif text-2xl">Что сделать дальше</h4><ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-[#746e66]">{result.next_steps.map((step, index) => <li key={index}>{step}</li>)}</ol></div>
+        <details className="rounded-2xl border border-[#ded9cf] bg-white p-5 text-sm leading-6"><summary className="cursor-pointer font-medium">Основания и границы оценки</summary><ul className="mt-4 list-disc space-y-2 pl-5 text-[#746e66]">{result.limitations.map((item, index) => <li key={index}>{item}</li>)}</ul><ul className="mt-4 space-y-2">{result.sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer" className="text-[#7c643e] underline underline-offset-4">{source.title}</a></li>)}</ul></details>
+        <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={copy} disabled={stale || busy} className="rounded-full"><Copy aria-hidden="true" />Копировать</Button><Button type="button" variant="outline" onClick={download} disabled={stale || busy} className="rounded-full"><Download aria-hidden="true" />Скачать TXT</Button></div>
+      </section>}
+    <p className="text-xs leading-6 text-[#746e66]">Сравниваем сами названия в указанной сфере. Поиск похожих зарегистрированных знаков и заявок — отдельный следующий шаг; итоговое решение принимает Роспатент.</p>
+    <p role="status" className="text-xs leading-5 text-[#746e66]">{status}</p>
+  </div>;
 }

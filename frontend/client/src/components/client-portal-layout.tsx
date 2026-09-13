@@ -38,9 +38,9 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
       <div className="mx-auto min-h-screen max-w-[1512px] bg-[#fcfbf8] pb-1 sm:rounded-3xl">
       <header className="sticky top-0 z-30 bg-[#fcfbf8]/95 p-3 backdrop-blur sm:rounded-t-3xl sm:p-5 lg:px-8">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-3xl border border-[#ece8e0] bg-white px-4 py-3 md:rounded-full lg:px-6">
-          <Link href="/dashboard" aria-label="Регистр — мои заявки">
+          <Link href="/" aria-label="Регистр — главная">
             <div className="cursor-pointer text-[1.8rem] leading-none text-[#38322e]">
-              <BrandWordmark accentEnd />
+              <BrandWordmark />
             </div>
           </Link>
 

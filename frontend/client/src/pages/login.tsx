@@ -1,4 +1,4 @@
-import pediment from "@/assets/pediment.png";
+import pediment from "@/assets/three-gods.png";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -97,13 +97,13 @@ export default function LoginPage() {
     <main className="client-light-scope registr-v3 login-shell grid min-h-[100svh] bg-[#fcfbf8] lg:grid-cols-[1.04fr_.96fr]">
       <section className="relative hidden overflow-hidden border-r border-black/5 px-[7vw] py-10 lg:flex lg:flex-col lg:justify-center">
         <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#38322e]">
-          <BrandWordmark accentEnd />
+          <BrandWordmark />
         </div>
 
         <div className="text-center">
           <h1 className="registr-serif text-[clamp(3.5rem,5.8vw,6.5rem)] leading-[.98]">Ваш бренд.<br /><em className="font-normal text-[#9b8258]">Под вашей защитой.</em></h1>
           <p className="mx-auto mt-6 max-w-md text-sm leading-7 text-[#746e66]">Проверка обозначения, подготовка заявки и ответы Роспатенту — в одном месте.</p>
-          <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1774" height="887" /></div>
+          <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1897" height="829" /></div>
         </div>
 
         <div className="absolute bottom-9 left-[7vw] flex items-center gap-7 text-sm text-[#746e66]">
@@ -115,6 +115,7 @@ export default function LoginPage() {
 
       <section className="login-panel flex items-center justify-center bg-[#08090b] p-4 sm:p-5 xl:p-6">
         <div className="login-card w-full max-w-[580px] rounded-[18px] bg-[#fbfaf8] p-5 shadow-2xl sm:p-6 xl:p-7">
+          <div className="mb-5 text-[1.8rem] text-[#38322e] lg:hidden"><BrandWordmark /></div>
           <div className="mb-4 flex border-b border-border text-center text-sm">
             <div className="relative flex-1 pb-4 font-medium text-[#38322e] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход

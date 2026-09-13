@@ -56,7 +56,7 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
 
   return <main className="client-light-scope registr-v3 flex min-h-[100svh] items-center justify-center bg-[#fcfbf8] p-5">
     <section className="w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm">
-      <div className="mb-7 text-3xl text-[#38322e]"><BrandWordmark accentEnd /></div>
+      <div className="mb-7 text-3xl text-[#38322e]"><BrandWordmark /></div>
       <h1 className="text-2xl font-semibold">{verify ? "Завершить регистрацию" : "Регистрация клиента"}</h1>
       <p className="mt-3 text-sm text-muted-foreground">{verify
         ? "Укажите имя и придумайте пароль для своего аккаунта."
@@ -77,7 +77,7 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
         </Button>
       </form>}
       {verify && !complete && <Link href="/signup" className="mt-5 block text-sm text-primary underline">Запросить новое письмо</Link>}
-      <Link href="/" className="mt-6 block text-sm text-primary underline">{complete ? "Войти в аккаунт" : "Уже есть аккаунт? Войти"}</Link>
+      <Link href="/login" className="mt-6 block text-sm text-primary underline">{complete ? "Войти в аккаунт" : "Уже есть аккаунт? Войти"}</Link>
     </section>
   </main>;
 }

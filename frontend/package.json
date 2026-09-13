@@ -9,7 +9,8 @@
     "build": "vite build",
     "preview": "vite preview --port 3000 --host",
     "check": "tsc --noEmit",
-    "check:comparison": "node scripts/check-comparison.mjs"
+    "check:comparison": "node scripts/check-comparison.mjs",
+    "check:brand-start": "node scripts/check-brand-start.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

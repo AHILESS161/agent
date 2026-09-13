@@ -32,6 +32,7 @@ import { useToast } from "@/hooks/use-toast";
 import { api, ApiError, DOCUMENT_KIND_LABELS } from "@/lib/api";
 import { useCases } from "@/lib/use-cases";
 import { useAuth } from "@/lib/auth";
+import { consumeBrandStart } from "@/lib/brand-start";
 import { HelpTip } from "@/components/help-tip";
 import { MARK_TYPE_LABELS, type MarkType } from "@shared/schema";
 import { cn } from "@/lib/utils";
@@ -188,6 +189,18 @@ export default function IntakePage() {
       setSender(draft.sender || "");
       setBodyText(draft.bodyText || "");
     } catch { localStorage.removeItem(draftKey); }
+  }, [draftKey, user]);
+
+  // Apply the public form after the normal draft/profile restoration so it cannot be overwritten.
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.hash.split("?")[1] || window.location.search);
+    if (query.get("from") !== "home" || !user) return;
+    const pending = consumeBrandStart(user.id);
+    if (!pending) return;
+    setMarkName(pending.brand);
+    setMarkType("word");
+    setBusinessDescription(pending.business);
+    setGoodsServices(pending.business);
   }, [draftKey, user]);
 
   useEffect(() => {

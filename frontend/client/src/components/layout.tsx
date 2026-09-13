@@ -52,7 +52,7 @@ function Wordmark() {
   return (
     <Link href="/dashboard">
       <div className="cursor-pointer px-7 py-9 text-[2rem] leading-none text-white">
-        <BrandWordmark accentEnd />
+        <BrandWordmark />
       </div>
     </Link>
   );

@@ -77,7 +77,7 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
         </Button>
       </form>}
       {verify && !complete && <Link href="/signup" className="mt-5 block text-sm text-primary underline">Запросить новое письмо</Link>}
-      <Link href="/login" className="mt-6 block text-sm text-primary underline">{complete ? "Войти в аккаунт" : "Уже есть аккаунт? Войти"}</Link>
+      <Link href="/login" className="mt-6 block text-sm text-primary underline">{complete ? "Войти в Регистр" : "Уже есть аккаунт? Войти"}</Link>
     </section>
   </main>;
 }

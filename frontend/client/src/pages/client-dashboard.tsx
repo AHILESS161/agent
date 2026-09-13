@@ -1,13 +1,10 @@
-import pediment from "@/assets/three-gods.png";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   ArrowRight,
   CheckCircle2,
   CircleDot,
-  FileSearch,
   Loader2,
-  ShieldCheck,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -125,42 +122,14 @@ export default function ClientDashboardPage() {
 
   return (
     <div className="space-y-10">
-      <section className="registr-hero">
-        <h1 className="registr-serif">Ваш бренд.<br /><em>Под вашей защитой.</em></h1>
-        <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[#746e66]">Начните с названия и описания бизнеса. Подберём классы МКТУ, проверим обозначение и поможем подготовить заявку.</p>
-        <Button className="mt-7 min-h-12 rounded-full px-7" onClick={() => setLocation("/start")}>Проверить мой бренд<ArrowRight className="h-4 w-4" /></Button>
-        <p className="mt-3 text-xs text-[#746e66]">Два поля для начала. Реквизиты — после проверки.</p>
-        <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1897" height="829" loading="eager" /></div>
-        <div className="flex items-center gap-6 border-b border-[#ded9cf] py-5 text-[11px] uppercase tracking-[.12em] text-[#746e66]"><span className="h-px flex-1 bg-[#ded9cf]" /><span>От идеи — к защищённому имени</span><span className="h-px flex-1 bg-[#ded9cf]" /></div>
-      </section>
-
-      <section className="grid gap-4 md:grid-cols-2" aria-label="Инструменты">
-        {[
-          { href: "/services?tool=reply", title: "Ответ Роспатенту", text: "Загрузите уведомление и подготовьте черновик ответа на основе материалов заявки.", icon: FileSearch },
-          { href: "/services?tool=compare", title: "Сравнение товарных знаков", text: "Сопоставьте два названия: совпадения, различия и общие слова.", icon: ShieldCheck },
-        ].map((item) => <Link key={item.href} href={item.href} className="group rounded-2xl border border-[#ded9cf] bg-white p-6 transition-colors hover:border-[#9b8258]"><div className="flex items-center justify-between"><item.icon className="h-6 w-6 text-[#9b8258]" /><ArrowRight className="h-4 w-4 text-[#9b8258] transition-transform group-hover:translate-x-1" /></div><h2 className="registr-serif mt-5 text-3xl">{item.title}</h2><p className="mt-2 max-w-lg text-sm leading-6 text-[#746e66]">{item.text}</p></Link>)}
-      </section>
-
-      <section className="grid gap-4 sm:grid-cols-3">
-        {[
-          { icon: FileSearch, title: "Обозначение и деятельность", text: <>Название или логотип,<br />товары и услуги</> },
-          { icon: Sparkles, title: "Результат проверки", text: "Классы МКТУ и схожие знаки — без юридического языка" },
-          { icon: ShieldCheck, title: "Подготовка к подаче", text: "Состав документов и итоговая стоимость" },
-        ].map((item) => (
-          <div key={item.title} className="rounded-[1.35rem] border border-[#38322e]/10 bg-white p-5">
-            <item.icon className="h-6 w-6 text-[#9b8258]" />
-            <h2 className="mt-4 font-semibold text-[#38322e]">{item.title}</h2>
-            <p className="mt-1.5 text-sm leading-relaxed text-[#746e66]">{item.text}</p>
-          </div>
-        ))}
-      </section>
-
       <section>
-        <div className="mb-5 flex items-end justify-between gap-4">
+        <div className="mb-8 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase tracking-[0.14em] text-[#9b8258]">Ваши проекты</p>
-            <h2 className="mt-2 text-3xl font-semibold text-[#38322e]">Мои заявки</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#9b8258]">Личный кабинет</p>
+            <h1 className="registr-serif mt-3 text-5xl text-[#38322e] sm:text-6xl">Мои заявки</h1>
+            <p className="mt-3 text-sm leading-6 text-[#746e66]">Проверки брендов, документы и текущий этап каждой заявки.</p>
           </div>
+          <Button className="min-h-12 w-fit shrink-0 rounded-full px-6" onClick={() => setLocation("/start")}>Новая заявка<ArrowRight className="h-4 w-4" /></Button>
         </div>
 
         {cases.isLoading ? (
@@ -182,7 +151,7 @@ export default function ClientDashboardPage() {
             <p className="mx-auto mt-2 max-w-lg text-[#746e66]">
               Начните с названия бренда и короткого описания бизнеса. Черновик можно дополнить позже.
             </p>
-            <p className="mt-5 text-sm font-semibold text-[#9b8258]">Начните проверку кнопкой в верхнем блоке.</p>
+            <Button className="mt-5 min-h-12 rounded-full px-6" onClick={() => setLocation("/start")}>Создать первую заявку<ArrowRight className="h-4 w-4" /></Button>
           </div>
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">

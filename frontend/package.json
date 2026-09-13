@@ -10,7 +10,8 @@
     "preview": "vite preview --port 3000 --host",
     "check": "tsc --noEmit",
     "check:comparison": "node scripts/check-comparison.mjs",
-    "check:brand-start": "node scripts/check-brand-start.mjs"
+    "check:brand-start": "node scripts/check-brand-start.mjs",
+    "check:client-navigation": "node scripts/check-client-navigation.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

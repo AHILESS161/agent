@@ -3,7 +3,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useAuth } from "@/lib/auth";
 import { BrandWordmark, BrandSymbol } from "@/components/brand-wordmark";
-import { brandStartRoute, saveBrandStart } from "@/lib/brand-start";
+import { brandStartRoute, readBrandStart, saveBrandStart } from "@/lib/brand-start";
 import gods from "@/assets/three-gods.png";
 import "@/styles/landing.css";
 
@@ -22,6 +22,15 @@ export default function HomePage() {
   const [error, setError] = useState("");
   const brandInput = useRef<HTMLInputElement>(null);
   const businessInput = useRef<HTMLInputElement>(null);
+
+  // The first visit after signup returns here; keep the visitor's two answers visible.
+  useEffect(() => {
+    const pending = readBrandStart(user?.id ?? null);
+    if (pending) {
+      setBrand(pending.brand);
+      setBusiness(pending.business);
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     if (!section) { window.scrollTo({ top: 0 }); return; }

@@ -37,3 +37,31 @@
   .landing-v3 .header .wordmark { font-size:24px; }
   .landing-v3 .header .button-small { padding-inline:10px; gap:6px; }
 }
+
+/* Equal outer columns keep navigation centered independently of the wordmark and account button. */
+.landing-v3 .header {
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  column-gap:20px;
+}
+.landing-v3 .header .wordmark { justify-self:start; }
+.landing-v3 .header > .button { justify-self:end; }
+.landing-v3 .header nav {
+  display:flex;
+  grid-column:1 / -1;
+  grid-row:2;
+  justify-content:center;
+  justify-self:stretch;
+  flex-wrap:wrap;
+  gap:12px 24px;
+  border-top:1px solid var(--line);
+  padding-top:12px;
+}
+@media(min-width:1180px) {
+  .landing-v3 .header { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); }
+  .landing-v3 .header nav { grid-column:2; grid-row:1; border:0; padding:0; }
+  .landing-v3 .header > .button { grid-column:3; }
+}
+@media(max-width:420px) {
+  .landing-v3 .header { column-gap:10px; }
+}

@@ -57,7 +57,6 @@ export default function HomePage() {
           <SectionLink section="top" className="wordmark"><BrandWordmark /></SectionLink>
           <nav aria-label="Основная навигация">
             <SectionLink section="approach">Как это работает</SectionLink>
-            <Link href="/services">Инструменты</Link>
             <SectionLink section="result">Результат</SectionLink>
             <SectionLink section="questions">Вопросы</SectionLink>
           </nav>

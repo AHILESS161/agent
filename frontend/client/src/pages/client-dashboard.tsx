@@ -1,4 +1,4 @@
-import pediment from "@/assets/pediment.png";
+import pediment from "@/assets/three-gods.png";
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
@@ -130,7 +130,7 @@ export default function ClientDashboardPage() {
         <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[#746e66]">Начните с названия и описания бизнеса. Подберём классы МКТУ, проверим обозначение и поможем подготовить заявку.</p>
         <Button className="mt-7 min-h-12 rounded-full px-7" onClick={() => setLocation("/start")}>Проверить мой бренд<ArrowRight className="h-4 w-4" /></Button>
         <p className="mt-3 text-xs text-[#746e66]">Два поля для начала. Реквизиты — после проверки.</p>
-        <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1774" height="887" fetchPriority="high" /></div>
+        <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1897" height="829" loading="eager" /></div>
         <div className="flex items-center gap-6 border-b border-[#ded9cf] py-5 text-[11px] uppercase tracking-[.12em] text-[#746e66]"><span className="h-px flex-1 bg-[#ded9cf]" /><span>От идеи — к защищённому имени</span><span className="h-px flex-1 bg-[#ded9cf]" /></div>
       </section>
 

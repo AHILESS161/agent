@@ -23,9 +23,6 @@
   color: hsl(var(--foreground));
   color-scheme: light;
 }
-.registr-v3 .brand-wordmark__accent { fill: #9b8258; }
-.registr-v3 .brand-wordmark__ring { stroke: #9b8258; }
-.registr-v3 .brand-wordmark__text { font-family: var(--font-serif); font-weight: 600; }
 .registr-serif { font-family: 'Cormorant Garamond', Georgia, serif; font-weight: 500; letter-spacing: -.035em; }
 .registr-hero { padding: 38px 12px 0; text-align: center; }
 .registr-hero h1 { margin: 0; font-size: clamp(3.25rem, 7vw, 6.4rem); line-height: .98; }
@@ -55,3 +52,6 @@
   .registr-service-tabs button { border-radius: 13px; font-size: 12px; }
   .registr-service-tabs svg { display: none; }
 }
+
+.registr-architecture { height:auto; }
+.registr-architecture img { height:auto; object-fit:contain; object-position:center; }

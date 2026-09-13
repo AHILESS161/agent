@@ -172,43 +172,14 @@
     box-shadow: none;
   }
   .brand-wordmark {
-    gap: 0;
-    font-family: 'Inter', 'Segoe UI', Arial, Helvetica, sans-serif;
-    font-weight: 720;
-    letter-spacing: -0.048em;
     line-height: 1;
-    text-rendering: geometricPrecision;
+    vertical-align: middle;
   }
 
-  .brand-wordmark__symbol {
-    width: 1.06em;
-    height: 1.06em;
+  .brand-wordmark__art {
+    display: block;
     flex: 0 0 auto;
-    overflow: visible;
-  }
-
-  .brand-wordmark__ring {
-    stroke: hsl(var(--primary));
-    opacity: 0.96;
-    transition: stroke-width 180ms ease, opacity 180ms ease;
-  }
-
-  .brand-wordmark[data-accent='true'] .brand-wordmark__ring {
-    stroke-width: 3.1;
-    opacity: 1;
-  }
-
-  .brand-wordmark__letter {
-    fill: currentColor;
-  }
-
-  .brand-wordmark__accent {
-    fill: hsl(var(--primary));
-  }
-
-  .brand-wordmark__text {
-    margin-left: -0.075em;
-    transform: translateY(-0.012em);
+    max-width: none;
   }
 
   .client-stage-enter {

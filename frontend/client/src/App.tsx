@@ -13,6 +13,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
+import { brandStartRoute, readBrandStart } from "@/lib/brand-start";
 import { ThemeProvider } from "@/lib/theme";
 import { AppLayout } from "@/components/layout";
 import { ClientPortalLayout } from "@/components/client-portal-layout";
@@ -33,6 +34,7 @@ import ClientApplicationPage from "@/pages/client-application";
 import ClientHowItWorksPage from "@/pages/client-how-it-works";
 
 import ServicesPage from "@/pages/services";
+import HomePage from "@/pages/home";
 
 function ClientRoutes() {
   return (
@@ -97,7 +99,7 @@ function AuthenticatedRoutes() {
 }
 
 function AppRouter() {
-  const { isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading } = useAuth();
   const [location] = useLocation();
   if (location.split("?")[0] === "/signup") return <SignupPage key="signup" />;
   if (location.split("?")[0] === "/verify-email") return <SignupPage key="verify-email" verify />;
@@ -113,6 +115,15 @@ function AppRouter() {
         </div>
       </div>
     );
+  }
+
+  if (location === "/") return <HomePage />;
+  if (location === "/login" && user) {
+    return <Redirect to={readBrandStart(user.id) ? brandStartRoute(user.role) : "/dashboard"} />;
+  }
+  if (location === "/start" && user && user.role !== "client") {
+    const query = window.location.hash.split("?")[1] || window.location.search.replace(/^\?/, "");
+    return <Redirect to={`/intake${query ? `?${query}` : ""}`} />;
   }
 
   if (!isAuthenticated) {

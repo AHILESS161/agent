@@ -55,9 +55,13 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
   }
 
   return <main className="client-light-scope registr-v3 flex min-h-[100svh] items-center justify-center bg-[#fcfbf8] p-5">
-    <section className="w-full max-w-md rounded-2xl border bg-white p-7 shadow-sm">
-      <div className="mb-7 text-3xl text-[#38322e]"><BrandWordmark /></div>
-      <h1 className="text-2xl font-semibold">{verify ? "Завершить регистрацию" : "Регистрация клиента"}</h1>
+    <section className="w-full max-w-md rounded-2xl border bg-white p-5 shadow-sm sm:p-7">
+      <div className="mb-6 text-3xl text-[#38322e]"><BrandWordmark /></div>
+      <div className="mb-7 border-b border-border pb-6">
+        <h1 className="registr-serif text-[1.8rem] leading-[1.1] text-[#38322e] sm:text-[2rem]">Защищаем идеи - <em className="block font-normal text-[#9b8258]">управляем правами</em></h1>
+        <p className="mt-3 text-sm leading-6 text-[#746e66]">Регистрация товарных знаков - от заявки до свидетельства</p>
+      </div>
+      <h2 className="text-2xl font-semibold">{verify ? "Завершить регистрацию" : "Регистрация клиента"}</h2>
       <p className="mt-3 text-sm text-muted-foreground">{verify
         ? "Укажите имя и придумайте пароль для своего аккаунта."
         : "Укажите почту — отправим ссылку для подтверждения и создания пароля."}</p>

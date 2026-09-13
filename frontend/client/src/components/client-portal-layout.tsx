@@ -34,11 +34,6 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
 
   const links = [
     {
-      href: serviceHref("compare", serviceRoute.applicationId),
-      label: "Сравнение обозначений",
-      active: location === "/services" && serviceRoute.tool === "compare",
-    },
-    {
       href: "/dashboard",
       label: "Мои заявки",
       active: location === "/dashboard" || location === "/start" || location.startsWith("/applications/"),
@@ -48,11 +43,16 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
       label: "Ответ Роспатенту",
       active: location === "/services" && serviceRoute.tool === "reply",
     },
+    {
+      href: serviceHref("compare", serviceRoute.applicationId),
+      label: "Сравнение обозначений",
+      active: location === "/services" && serviceRoute.tool === "compare",
+    },
   ];
 
   return (
     <div className="client-light-scope registr-v3 min-h-screen bg-[#cebb9e] p-0 sm:p-5 lg:p-8">
-      <div className="mx-auto min-h-screen max-w-[1512px] bg-[#fcfbf8] pb-1 sm:rounded-3xl">
+      <div className="registr-client-frame mx-auto min-h-screen max-w-[1512px] bg-[#fcfbf8] pb-1 sm:rounded-3xl">
       <header className="sticky top-0 z-30 bg-[#fcfbf8]/95 p-3 backdrop-blur sm:rounded-t-3xl sm:p-5 lg:px-8">
         <div className="registr-header-row rounded-full border border-[#ece8e0] bg-white px-3 py-3 sm:px-4 lg:px-6">
           <Link href="/" className="registr-header-logo justify-self-start" aria-label="Регистр — главная">

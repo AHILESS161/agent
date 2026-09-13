@@ -39,7 +39,7 @@ export default function PrinciplesPage() {
   return (
     <div className="client-light-scope registr-v3 landing-v3 principles-page">
       <div className="page-shell">
-        <PublicHeader principles />
+        <PublicHeader />
         <main>
           <section className="principles-intro" aria-labelledby="principles-title">
             <span className="section-kicker">Принципы сервиса</span>

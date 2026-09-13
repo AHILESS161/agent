@@ -5,8 +5,16 @@ import { useAuth } from "@/lib/auth";
 import { BrandWordmark, BrandSymbol } from "@/components/brand-wordmark";
 import { HomeSectionLink as SectionLink, PublicHeader, PublicFooter } from "@/components/public-layout";
 import { brandStartRoute, readBrandStart, saveBrandStart } from "@/lib/brand-start";
-import gods from "@/assets/three-gods.png";
+import themis from "@/assets/principles/themis.png";
+import plutus from "@/assets/principles/plutus.png";
+import tyche from "@/assets/principles/tyche.png";
 import "@/styles/landing.css";
+
+const servicePrinciples = [
+  { name: "Фемида", title: "Честная оценка", text: "Показываем основания риска и честно отмечаем ограничения проверки.", image: themis, position: "themis" },
+  { name: "Плутос", title: "Ценность бренда", text: "Учитываем товары, услуги и контекст бизнеса — то, что вы действительно защищаете.", image: plutus, position: "plutus" },
+  { name: "Тюхе", title: "Осознанный выбор", text: "Помогаем сравнить варианты и выбрать понятный следующий шаг.", image: tyche, position: "tyche" },
+];
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -54,6 +62,7 @@ export default function HomePage() {
 
         <main id="top">
           <section className="hero" aria-labelledby="hero-title">
+            <span className="eyebrow">О Регистре</span>
             <h1 id="hero-title">Ваш бренд.<br /><em>Под вашей защитой.</em></h1>
             <p className="hero-intro">Проверьте название, узнайте риски и подготовьте заявку<br className="desktop-break" /> на товарный знак. Начните с двух простых ответов.</p>
             <form className="brand-form" id="brand-form" onSubmit={start} noValidate>
@@ -71,8 +80,26 @@ export default function HomePage() {
               {error && <p className="form-error" id="brand-error" role="alert">{error}</p>}
             </form>
             <p className="form-caption">Реквизиты и документы понадобятся только при подготовке заявки</p>
-            <div className="architecture gods-hero"><img src={gods} width="1897" height="829" alt="Фемида с весами правосудия, Плутос с рогом изобилия и Тюхе с короной и рулевым веслом — три скульптуры из светлого мрамора" loading="eager" /></div>
             <div className="hero-baseline"><span>Технологии для уверенных решений</span><span className="baseline-line" /><span>Внимание к каждому обозначению</span></div>
+          </section>
+
+          <section className="about-principles section" id="principles" aria-labelledby="principles-summary-title">
+            <div className="section-heading about-principles-heading">
+              <span className="section-kicker">Принципы сервиса</span>
+              <h2 id="principles-summary-title">Три ориентира.<br /><em>Одна цель — защита.</em></h2>
+            </div>
+            <div className="about-principles-grid">
+              {servicePrinciples.map((principle) => (
+                <article className="about-principle" key={principle.name}>
+                  <div className={`about-principle-portrait ${principle.position}`}>
+                    <img src={principle.image} alt={`${principle.name} — ${principle.title.toLocaleLowerCase("ru-RU")}`} />
+                  </div>
+                  <p className="about-principle-name">{principle.name}</p>
+                  <h3>{principle.title}</h3>
+                  <p>{principle.text}</p>
+                </article>
+              ))}
+            </div>
           </section>
 
           <section className="approach section" id="approach" aria-labelledby="approach-title">

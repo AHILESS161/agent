@@ -1,11 +1,11 @@
 # Registr — three Greek gods in a digital space
 
 - Mode: built-in image_gen (edit of the original three-gods illustration).
-- Selected version: variant 3, digital background with golden arcs, a coordinate grid and connected nodes.
+- Selected version: variant 5, combining digital golden orbits with open, mesh-like mantle fragments.
 - Final asset: three-gods.png. Shared by the homepage and login screen.
-- Selection: explicitly requested by the user; this is variant 3, not the combined variant.
-- SHA-256: 9c5b857396567da1fecfa6d526de99cc6d2bf1de5c04841e678f39c02c9f21bd.
-- Visual review: exactly three full-length ivory marble statues with their original attributes and warm palette. Digital elements stay behind the sculptures; no text or interface elements.
+- Selection: explicitly requested by the user; this is the combined fifth variant.
+- SHA-256: 7de14044bd1920d1c293e0f390c4a8364901da3176c1b5afa61ec71bbe9ee9f1.
+- Visual review: exactly three full-length ivory marble statues with their original attributes and warm palette. Golden digital orbits sit behind the figures, while restrained mesh fragments dissolve the outer edges of their mantles; no text or interface elements.
 
 ## Final prompt
 

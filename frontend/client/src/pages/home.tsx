@@ -33,7 +33,7 @@ export default function HomePage() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (!section) { window.scrollTo({ top: 0 }); return; }
+    if (!section || section === "top") { window.scrollTo({ top: 0 }); return; }
     const target = document.getElementById(section);
     if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [section]);

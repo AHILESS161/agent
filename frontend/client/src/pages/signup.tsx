@@ -3,7 +3,7 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BrandWordmark } from "@/components/brand-wordmark";
+import { AuthLayout } from "@/components/auth-layout";
 import { Loader2, MailCheck } from "lucide-react";
 
 export default function SignupPage({ verify = false }: { verify?: boolean }) {
@@ -54,22 +54,16 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
     } finally { setBusy(false); }
   }
 
-  return <main className="client-light-scope registr-v3 flex min-h-[100svh] items-center justify-center bg-[#fcfbf8] p-5">
-    <section className="w-full max-w-md rounded-2xl border bg-white p-5 shadow-sm sm:p-7">
-      <div className="mb-6 text-3xl text-[#38322e]"><BrandWordmark /></div>
-      <div className="mb-7 border-b border-border pb-6">
-        <h1 className="registr-serif text-[1.8rem] leading-[1.1] text-[#38322e] sm:text-[2rem]">Защищаем идеи - <em className="block font-normal text-[#9b8258]">управляем правами</em></h1>
-        <p className="mt-3 text-sm leading-6 text-[#746e66]">Регистрация товарных знаков - от заявки до свидетельства</p>
-      </div>
+  return <AuthLayout view="signup">
       <h2 className="text-2xl font-semibold">{verify ? "Завершить регистрацию" : "Регистрация клиента"}</h2>
-      <p className="mt-3 text-sm text-muted-foreground">{verify
+      <p className="registr-auth-intro-copy mt-3 text-sm text-muted-foreground">{verify
         ? "Укажите имя и придумайте пароль для своего аккаунта."
         : "Укажите почту — отправим ссылку для подтверждения и создания пароля."}</p>
       {enabled === null && <p className="mt-5" role="status">Проверяем доступность…</p>}
       {enabled === false && <p className="mt-5 text-sm" role="alert">Регистрация временно недоступна. Попробуйте позже.</p>}
       {message && <div className="mt-5 rounded-lg bg-green-50 p-4 text-sm text-green-900" role="status"><MailCheck className="mb-2 h-5 w-5" />{message}</div>}
       {error && <p className="mt-4 text-sm text-destructive" role="alert">{error}</p>}
-      {enabled && !complete && <form className="mt-6 space-y-4" onSubmit={event => { event.preventDefault(); void submit(); }}>
+      {enabled && !complete && <form className="registr-auth-form" onSubmit={event => { event.preventDefault(); void submit(); }}>
         {verify ? <>
           <div className="space-y-2"><Label htmlFor="signup-name">Имя</Label><Input id="signup-name" value={name} onChange={e => setName(e.target.value)} maxLength={255} autoComplete="name" required disabled={busy} /></div>
           <div className="space-y-2"><Label htmlFor="signup-password">Пароль</Label><Input id="signup-password" type="password" value={password} onChange={e => setPassword(e.target.value)} minLength={8} maxLength={1024} autoComplete="new-password" required disabled={busy} /><p className="text-xs text-muted-foreground">Не менее 8 символов.</p></div>
@@ -82,6 +76,5 @@ export default function SignupPage({ verify = false }: { verify?: boolean }) {
       </form>}
       {verify && !complete && <Link href="/signup" className="mt-5 block text-sm text-primary underline">Запросить новое письмо</Link>}
       <Link href="/login" className="mt-6 block text-sm text-primary underline">{complete ? "Войти в Регистр" : "Уже есть аккаунт? Войти"}</Link>
-    </section>
-  </main>;
+  </AuthLayout>;
 }

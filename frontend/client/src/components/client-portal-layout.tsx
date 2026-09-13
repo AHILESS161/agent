@@ -1,4 +1,5 @@
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
+import { useHashLocation } from "wouter/use-hash-location";
 import { Bell, ChevronDown, LogOut, UserRound } from "lucide-react";
 import { BrandWordmark } from "@/components/brand-wordmark";
 import { Button } from "@/components/ui/button";
@@ -15,10 +16,14 @@ import { useAuth } from "@/lib/auth";
 import { useUnreadCount } from "@/lib/use-unread-count";
 import { cn } from "@/lib/utils";
 import { ClientAssistant } from "@/components/client-assistant";
+import { readServiceRoute, serviceHref } from "@/lib/service-navigation";
 
 export function ClientPortalLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
+  const [hashLocation] = useHashLocation();
+  const search = useSearch();
+  const serviceRoute = readServiceRoute(hashLocation, search);
   const unread = useUnreadCount();
   const initials = (user?.fullName || user?.email || "?")
     .split(/\s+/)
@@ -28,33 +33,42 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
     .toUpperCase();
 
   const links = [
-    { href: "/dashboard", label: "Мои заявки" },
-    { href: "/services", label: "Инструменты" },
-    { href: "/how-it-works", label: "Как это работает" },
+    {
+      href: serviceHref("compare", serviceRoute.applicationId),
+      label: "Сравнение обозначений",
+      active: location === "/services" && serviceRoute.tool === "compare",
+    },
+    {
+      href: "/dashboard",
+      label: "Мои заявки",
+      active: location === "/dashboard" || location === "/start" || location.startsWith("/applications/"),
+    },
+    {
+      href: serviceHref("reply", serviceRoute.applicationId),
+      label: "Ответ Роспатенту",
+      active: location === "/services" && serviceRoute.tool === "reply",
+    },
   ];
 
   return (
     <div className="client-light-scope registr-v3 min-h-screen bg-[#cebb9e] p-0 sm:p-5 lg:p-8">
       <div className="mx-auto min-h-screen max-w-[1512px] bg-[#fcfbf8] pb-1 sm:rounded-3xl">
       <header className="sticky top-0 z-30 bg-[#fcfbf8]/95 p-3 backdrop-blur sm:rounded-t-3xl sm:p-5 lg:px-8">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3 rounded-3xl border border-[#ece8e0] bg-white px-4 py-3 md:rounded-full lg:px-6">
-          <Link href="/" aria-label="Регистр — главная">
-            <div className="cursor-pointer text-[1.8rem] leading-none text-[#38322e]">
+        <div className="registr-header-row rounded-full border border-[#ece8e0] bg-white px-3 py-3 sm:px-4 lg:px-6">
+          <Link href="/" className="registr-header-logo justify-self-start" aria-label="Регистр — главная">
+            <div className="cursor-pointer leading-none text-[#38322e]">
               <BrandWordmark />
             </div>
           </Link>
 
-          <nav className="order-last flex w-full flex-wrap items-center justify-center gap-1 border-t border-[#ece8e0] pt-3 md:order-none md:w-auto md:border-0 md:pt-0" aria-label="Главное меню">
+          <nav className="registr-header-nav" aria-label="Личный кабинет">
             {links.map((item) => {
-              const active =
-                location === item.href ||
-                (item.href === "/dashboard" && location.startsWith("/applications/"));
               return (
-                <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
+                <Link key={item.label} href={item.href} aria-current={item.active ? "page" : undefined}>
                   <span
                     className={cn(
-                      "block cursor-pointer rounded-full px-3 py-2 text-xs font-medium transition-colors lg:px-4 lg:text-sm",
-                      active
+                      "flex min-h-10 cursor-pointer items-center justify-center whitespace-nowrap rounded-full px-2 py-2 text-center text-xs font-medium leading-snug transition-colors sm:px-3 lg:px-4 lg:text-sm",
+                      item.active
                         ? "bg-[#584b41] text-white"
                         : "text-[#746e66] hover:bg-[#f4f1eb] hover:text-[#38322e]",
                     )}
@@ -66,7 +80,7 @@ export function ClientPortalLayout({ children }: { children: React.ReactNode }) 
             })}
           </nav>
 
-          <div className="ml-auto flex items-center gap-2 sm:gap-3">
+          <div className="registr-header-actions flex items-center justify-self-end gap-0 sm:gap-2">
             <Button
               variant="ghost"
               size="icon"

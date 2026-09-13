@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useLocation, useSearch } from "wouter";
+import { useLocation, useSearch } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { useAuth } from "@/lib/auth";
 import { BrandWordmark, BrandSymbol } from "@/components/brand-wordmark";
-import { brandStartRoute, saveBrandStart } from "@/lib/brand-start";
+import { HomeSectionLink as SectionLink, PublicHeader, PublicFooter } from "@/components/public-layout";
+import { brandStartRoute, readBrandStart, saveBrandStart } from "@/lib/brand-start";
 import gods from "@/assets/three-gods.png";
 import "@/styles/landing.css";
-
-function SectionLink({ section, children, className }: { section: string; children: React.ReactNode; className?: string }) {
-  return <Link href={`/?section=${section}`} className={className}>{children}</Link>;
-}
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -23,8 +20,17 @@ export default function HomePage() {
   const brandInput = useRef<HTMLInputElement>(null);
   const businessInput = useRef<HTMLInputElement>(null);
 
+  // The first visit after signup returns here; keep the visitor's two answers visible.
   useEffect(() => {
-    if (!section) { window.scrollTo({ top: 0 }); return; }
+    const pending = readBrandStart(user?.id ?? null);
+    if (pending) {
+      setBrand(pending.brand);
+      setBusiness(pending.business);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!section || section === "top") { window.scrollTo({ top: 0 }); return; }
     const target = document.getElementById(section);
     if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [section]);
@@ -44,16 +50,7 @@ export default function HomePage() {
   return (
     <div className="client-light-scope registr-v3 landing-v3">
       <div className="page-shell">
-        <header className="header">
-          <SectionLink section="top" className="wordmark"><BrandWordmark /></SectionLink>
-          <nav aria-label="Основная навигация">
-            <SectionLink section="approach">Как это работает</SectionLink>
-            <Link href="/services">Инструменты</Link>
-            <SectionLink section="result">Результат</SectionLink>
-            <SectionLink section="questions">Вопросы</SectionLink>
-          </nav>
-          <Link className="button button-small button-dark" href={user ? "/dashboard" : "/login"}>Личный кабинет <span aria-hidden="true">↗</span></Link>
-        </header>
+        <PublicHeader />
 
         <main id="top">
           <section className="hero" aria-labelledby="hero-title">
@@ -122,7 +119,7 @@ export default function HomePage() {
 
           <section className="closing" aria-labelledby="closing-title"><div><span className="section-kicker">Начните с того, что важно</span><h2 id="closing-title">Дайте своей идее<br /><em>право на имя.</em></h2></div><SectionLink section="brand-form" className="button button-dark">Проверить название <span aria-hidden="true">↗</span></SectionLink><span className="closing-symbol" aria-hidden="true"><BrandSymbol /></span></section>
         </main>
-        <footer className="footer"><SectionLink section="top" className="wordmark"><BrandWordmark /></SectionLink><p>Проверка обозначения и подготовка заявки на товарный знак</p><Link className="footer-services" href="/services">Ответы и сравнение ↗</Link></footer>
+        <PublicFooter />
       </div>
     </div>
   );

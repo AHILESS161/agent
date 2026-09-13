@@ -37,3 +37,39 @@
   .landing-v3 .header .wordmark { font-size:24px; }
   .landing-v3 .header .button-small { padding-inline:10px; gap:6px; }
 }
+
+/* Keep the logo, navigation and account action on one horizontal level. */
+.landing-v3 .header {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  column-gap:12px;
+}
+.landing-v3 .header .wordmark { justify-self:start; }
+.landing-v3 .header > .button { grid-column:3; grid-row:1; justify-self:end; }
+.landing-v3 .header nav {
+  display:flex;
+  grid-column:2;
+  grid-row:1;
+  min-width:0;
+  justify-content:flex-start;
+  justify-self:stretch;
+  flex-wrap:nowrap;
+  gap:18px;
+  overflow-x:auto;
+  scrollbar-width:thin;
+  border:0;
+  padding:4px 0;
+}
+.landing-v3 .header nav a { flex-shrink:0; white-space:nowrap; }
+.landing-v3 .header nav a[aria-current="page"] { color:var(--gold); text-decoration:underline; text-underline-offset:7px; text-decoration-thickness:1px; }
+@media(min-width:960px) {
+  .landing-v3 .header { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); column-gap:20px; }
+  .landing-v3 .header nav { justify-content:center; overflow:visible; gap:28px; }
+}
+@media(max-width:600px) {
+  .landing-v3 .header { column-gap:8px; padding-inline:10px; }
+  .landing-v3 .header .wordmark { font-size:20px; }
+  .landing-v3 .header .button-small { max-width:88px; padding:8px 10px; font-size:11px; }
+  .landing-v3 .header .button-small span { display:none; }
+  .landing-v3 .header nav { gap:14px; font-size:12px; }
+}

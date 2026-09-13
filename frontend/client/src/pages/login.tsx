@@ -1,4 +1,3 @@
-import pediment from "@/assets/three-gods.png";
 import { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
@@ -12,12 +11,11 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  LockKeyhole,
   ShieldCheck,
   UserRound,
   UsersRound,
 } from "lucide-react";
-import { BrandWordmark } from "@/components/brand-wordmark";
+import { AuthLayout } from "@/components/auth-layout";
 
 type DemoRole = "client" | "lawyer" | "admin";
 
@@ -94,29 +92,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="client-light-scope registr-v3 login-shell grid min-h-[100svh] bg-[#fcfbf8] lg:grid-cols-[1.04fr_.96fr]">
-      <section className="relative hidden overflow-hidden border-r border-black/5 px-[7vw] py-10 lg:flex lg:flex-col lg:justify-center">
-        <div className="absolute left-[7vw] top-8 text-[1.55rem] text-[#38322e]">
-          <BrandWordmark />
-        </div>
-
-        <div className="text-center">
-          <h1 className="registr-serif text-[clamp(3.5rem,5.8vw,6.5rem)] leading-[.98]">Ваш бренд.<br /><em className="font-normal text-[#9b8258]">Под вашей защитой.</em></h1>
-          <p className="mx-auto mt-6 max-w-md text-sm leading-7 text-[#746e66]">Проверка обозначения, подготовка заявки и ответы Роспатенту — в одном месте.</p>
-          <div className="registr-architecture" aria-hidden="true"><img src={pediment} alt="" width="1897" height="829" /></div>
-        </div>
-
-        <div className="absolute bottom-9 left-[7vw] flex items-center gap-7 text-sm text-[#746e66]">
-          <span>Заявители</span><span className="text-primary">/</span>
-          <span>Товарные знаки</span><span className="text-primary">/</span>
-          <span>Документы</span>
-        </div>
-      </section>
-
-      <section className="login-panel flex items-center justify-center bg-[#08090b] p-4 sm:p-5 xl:p-6">
-        <div className="login-card w-full max-w-[580px] rounded-[18px] bg-[#fbfaf8] p-5 shadow-2xl sm:p-6 xl:p-7">
-          <div className="mb-5 text-[1.8rem] text-[#38322e] lg:hidden"><BrandWordmark /></div>
-          <div className="mb-4 flex border-b border-border text-center text-sm">
+    <AuthLayout view="login">
+          <div className="registr-auth-tabs mb-4 flex border-b border-border text-center text-sm">
             <div className="relative flex-1 pb-4 font-medium text-[#38322e] after:absolute after:inset-x-0 after:bottom-[-1px] after:h-[3px] after:bg-primary">
               Вход
             </div>
@@ -126,10 +103,10 @@ export default function LoginPage() {
           </div>
 
           <h2 className="text-2xl font-semibold text-[#38322e]">Войти в систему</h2>
-          <p className="mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
+          <p className="registr-auth-intro-copy mt-2 text-sm text-muted-foreground">Используйте рабочую учётную запись</p>
 
           <form
-            className="mt-4 space-y-3"
+            className="registr-auth-form"
             onSubmit={(event) => {
               event.preventDefault();
               void submit(email, password);
@@ -198,8 +175,9 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <div className="mt-4 border-t border-border pt-4">
-            <p className="text-center text-sm font-medium text-[#38322e]">Или выберите тип аккаунта</p>
+          <details className="registr-auth-demo">
+            <summary>Демо-вход</summary>
+            <div className="registr-auth-demo-content">
             <p className="mt-1 text-center text-xs text-muted-foreground">Для быстрого входа в демо-стенд</p>
 
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
@@ -268,13 +246,12 @@ export default function LoginPage() {
                   ? `Войти как ${DEMO_ROLES.find((item) => item.id === demoRole)?.label.toLowerCase()}`
                   : "Сначала выберите аккаунт"}
             </Button>
-          </div>
+            </div>
+          </details>
 
-          <p className="mt-4 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <p className="registr-auth-footer">
             <ShieldCheck className="h-4 w-4 text-primary" /> Защищённое соединение · демо-режим
           </p>
-        </div>
-      </section>
-    </main>
+    </AuthLayout>
   );
 }

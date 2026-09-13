@@ -55,3 +55,17 @@
 
 .registr-architecture { height:auto; }
 .registr-architecture img { height:auto; object-fit:contain; object-position:center; }
+
+.registr-header-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:8px; }
+.registr-header-logo { font-size:20px; }
+.registr-header-nav { display:flex; min-width:0; align-items:center; gap:4px; overflow-x:auto; scrollbar-width:thin; }
+.registr-header-nav > a { flex-shrink:0; }
+@media(min-width:640px) {
+  .registr-header-row { gap:12px; }
+  .registr-header-logo { font-size:26px; }
+}
+@media(min-width:900px) {
+  .registr-header-row { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); gap:16px; }
+  .registr-header-logo { font-size:28.8px; }
+  .registr-header-nav { justify-content:center; overflow:visible; }
+}

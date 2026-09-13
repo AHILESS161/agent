@@ -43,6 +43,7 @@ RULES: dict[str, Rule] = {
     # Загрузка файлов: защита от исчерпания дискового пространства.
     "/api/v1/applications": Rule(limit=120, window=60),
     "/api/v1/source-documents": Rule(limit=120, window=60),
+    "/api/v1/tools/compare-marks": Rule(limit=12, window=60),
 }
 
 DEFAULT_RULE = Rule(limit=300, window=60)

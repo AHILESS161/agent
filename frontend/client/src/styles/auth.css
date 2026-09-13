@@ -1,0 +1,77 @@
+/* Only authentication screens fill the available viewport. An optional host
+   banner stays in normal flow; the public homepage keeps normal page scrolling. */
+html:has(.registr-auth-shell) { height: 100%; overflow: hidden; }
+body:has(.registr-auth-shell) { display: flex; flex-direction: column; height: 100dvh; min-height: 0; overflow: hidden; }
+body:has(.registr-auth-shell) > :not(#root) { flex-shrink: 0; }
+#root:has(.registr-auth-shell) { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+.registr-auth-shell { display: grid; grid-template-columns: 1.04fr .96fr; flex: 1; min-height: 0; min-width: 0; overflow: hidden; background: #fcfbf8; }
+.registr-auth-intro { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: clamp(16px, 3dvh, 32px); padding: clamp(20px, 4dvh, 40px) clamp(28px, 6vw, 108px); border-right: 1px solid #ded9cf; }
+.registr-auth-logo { display: inline-flex; align-self: flex-start; flex-shrink: 0; font-size: clamp(24px, 2.2vw, 32px); color: #38322e; border-radius: 4px; }
+.registr-auth-logo:focus-visible { outline: 2px solid #9b8258; outline-offset: 6px; }
+.registr-auth-content { display: flex; flex-direction: column; justify-content: center; flex: 1; min-height: 0; gap: clamp(14px, 3dvh, 28px); text-align: center; }
+.registr-auth-message { flex-shrink: 0; }
+.registr-auth-message h1 { margin: 0; font-size: clamp(2rem, 3.4vw, 4.5rem); line-height: 1.06; }
+.registr-auth-message h1 em { display: block; color: #9b8258; font-weight: 400; }
+.registr-auth-message p { margin: clamp(12px, 2.3dvh, 24px) auto 0; max-width: 34rem; font-size: 14px; line-height: 1.65; color: #746e66; }
+.registr-auth-visual { display: flex; flex-direction: column; align-items: center; min-height: 0; gap: clamp(12px, 2.4dvh, 24px); }
+.registr-auth-art { flex: 0 1 auto; min-height: 0; width: 100%; max-height: 38dvh; aspect-ratio: 1897 / 829; mix-blend-mode: multiply; }
+.registr-auth-art img { width: 100%; height: 100%; object-fit: contain; }
+.registr-auth-about { flex-shrink: 0; min-height: 44px; height: auto; gap: 12px; padding: 10px 24px; border: 1px solid #ad9673; border-radius: 999px; color: #584b41; background: transparent; }
+.registr-auth-about:hover { background: #f4f1eb; }
+.registr-auth-panel { display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; overflow: hidden; padding: clamp(12px, 3dvh, 28px); }
+/* Scrolling is a fallback inside the card for an open demo chooser, long
+   errors, zoom or an on-screen keyboard, so controls never get clipped. */
+.registr-auth-card { width: min(100%, 580px); min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: clamp(18px, 3dvh, 28px); border: 1px solid #eee9e1; border-radius: 20px; background: #fbfaf8; }
+.registr-auth-shell .registr-auth-card h2 { font-size: 1.8rem; line-height: 1.1; }
+.registr-auth-intro-copy { line-height: 1.5; }
+.registr-auth-form { margin-top: 16px; }
+.registr-auth-form > * + * { margin-top: 12px; }
+.registr-auth-form input { height: 44px; font-size: 16px; }
+.registr-auth-form button[type='submit'] { min-height: 44px; height: auto; white-space: normal; }
+.registr-auth-demo { margin-top: 16px; padding-top: 12px; border-top: 1px solid #ded9cf; }
+.registr-auth-demo > summary { cursor: pointer; color: #746e66; font-size: 13px; font-weight: 500; }
+.registr-auth-demo > summary:focus-visible { outline: 2px solid #9b8258; outline-offset: 4px; }
+.registr-auth-demo-content { padding-top: 12px; }
+.registr-auth-footer { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 14px; color: #746e66; font-size: 12px; line-height: 1.5; }
+@media (max-width: 899px) {
+  .registr-auth-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .registr-auth-intro { gap: 12px; padding: 16px 24px 12px; border-right: 0; }
+  .registr-auth-logo { font-size: 24px; }
+  .registr-auth-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, .7fr); align-items: center; gap: 18px; width: min(100%, 580px); margin: 0 auto; text-align: left; }
+  .registr-auth-message h1 { font-size: clamp(1.45rem, 3.5vw, 2rem); }
+  .registr-auth-message p { margin-top: 8px; font-size: 12px; line-height: 1.4; }
+  .registr-auth-visual { gap: 8px; }
+  .registr-auth-art { max-height: 110px; }
+  .registr-auth-about { min-height: 36px; padding: 6px 12px; gap: 6px; font-size: 12px; }
+  .registr-auth-about svg { width: 14px; height: 14px; }
+  .registr-auth-panel { align-items: flex-start; padding: 12px 16px 16px; }
+  .registr-auth-card { padding: 18px; border-radius: 16px; }
+}
+@media (max-height: 720px) {
+  .registr-auth-intro { gap: 10px; padding-top: 14px; padding-bottom: 14px; }
+  .registr-auth-content { gap: 12px; }
+  .registr-auth-message p { margin-top: 8px; }
+  .registr-auth-visual { gap: 10px; }
+  .registr-auth-panel { padding-top: 12px; padding-bottom: 12px; }
+  .registr-auth-card { padding: 16px; }
+  .registr-auth-shell .registr-auth-card h2 { font-size: 1.6rem; }
+  .registr-auth-form { margin-top: 12px; }
+  .registr-auth-form > * + * { margin-top: 10px; }
+  .registr-auth-demo { margin-top: 12px; padding-top: 10px; }
+  .registr-auth-footer { margin-top: 10px; }
+}
+@media (max-width: 899px) and (max-height: 620px) {
+  .registr-auth-intro { padding: 10px 18px; gap: 8px; }
+  .registr-auth-logo { font-size: 21px; }
+  .registr-auth-message h1 { font-size: 1.25rem; }
+  .registr-auth-art { max-height: 60px; }
+  .registr-auth-panel { padding: 8px 12px; }
+}
+@media (max-width: 899px) and (max-height: 740px) {
+  .registr-auth-shell .registr-auth-card { padding: 12px; }
+  .registr-auth-tabs { margin-bottom: 10px; }
+  .registr-auth-tabs > :is(a, div) { padding-bottom: 10px; }
+  .registr-auth-login .registr-auth-intro-copy { display: none; }
+  .registr-auth-form > * + * { margin-top: 8px; }
+  .registr-auth-form .space-y-2 > :not([hidden]) ~ :not([hidden]) { margin-top: 6px; }
+}

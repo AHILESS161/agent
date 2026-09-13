@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/lib/auth";
 import { useApi, type Paginated } from "@/lib/use-api";
+import { readServiceRoute, serviceHref, type ServiceTool } from "@/lib/service-navigation";
 
 interface ServiceApplication { id: number; mark_name: string | null }
 
@@ -16,44 +17,50 @@ export default function ServicesPage() {
   const { user } = useAuth();
   const [location, navigate] = useHashLocation();
   const routeSearch = useSearch();
-  // Direct links keep a query in the hash; wouter navigation puts it before the hash.
-  // useSearch also subscribes to changes when only the selected tool/case changes.
-  const params = new URLSearchParams(location.split("?")[1] || routeSearch);
-  const tool = params.get("tool") === "compare" ? "compare" : "reply";
-  const requestedId = params.get("application") || "";
+  const { tool, applicationId: requestedId } = readServiceRoute(location, routeSearch);
   const [page, setPage] = useState(1);
   const [pending, setPending] = useState(false);
   const applications = useApi<Paginated<ServiceApplication>>(`/applications?page=${page}&page_size=200`);
   const onlyApplication = applications.data?.total === 1 ? applications.data.items[0] : undefined;
-  const selectedId = /^\d+$/.test(requestedId) && Number(requestedId) > 0 ? Number(requestedId) : onlyApplication?.id;
+  const selectedId = requestedId ?? onlyApplication?.id;
   const selected = useApi<ServiceApplication>(selectedId ? `/applications/${selectedId}` : null, { treat404AsEmpty: false });
   const client = user?.role === "client";
 
-  const updateRoute = (nextTool: string, applicationId = selectedId) => {
-    const next = new URLSearchParams({ tool: nextTool });
-    if (applicationId) next.set("application", String(applicationId));
-    navigate(`/services?${next}`);
+  const updateRoute = (nextTool: ServiceTool, applicationId = selectedId) => {
+    navigate(serviceHref(nextTool, applicationId));
   };
 
   return (
     <div className="registr-v3 registr-services space-y-9 rounded-3xl bg-[#fcfbf8] p-1 sm:p-3" data-testid="services-page">
       <header className="mx-auto max-w-3xl text-center">
+        {client ? <>
+          <p className="text-xs font-semibold uppercase tracking-[.18em] text-[#746e66]">Личный кабинет</p>
+          <h1 className="registr-serif mt-5 text-[clamp(2.4rem,5vw,4.4rem)] leading-[1.05]">
+            {tool === "compare" ? "Сравнение обозначений" : "Ответ Роспатенту"}
+          </h1>
+          <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-muted-foreground">
+            {tool === "compare"
+              ? "Выберите название для регистрации товарного знака: сравним два варианта с учётом вашего бизнеса."
+              : "Выберите заявку — её сведения и документы помогут подготовить ответ на уведомление Роспатента."}
+          </p>
+        </> : <>
         <p className="text-xs font-semibold uppercase tracking-[.18em] text-[#746e66]">Инструменты для вашего бренда</p>
         <h1 className="registr-serif mt-5 text-[clamp(2.6rem,5vw,4.7rem)] leading-[1.02]">
           Следующий шаг —<br /><em className="font-normal text-[#9b8258]">с ясной позицией.</em>
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-muted-foreground">
-          Подготовьте ответ на уведомление Роспатента или сопоставьте два обозначения.
+          Подготовьте ответ на уведомление Роспатента или выберите более сильное название для регистрации.
           Начните с того, что нужно сейчас.
         </p>
+        </>}
       </header>
 
-      <Tabs value={tool} onValueChange={(value) => updateRoute(value)}>
-        <TabsList className="registr-service-tabs" aria-label="Выберите инструмент">
+      <Tabs value={tool} onValueChange={(value) => updateRoute(value === "compare" ? "compare" : "reply")}>
+        {!client && <TabsList className="registr-service-tabs" aria-label="Выберите инструмент">
           <TabsTrigger value="reply"><FileText className="h-4 w-4" />Ответ Роспатенту</TabsTrigger>
-          <TabsTrigger value="compare"><Scale className="h-4 w-4" />Сравнение ТЗ</TabsTrigger>
-        </TabsList>
-        <TabsContent value="reply" forceMount className="mt-8 space-y-6">
+          <TabsTrigger value="compare"><Scale className="h-4 w-4" />Сравнение обозначений</TabsTrigger>
+        </TabsList>}
+        <TabsContent value="reply" forceMount hidden={tool !== "reply"} className="mt-8 space-y-6" {...(client ? { role: "region", "aria-label": "Ответ Роспатенту", "aria-labelledby": undefined } : {})}>
           <section className="rounded-2xl border border-border bg-card p-5 sm:p-7">
             <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
               <div><h2 className="text-lg font-semibold">Для какой заявки готовим ответ?</h2>
@@ -78,7 +85,7 @@ export default function ServicesPage() {
             : selected.error ? <div className="rounded-2xl border border-destructive/30 p-6" role="alert"><p>{selected.error}</p><Button className="mt-3" variant="outline" onClick={selected.reload}>Повторить</Button></div>
             : selected.data?.id === selectedId && <div className="rounded-2xl border border-border bg-card p-5 sm:p-8"><OfficeActionResponse key={selectedId} appId={selectedId} audience={client ? "client" : "professional"} compact onPendingChange={setPending} /></div>)}
         </TabsContent>
-        <TabsContent value="compare" forceMount className="mt-8"><TrademarkComparison /></TabsContent>
+        <TabsContent value="compare" forceMount hidden={tool !== "compare"} className="mt-8" {...(client ? { role: "region", "aria-label": "Сравнение обозначений", "aria-labelledby": undefined } : {})}><TrademarkComparison /></TabsContent>
       </Tabs>
     </div>
   );

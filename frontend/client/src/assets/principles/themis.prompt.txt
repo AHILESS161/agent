@@ -1,0 +1,11 @@
+Use case: stylized-concept.
+Asset type: individual editorial portrait illustration for the Russian trademark service Registr, one of a consistent three-image set.
+Input image: style and character reference. Recreate ONLY Themis, the left-hand figure in the supplied group image, as a standalone composition.
+Subject: exactly one full-length classical female statue of Themis, blindfolded, richly draped ivory marble robe, holding balanced delicate golden scales extended to the viewer's left and a downward sword at her side. Preserve the character and sculptural style of the reference.
+Scene: soft warm off-white background, subtle gold coordinate grid and fine elliptical orbital lines with sparse luminous nodes BEHIND the figure, suggesting a modern digital information space. No mesh on the statue.
+Composition: portrait 4:5 canvas, centered standing figure and low marble plinth, figure about 82% of image height; generous room for all scales, sword and plinth, no cropping of attributes. Camera at natural sculpture viewing height, elegant and balanced.
+Style: premium realistic classical sculpture illustration, softly weathered warm ivory marble, finely carved drapery, soft diffused daylight, cream and pale restrained gold palette. Calm, spacious, sophisticated.
+Constraints: one statue only; no other people or gods; no text, labels, typography, logos or watermark; no neon colors, interface panels, sci-fi armor or floating technology in her hands. Match the provided group artwork.
+
+Generated with the built-in image_gen tool.
+Style reference: ../three-gods.png

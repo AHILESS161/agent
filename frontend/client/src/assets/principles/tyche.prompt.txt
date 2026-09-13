@@ -1,0 +1,11 @@
+Use case: stylized-concept
+Asset type: portrait illustration for the "Service principles" page of a premium trademark registration website.
+Input image 1 is the supporting reference for the character identity, ivory marble sculptural style, lighting and restrained gold digital background.
+Primary request: create a NEW separate portrait of ONLY TYCHE, the rightmost female figure in the reference, wearing a mural crown shaped like city walls and holding her large steering rudder. Recompose her as one complete standalone statue. Preserve her distinctive face, draped classical robe, warm ivory marble texture and recognizable crown and rudder from the reference.
+Composition: portrait canvas with a 4:5 aspect ratio. Entire statue and low marble plinth visible, centered; statue with plinth occupies approximately 82% of canvas height, with generous comfortable margins around crown, robe and rudder. Calm premium editorial composition, realistic classical sculpture photographed at eye level.
+Background: warm off-white/cream studio space, very delicate thin gold elliptical digital arcs, a faint gold coordinate grid and sparse softly glowing connection nodes BEHIND the statue. The digital ornament should be airy and subtle, like the reference, with clear negative space.
+Lighting: soft diffuse studio daylight, gentle warm shadows, finely carved realistic stone details, restrained ivory, sand and muted gold palette.
+Constraints: exactly one goddess; no other figures or statues; no wireframe, grid or geometric overlays on the statue itself. No cropped attributes or feet. No text, letters, logos, labels, UI, watermark or decorative border. No extra limbs. Keep the crown and large rudder completely legible.
+
+Generation tool: built-in image_gen.imagegen
+Reference: ../three-gods.png

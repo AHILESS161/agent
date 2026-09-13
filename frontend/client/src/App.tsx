@@ -35,6 +35,7 @@ import ClientHowItWorksPage from "@/pages/client-how-it-works";
 
 import ServicesPage from "@/pages/services";
 import HomePage from "@/pages/home";
+import PrinciplesPage from "@/pages/principles";
 
 function ClientRoutes() {
   return (
@@ -118,6 +119,7 @@ function AppRouter() {
   }
 
   if (location === "/") return <HomePage />;
+  if (location === "/principles") return <PrinciplesPage />;
   if (location === "/login" && user) {
     return <Redirect to={user.role === "client" ? "/" : readBrandStart(user.id) ? brandStartRoute(user.role) : "/dashboard"} />;
   }

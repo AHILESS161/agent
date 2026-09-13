@@ -1,0 +1,12 @@
+Use case: stylized-concept.
+Asset type: individual deity illustration for the Russian trademark service website “Регистр”, principles page; a companion to two other single-statue portrait images.
+Input image 1: supporting reference for the exact sculpture identity, marble material, classical realism, warm ivory palette and subtle golden digital background.
+Primary request: Create a NEW separate portrait composition featuring ONLY PLUTUS, the central bearded male statue with the cornucopia in the reference. Preserve this man's recognizable face, curled hair and beard, draped robe, natural realistic proportions and carved cornucopia overflowing with fruit. Remove both neighboring goddesses completely. Exactly one figure.
+Composition/framing: portrait 4:5 canvas, frontal museum editorial view, centered standing full-length sculpture on a low marble plinth. Figure plus plinth occupies about 82% of image height. Keep all of the figure, feet, low base and cornucopia fully visible, with ample airy margins. Calm balanced high-end composition.
+Scene/backdrop: seamless warm white and pale cream background. Add delicate very thin muted gold elliptical digital arcs, a faint coordinate grid, sparse connecting lines and a few tiny softly glowing nodes BEHIND the figure, matching the reference. The pattern should suggest modern connected intelligence without distracting from the sculpture.
+Style/medium: photorealistic finely carved warm ivory marble sculpture, refined physical material detail and flowing robe folds. Soft diffused studio light, delicate shadows, understated premium editorial aesthetic. Color palette ivory, cream, soft beige and restrained muted gold.
+Constraints: no other figures or faces, no text, no lettering, no logo, no watermark, no interface, no frame, no wireframe or circuitry on the body, no bright neon, no excessive holographic effects. Do not crop the head, feet, plinth or cornucopia. No extra limbs or fingers.
+
+Generation: built-in image_gen (not CLI).
+Source reference: ../three-gods.png (supporting sculpture identity and style reference).
+Output: plutus.png.

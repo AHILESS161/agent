@@ -61,7 +61,8 @@
   padding:4px 0;
 }
 .landing-v3 .header nav a { flex-shrink:0; white-space:nowrap; }
-@media(min-width:900px) {
+.landing-v3 .header nav a[aria-current="page"] { color:var(--gold); text-decoration:underline; text-underline-offset:7px; text-decoration-thickness:1px; }
+@media(min-width:960px) {
   .landing-v3 .header { grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); column-gap:20px; }
   .landing-v3 .header nav { justify-content:center; overflow:visible; gap:28px; }
 }
